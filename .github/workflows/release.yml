@@ -1,0 +1,65 @@
+name: Publicar atualização do Cypher
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Validar versão e configurar canal público
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $expectedTag = "v$($package.version)"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) { throw "A tag precisa ser $expectedTag para corresponder ao package.json." }
+          @{ repository = $env:GITHUB_REPOSITORY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
+      - name: Compilar instalador e versão portátil do Cypher
+        run: npm run dist
+      - name: Gerar manifesto HTTPS e SHA-512
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $assetPath = Join-Path (Resolve-Path release) "Cypher-$version-Windows.exe"
+          $installerPath = Join-Path (Resolve-Path release) "Cypher-$version-Setup.exe"
+          if (-not (Test-Path -LiteralPath $assetPath)) { throw "Executável de lançamento não encontrado: $assetPath" }
+          if (-not (Test-Path -LiteralPath $installerPath)) { throw "Instalador de lançamento não encontrado: $installerPath" }
+          $assetName = Split-Path $assetPath -Leaf
+          $installerAssetName = Split-Path $installerPath -Leaf
+          $hash = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA512).Hash
+          $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA512).Hash
+          $hashBytes = [Convert]::FromHexString($hash)
+          $installerHashBytes = [Convert]::FromHexString($installerHash)
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $manifest = [ordered]@{
+            schemaVersion = 1
+            version = $version
+            tag = $env:GITHUB_REF_NAME
+            assetName = $assetName
+            sha512 = [Convert]::ToBase64String($hashBytes)
+            installerAssetName = $installerAssetName
+            installerSha512 = [Convert]::ToBase64String($installerHashBytes)
+            releaseNotes = "Cypher $version — versão mais recente do navegador."
+          }
+          $manifest | ConvertTo-Json -Compress | Set-Content artifacts/latest.json -Encoding utf8
+      - name: Publicar instalador, versão portátil e manifesto na Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          gh release create $env:GITHUB_REF_NAME "release/Cypher-$version-Setup.exe" "release/Cypher-$version-Windows.exe" "artifacts/latest.json" --title "Cypher $version" --generate-notes --latest

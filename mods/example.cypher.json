@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Midnight Rose",
+  "author": "Cypher Community",
+  "description": "Preto, rosa e uma nova órbita.",
+  "settings": {
+    "accent": "#f49ac2",
+    "surface": "#191218",
+    "background": "#0d090d",
+    "tabPosition": "side",
+    "sidebarWidth": 248,
+    "radius": 16,
+    "font": "system",
+    "wallpaper": "orbital",
+    "motion": true,
+    "compact": false,
+    "searchEngine": "duckduckgo"
+  }
+}
