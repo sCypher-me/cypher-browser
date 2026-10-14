@@ -143,6 +143,7 @@ namespace Cypher.Setup
         public bool ForceRun;
         public bool Updated;
         public bool DeferLaunch;
+        public int WaitForProcessId;
         public string Target;
         public bool Desktop = true;
         public bool StartMenu = true;
@@ -158,6 +159,8 @@ namespace Cypher.Setup
                 if (string.Equals(arg, "--force-run", StringComparison.OrdinalIgnoreCase)) result.ForceRun = true;
                 if (string.Equals(arg, "--updated", StringComparison.OrdinalIgnoreCase)) result.Updated = true;
                 if (string.Equals(arg, "--defer-launch", StringComparison.OrdinalIgnoreCase)) result.DeferLaunch = true;
+                if (arg.StartsWith("--wait-for-process=", StringComparison.OrdinalIgnoreCase)) int.TryParse(arg.Substring(19), out result.WaitForProcessId);
+                if (string.Equals(arg, "--wait-for-process", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) int.TryParse(args[++i], out result.WaitForProcessId);
                 if (string.Equals(arg, "--no-desktop", StringComparison.OrdinalIgnoreCase)) result.Desktop = false;
                 if (string.Equals(arg, "--no-start-menu", StringComparison.OrdinalIgnoreCase)) result.StartMenu = false;
                 if (arg.StartsWith("--target=", StringComparison.OrdinalIgnoreCase)) result.Target = arg.Substring(9).Trim('"');
@@ -237,6 +240,7 @@ namespace Cypher.Setup
                 RelaunchElevated(options, target);
                 return true;
             }
+            WaitForUpdateRequester(options.WaitForProcessId);
             CloseCypher();
             progress(3, "Preparando o pacote verificado do Cypher");
 
@@ -327,7 +331,7 @@ namespace Cypher.Setup
             {
                 UseShellExecute = true,
                 Verb = "runas",
-                Arguments = "/S " + (options.ForceRun ? "--force-run " : "") + (options.Updated ? "--updated " : "") + (options.Desktop ? "" : "--no-desktop ") + (options.StartMenu ? "" : "--no-start-menu ") + (!options.Silent ? "--defer-launch " : "") + "--target " + Quote(target)
+                Arguments = "/S " + (options.ForceRun ? "--force-run " : "") + (options.Updated ? "--updated " : "") + (options.WaitForProcessId > 0 ? "--wait-for-process=" + options.WaitForProcessId + " " : "") + (options.Desktop ? "" : "--no-desktop ") + (options.StartMenu ? "" : "--no-start-menu ") + (!options.Silent ? "--defer-launch " : "") + "--target " + Quote(target)
             };
             try
             {
@@ -347,19 +351,51 @@ namespace Cypher.Setup
 
         private static string Quote(string value) { return "\"" + value.Replace("\"", "\\\"") + "\""; }
 
+        private static void WaitForUpdateRequester(int processId)
+        {
+            if (processId <= 0 || processId == Process.GetCurrentProcess().Id) return;
+            try
+            {
+                using (var requester = Process.GetProcessById(processId))
+                {
+                    if (string.Equals(requester.ProcessName, "Cypher", StringComparison.OrdinalIgnoreCase) && !requester.WaitForExit(120000))
+                        throw new InvalidOperationException("O Cypher ainda está encerrando para a atualização. Aguarde e tente novamente.");
+                }
+            }
+            catch (ArgumentException) { }
+        }
+
         private static void CloseCypher()
         {
-            foreach (var process in Process.GetProcessesByName("Cypher"))
+            var closeRequested = new HashSet<int>();
+            DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < deadline)
             {
-                try
+                bool running = false;
+                foreach (var process in Process.GetProcessesByName("Cypher"))
                 {
-                    if (!process.CloseMainWindow() || !process.WaitForExit(12000))
-                        throw new InvalidOperationException("Feche o Cypher e tente novamente para que a instalação possa substituir os arquivos com segurança.");
+                    using (process)
+                    {
+                        try
+                        {
+                            if (process.HasExited) continue;
+                            running = true;
+                            if (process.MainWindowHandle != IntPtr.Zero && closeRequested.Add(process.Id)) process.CloseMainWindow();
+                        }
+                        catch { }
+                    }
                 }
-                catch (InvalidOperationException) { throw; }
-                catch { }
-                finally { process.Dispose(); }
+                if (!running) return;
+                Thread.Sleep(250);
             }
+
+            var remaining = Process.GetProcessesByName("Cypher");
+            bool stillRunning = false;
+            foreach (var process in remaining)
+            {
+                using (process) { try { if (!process.HasExited) stillRunning = true; } catch { } }
+            }
+            if (stillRunning) throw new InvalidOperationException("O Cypher ainda está finalizando. Feche todas as janelas e tente novamente.");
         }
 
         private static void RegisterInstallation(string target, SetupOptions options)
