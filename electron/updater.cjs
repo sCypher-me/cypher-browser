@@ -175,7 +175,9 @@ function createUpdater({ app, publish, scheduleQuit }) {
         });
         if (result.sha512 !== assetSha512) throw new Error('A verificação SHA-512 da atualização falhou.');
         if (support.mode === 'installer') {
-          const child = spawn(downloaded, ['/S', '--updated', '--force-run', `--wait-for-process=${process.pid}`], { detached: true, stdio: 'ignore', windowsHide: true });
+          // Do not inherit Electron's working directory: it can point inside the
+          // installation being renamed by Setup, keeping that directory locked.
+          const child = spawn(downloaded, ['/S', '--updated', '--force-run', `--wait-for-process=${process.pid}`], { cwd: updateDirectory, detached: true, stdio: 'ignore', windowsHide: true });
           await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
           child.unref();
           setState({ state: 'restarting', version: manifest.version, progress: 100, message: 'O Cypher está instalando a atualização e reiniciará em seguida…' });
