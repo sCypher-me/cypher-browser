@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Check, Clock3, Code2, Globe2, Grip, Github, Headphones, Image as ImageIcon, LayoutGrid, MessageCircle, Pause, Play, Plus, RotateCcw, Search, Settings2, Shield, Smile, Sparkles, Star, StickyNote, Timer, Trash2, Type, X, Youtube, CalendarDays, ListTodo, CalendarClock, Calculator as CalculatorIcon, ChevronLeft, ChevronRight, CircleCheck, Minus } from 'lucide-react';
 import { addWidget, defaultHome, moveWidget, resizeWidget, resolveWidgetLayout, sanitizeHome, widgetDefinitions, widgetDesigns, type HomeConfig, type HomeShortcut, type HomeWidget, type ResizeEdge, type WidgetType } from '../electron/home-layout.mjs';
 import type { HomeData, HomeTask, Link, Settings } from './types';
@@ -41,7 +41,8 @@ export default function HomePage({ settings,data = emptyData,bookmarks,isPrivate
   const selected = draft.widgets.find(w => w.id === selectedId);
   const canvasScale = Math.max(.62,Math.min(1,availableWidth/home.canvasWidth));
   const canvasHeight = Math.max(500,...home.widgets.map(w => w.y + w.height + 28));
-  const style = { '--home-padding': `${home.padding}px`, '--home-title-size': `${home.titleSize}px`, '--home-align': home.alignment, '--home-art-opacity': home.artOpacity / 100 } as CSSProperties;
+  const style = { '--home-padding': `${home.padding}px`, '--home-title-size': `${home.titleSize}px`, '--home-align': home.alignment, '--home-art-opacity': home.artOpacity / 100,
+    ...(settings.wallpaper === 'custom' && settings.wallpaperImageData ? { backgroundImage:`linear-gradient(180deg, color-mix(in srgb, var(--base) 76%, transparent), color-mix(in srgb, var(--base) 92%, transparent)), url("${settings.wallpaperImageData}")`, backgroundSize:'cover', backgroundPosition:'center' } : {}) } as CSSProperties;
   useEffect(() => { const timer = setInterval(() => setClock(new Date()),1000); return () => clearInterval(timer); },[]);
   useEffect(() => {
     const workspace = gridRef.current?.parentElement;
@@ -284,7 +285,9 @@ function CustomWidgetFrame({ widget }: { widget: HomeWidget }) {
     const timer = window.setTimeout(() => setSource(customWidgetDocument(widget)),180);
     return () => window.clearTimeout(timer);
   },[widget.codeHtml,widget.codeCss,widget.codeJs]);
-  return <iframe className="custom-widget-frame" title={widget.title || 'Widget personalizado'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={source}/>;
+  const sourceUrl = useMemo(() => URL.createObjectURL(new Blob([source],{ type:'text/html;charset=utf-8' })),[source]);
+  useEffect(() => () => URL.revokeObjectURL(sourceUrl),[sourceUrl]);
+  return <iframe className="custom-widget-frame" title={widget.title || 'Widget personalizado'} sandbox="allow-scripts" referrerPolicy="no-referrer" src={sourceUrl}/>;
 }
 function NoteWidget({ widget,saved,isPrivate,editing,command }: { widget: HomeWidget; saved: string; isPrivate: boolean; editing: boolean; command: Props['command'] }) {
   const [text,setText] = useState(saved),[status,setStatus] = useState('');

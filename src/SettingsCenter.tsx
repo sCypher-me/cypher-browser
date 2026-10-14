@@ -3,7 +3,7 @@ import {
   Accessibility, ArrowRight, ArrowUpRight, Check, ChevronRight, CircleHelp, Clock3,
   Download, ExternalLink, FolderOpen, Globe2, House, Keyboard, LayoutPanelLeft,
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
-  Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound,
+  Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound, Volume2,
 } from 'lucide-react';
 import type { Settings, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
@@ -42,6 +42,8 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'appearance-mode', title: 'Modo claro ou escuro', detail: 'Escolha uma interface clara ou escura para o navegador', category: 'appearance' },
   { id: 'appearance-shape', title: 'Cantos e tipografia', detail: 'Arredondamento, fonte e identidade visual', category: 'appearance' },
   { id: 'appearance-wallpaper', title: 'Papel de parede', detail: 'Fundo da página inicial orbital, grade ou minimal', category: 'appearance' },
+  { id: 'appearance-controls', title: 'Botões e efeitos', detail: 'Forma dos controles e efeitos visuais do Cypher', category: 'appearance' },
+  { id: 'appearance-sounds', title: 'Sons e música', detail: 'Sons de interface e música de fundo local', category: 'appearance' },
   { id: 'appearance-motion', title: 'Animações', detail: 'Movimento e transições da interface', category: 'appearance' },
   { id: 'tabs-position', title: 'Posição das abas', detail: 'Abas laterais ou verticais no topo', category: 'tabs' },
   { id: 'tabs-width', title: 'Largura das abas', detail: 'Barra lateral compacta ou largura personalizada', category: 'tabs' },
@@ -178,8 +180,18 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
               <div className="sc-color-grid">{[{ key: 'accent', label: 'Cor de destaque' }, { key: 'surface', label: 'Superfícies' }, { key: 'background', label: 'Fundo' }].map(({ key, label }) => <label className="sc-color-choice" key={key}><span className="sc-color-swatch"><input type="color" aria-label={label} value={s[key as 'accent']} onChange={event => onSettings({ [key]: event.target.value })}/></span><span><strong>{label}</strong><small>{s[key as 'accent'].toUpperCase()}</small></span></label>)}</div>
               <Row id="appearance-radius" title="Cantos da interface" detail={`${s.radius} px · Ajusta painéis, botões e cartões`}><input className="sc-range" aria-label="Arredondamento dos cantos" type="range" min="0" max="24" value={s.radius} onChange={event => onSettings({ radius: +event.target.value })}/><span className="sc-value">{s.radius}px</span></Row>
               <Row id="appearance-font" title="Tipografia" detail="A fonte é aplicada à interface do Cypher"><select className="sc-select" value={s.font} onChange={event => onSettings({ font: event.target.value as Settings['font'] })}><option value="system">Sistema</option><option value="mono">Monoespaçada</option></select></Row>
-              <Row id="appearance-wallpaper" title="Fundo da página inicial" detail="Escolha a atmosfera da Home"><select className="sc-select" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option></select></Row>
+              <Row id="appearance-wallpaper" title="Fundo da página inicial" detail={s.wallpaper === 'custom' ? 'Imagem pessoal salva neste perfil' : 'Escolha a atmosfera da Home'}><div className="sc-control-stack"><select className="sc-select" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option>{s.wallpaper === 'custom' && <option value="custom">Imagem pessoal</option>}</select><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper:select'); if (result?.dataUrl) onSettings({ wallpaper:'custom', wallpaperImageData:result.dataUrl }); }}>Escolher imagem</button>{s.wallpaperImageData && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ wallpaper:'orbital', wallpaperImageData:'' })}>Remover imagem</button>}</div></Row>
               <Row id="appearance-motion" title="Animações da interface" detail="Transições suaves e movimento entre telas"><Switch label="Animações da interface" checked={s.motion} onChange={() => onSettings({ motion: !s.motion })}/></Row>
+            </Panel>
+            <Panel id="appearance-controls" eyebrow="IDENTIDADE DO CYPHER" title="Controles e efeitos" detail="A forma dos botões, os efeitos de superfície e a assinatura visual também fazem parte dos seus mods." icon={Sparkles}>
+              <Row title="Forma dos botões" detail="Aplicada à barra, aos painéis e às ações"><select className="sc-select" value={s.buttonShape} onChange={event => onSettings({ buttonShape:event.target.value as Settings['buttonShape'] })}><option value="soft">Suave</option><option value="square">Angular</option><option value="pill">Pílula</option></select></Row>
+              <Row title="Efeito de interface" detail="Efeitos leves, desativáveis para manter a interface limpa"><select className="sc-select" value={s.interfaceEffect} onChange={event => onSettings({ interfaceEffect:event.target.value as Settings['interfaceEffect'] })}><option value="signal">Sinal Cypher</option><option value="glow">Brilho</option><option value="scanline">Linhas de varredura</option><option value="none">Sem efeito</option></select></Row>
+            </Panel>
+            <Panel id="appearance-sounds" eyebrow="ATMOSFERA" title="Sons e música" detail="Personalize os sons da interface e escolha uma faixa que fica neste dispositivo ou dentro de um mod exportado." icon={Volume2}>
+              <Row title="Sons dos controles" detail="Tons sintetizados localmente ao acionar botões"><Switch label="Sons dos controles" checked={s.soundEffectsEnabled} onChange={() => onSettings({ soundEffectsEnabled:!s.soundEffectsEnabled })}/></Row>
+              <Row title="Tema de som" detail="Escolha a textura dos sinais da interface"><select className="sc-select" value={s.soundTheme} onChange={event => onSettings({ soundTheme:event.target.value as Settings['soundTheme'] })}><option value="cypher">Sinal</option><option value="soft">Suave</option><option value="arcade">Arcade</option></select></Row>
+              <Row title="Música de fundo" detail={s.backgroundMusicName || 'A faixa escolhida pode ser incluída ao exportar um mod'}><div className="sc-control-stack"><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:music:select'); if (result?.dataUrl) onSettings({ backgroundMusicData:result.dataUrl, backgroundMusicName:result.name, backgroundMusicEnabled:false }); }}>Escolher arquivo de áudio</button>{s.backgroundMusicData && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ backgroundMusicData:'', backgroundMusicName:'', backgroundMusicEnabled:false })}>Remover faixa</button>}</div></Row>
+              <div className="sc-info-strip"><ShieldCheck size={16}/><span>Imagens e músicas permanecem no perfil local. Os mods importados não executam código; carregam apenas opções visuais e arquivos locais suportados.</span></div>
             </Panel>
           </>}
 
@@ -226,7 +238,7 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
           </>}
 
           {category === 'connections' && <>
-            <div id="connection-routes"><ConnectionSettings settings={s} onSettings={onSettings}/></div>
+            <div id="connection-routes"><ConnectionSettings settings={s} onSettings={onSettings} onConnection={mode => { void command('connection:select',mode); }}/></div>
             <div id="connection-vpn"><WindowsVpnSettings/></div>
           </>}
 
@@ -262,11 +274,10 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
             <div className="sc-info-strip"><Accessibility size={16}/><span>O zoom também pode ser ajustado por aba no menu do Cypher.</span></div>
           </Panel>}
 
-          {category === 'startup' && <Panel id="startup-mode" eyebrow="PÁGINAS DE INICIALIZAÇÃO" title="Ao iniciar o Cypher" detail="Escolha se o navegador abre uma página nova, restaura a sessão ou abre endereços definidos por você." icon={PanelTop}>
+          {category === 'startup' && <Panel id="startup-mode" eyebrow="PÁGINAS DE INICIALIZAÇÃO" title="Ao iniciar o Cypher" detail="A Home sempre será a primeira aba visível. Você também pode restaurar páginas adicionais em segundo plano." icon={PanelTop}>
             <Row title="Comportamento ao iniciar"><select className="sc-select" value={s.startupMode} onChange={event => onSettings({ startupMode: event.target.value as Settings['startupMode'] })}><option value="home">Começar pela página inicial</option><option value="restore">Restaurar a sessão anterior</option><option value="specific">Abrir páginas específicas</option></select></Row>
-            {s.startupMode === 'restore' && <Row title="Mostrar a Home primeiro" detail="Abre a página inicial antes das abas da sessão anterior"><Switch label="Mostrar a Home primeiro" checked={s.showHomeFirst} onChange={() => onSettings({ showHomeFirst: !s.showHomeFirst })}/></Row>}
             {s.startupMode === 'specific' && <div className="sc-startup-pages"><label htmlFor="startup-pages">Um endereço HTTP ou HTTPS por linha, até 10 páginas</label><textarea id="startup-pages" className="sc-text-input sc-textarea" value={startupPagesDraft} onChange={event => setStartupPagesDraft(event.target.value)} placeholder="https://example.com\nhttps://news.example.com"/><div className="sc-action-row"><button className="sc-button sc-button-primary" onClick={() => onSettings({ startupPages: startupPagesDraft.split(/\r?\n/).map(url => url.trim()).filter(Boolean).slice(0,10) })}>Salvar páginas</button><span>Endereços inválidos são ignorados.</span></div></div>}
-            <div className="sc-info-strip"><House size={16}/><span>“Começar pela página inicial” abre a Home personalizável do Cypher. O modo de inicialização com o Windows fica em Sistema.</span></div>
+            <div className="sc-info-strip"><House size={16}/><span>A Home é selecionada primeiro em toda inicialização. A restauração da sessão ou as páginas configuradas são abertas em abas adicionais. O modo de inicialização com o Windows fica em Sistema.</span></div>
           </Panel>}
 
           {category === 'system' && <>

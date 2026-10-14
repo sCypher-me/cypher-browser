@@ -2,10 +2,12 @@ const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensio
 const { defaultHome, sanitizeHome } = require('./home-layout.mjs');
 const defaults = {
   tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513',
-  background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital',
+  background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital', wallpaperImageData: '',
+  buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher',
+  backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false,
   motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
-  restoreSession: true, startupMode: 'restore', startupPages: [], showHomeFirst: false,
+  restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false,
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
   blockAds: false, blockTrackers: false, blockThirdPartyCookies: false,
   preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true,
@@ -30,7 +32,9 @@ function resolveAddress(value, engine = 'duckduckgo', customSearchUrl = '') {
     return url.href;
   }
   if (!/\s/.test(input) && /^(localhost|(?:[\w-]+\.)+[\w-]+)(:\d+)?([/?#].*)?$/.test(input)) {
-    return new URL(`${/^localhost(?::|\/|$)/.test(input) ? 'http' : 'https'}://${input}`).href;
+    const host = input.split(/[/:?#]/, 1)[0].toLowerCase();
+    const localNetwork = host.endsWith('.onion') || host.endsWith('.i2p');
+    return new URL(`${/^localhost(?::|\/|$)/.test(input) || localNetwork ? 'http' : 'https'}://${input}`).href;
   }
   if (engine === 'custom' && typeof customSearchUrl === 'string' && customSearchUrl.includes('{query}')) {
     try {
@@ -44,10 +48,10 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
+  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
   if (input.startupMode === 'home' || input.startupMode === 'restore' || input.startupMode === 'specific') {
     output.startupMode = input.startupMode;
     output.restoreSession = input.startupMode === 'restore';
@@ -69,6 +73,9 @@ function sanitizeSettings(input = {}, base = defaults) {
   output.downloadDirectory = typeof input.downloadDirectory === 'string' && input.downloadDirectory.length <= 4096 ? input.downloadDirectory : (base.downloadDirectory || '');
   output.customSearchUrl = typeof input.customSearchUrl === 'string' && input.customSearchUrl.length <= 500 ? input.customSearchUrl : (base.customSearchUrl || '');
   output.profilePhoto = typeof input.profilePhoto === 'string' && input.profilePhoto.length <= 2_800_000 && /^data:image\/(?:png|jpeg|webp);base64,[\da-z+/=]+$/i.test(input.profilePhoto) ? input.profilePhoto : (base.profilePhoto || '');
+  output.wallpaperImageData = typeof input.wallpaperImageData === 'string' && input.wallpaperImageData.length <= 4_200_000 && /^data:image\/(?:png|jpeg|webp);base64,[\da-z+/=]+$/i.test(input.wallpaperImageData) ? input.wallpaperImageData : (base.wallpaperImageData || '');
+  output.backgroundMusicData = typeof input.backgroundMusicData === 'string' && input.backgroundMusicData.length <= 14_000_000 && /^data:audio\/(?:mpeg|wav|ogg|webm);base64,[\da-z+/=]+$/i.test(input.backgroundMusicData) ? input.backgroundMusicData : (base.backgroundMusicData || '');
+  output.backgroundMusicName = typeof input.backgroundMusicName === 'string' ? input.backgroundMusicName.slice(0,120) : (base.backgroundMusicName || '');
   output.home = sanitizeHome(input.home,base.home || defaultHome);
   return output;
 }

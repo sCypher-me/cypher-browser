@@ -268,3 +268,15 @@ kbd, time, .tabs-heading, .link-date { font-variant-numeric: tabular-nums; }
 @keyframes update-bounce { to { transform:translateY(-5px);opacity:.35; } }
 @keyframes update-success { from { opacity:0;transform:scale(.6); } to { opacity:1;transform:scale(1); } }
 @media(max-width:560px) { .update-notice { right:12px;bottom:12px;flex-wrap:wrap; } .update-notice-copy { flex-basis:calc(100% - 60px); } .update-install-button { margin-left:47px; } .update-card { padding:34px 22px 29px; } }
+
+.app[data-button-shape="square"] :is(.icon-button,.button,.sc-button,.home-small-button,.tab,.new-tab-button,.connection-launchers>button,.sc-nav-item,.sc-choice-card) { border-radius:4px; }
+.app[data-button-shape="pill"] :is(.icon-button,.button,.sc-button,.home-small-button,.new-tab-button,.connection-launchers>button,.sc-nav-item,.sc-choice-card) { border-radius:999px; }
+.app[data-interface-effect="glow"] .brand .cypher-logo,.app[data-interface-effect="glow"] .rail .icon-button.active { filter:drop-shadow(0 0 10px color-mix(in srgb,var(--accent) 35%,transparent)); }
+.app[data-interface-effect="glow"] .titlebar { box-shadow:0 1px 18px color-mix(in srgb,var(--accent) 9%,transparent); }
+.app[data-interface-effect="scanline"] .viewport.internal { position:relative; }
+.app[data-interface-effect="scanline"] .viewport.internal::after { content:"";position:absolute;inset:0;z-index:3;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0,transparent 3px,color-mix(in srgb,var(--accent) 3%,transparent) 4px); }
+.app[data-interface-effect="signal"] .titlebar-caption .live-dot { box-shadow:0 0 9px color-mix(in srgb,var(--accent) 52%,transparent); }
+.widget-body::-webkit-scrollbar { width:4px;height:4px; }
+.widget-body::-webkit-scrollbar-thumb { border-radius:8px;background:color-mix(in srgb,var(--accent) 30%,transparent); }
+.widget-body::-webkit-scrollbar-track { background:transparent; }
+@media(max-width:1100px) { .connection-launchers>button { padding:0 6px;gap:4px;font-size:8px; } .connection-launchers>button svg { width:12px;height:12px; } }

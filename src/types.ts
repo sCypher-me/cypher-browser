@@ -3,7 +3,10 @@ export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
   home: HomeConfig;
   tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
-  radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none'; motion: boolean;
+  radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none' | 'custom'; wallpaperImageData: string;
+  buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';
+  soundEffectsEnabled: boolean; soundTheme: 'cypher' | 'soft' | 'arcade';
+  backgroundMusicData: string; backgroundMusicName: string; backgroundMusicEnabled: boolean; motion: boolean;
   compact: boolean; searchEngine: 'duckduckgo' | 'google' | 'bing' | 'custom'; customSearchUrl: string; activeMod: string;
   connectionMode: ConnectionMode; torSocksPort: number; i2pHttpPort: number; profilePhoto: string;
   restoreSession: boolean; startupMode: 'home' | 'restore' | 'specific'; startupPages: string[]; showHomeFirst: boolean;
@@ -18,7 +21,7 @@ export interface Settings {
 export interface Tab { id: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null }
 export interface Link { id: string; title: string; url: string; date: number }
 export interface Download { id: string; name: string; url: string; total: number; received: number; state: string; date: number; path: string; private: boolean }
-export interface BrowserExtension { id: string; name: string; version: string; enabled: boolean; error?: string }
+export interface BrowserExtension { id: string; name: string; version: string; enabled: boolean; source?: 'chrome-web-store' | 'local'; error?: string }
 export interface SitePermission { id: string; origin: string; permission: string; allowed: boolean; updated: number }
 export interface Mod { id: string; name: string; author: string; description: string; settings: Settings; custom?: boolean }
 export interface FocusTimerData { endsAt: number | null; remaining: number; duration: number }

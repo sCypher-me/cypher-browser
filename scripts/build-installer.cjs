@@ -9,6 +9,7 @@ const appDirectory = path.join(root, 'release', 'win-unpacked');
 const output = path.join(root, 'release', `Cypher-${pkg.version}-Setup.exe`);
 const source = path.join(root, 'installer', 'CypherSetup.cs');
 const icon = path.join(root, 'build', 'icon.ico');
+const manifest = path.join(root, 'installer', 'cypher-installer.manifest');
 const framework = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319');
 const candidates = [path.join(framework, 'csc.exe'), path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe')];
 const compiler = candidates.find(file => fs.existsSync(file));
@@ -22,6 +23,7 @@ function run(command, args, label) {
 
 if (process.platform !== 'win32') throw new Error('O instalador autoral do Cypher só pode ser gerado em Windows.');
 if (!compiler) throw new Error('O compilador do .NET Framework (csc.exe) não foi encontrado.');
+if (!fs.existsSync(manifest)) throw new Error('O manifesto de DPI do instalador não foi encontrado.');
 if (!fs.existsSync(path.join(appDirectory, 'Cypher.exe'))) throw new Error('Compile o aplicativo antes de montar o instalador.');
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cypher-setup-'));
@@ -45,7 +47,7 @@ fs.writeFileSync(metadata, [
 
 try {
   const sharedArgs = [
-    '/nologo', '/target:winexe', '/platform:anycpu', '/optimize+', `/win32icon:${icon}`,
+    '/nologo', '/target:winexe', '/platform:anycpu', '/optimize+', `/win32icon:${icon}`, `/win32manifest:${manifest}`,
     '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
   ];
   run(compiler, [...sharedArgs, '/define:UNINSTALLER', `/out:${uninstaller}`, versionedSource, metadata], 'Compilando o desinstalador Cypher');

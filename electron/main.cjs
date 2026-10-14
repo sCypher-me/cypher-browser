@@ -7,6 +7,7 @@ const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
+const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 
 const execFileAsync = promisify(execFile);
 
@@ -49,6 +50,7 @@ function loadStore() {
   }
   store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
     homeData: { notes, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } };
+  store.settings.backgroundMusicEnabled = false;
   const savedFocus = saved.homeData?.focus;
   if (savedFocus && [savedFocus.duration,savedFocus.remaining].every(Number.isFinite)) {
     store.homeData.focus = { duration: Math.max(60,Math.min(7200,savedFocus.duration)), remaining: Math.max(0,Math.min(7200,savedFocus.remaining)), endsAt: Number.isFinite(savedFocus.endsAt) ? Math.min(savedFocus.endsAt,Date.now()+7200000) : null };
@@ -69,7 +71,7 @@ function loadStore() {
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
   if (Array.isArray(saved.extensions)) store.extensions = saved.extensions.slice(0,100).flatMap(extension => {
     if (!extension || typeof extension.id !== 'string' || typeof extension.path !== 'string' || extension.path.length > 4096) return [];
-    return [{ id: extension.id.slice(0,128), path: path.resolve(extension.path), name: String(extension.name || 'Extensão').slice(0,128), version: String(extension.version || '').slice(0,40), enabled: extension.enabled !== false, error: '' }];
+    return [{ id: extension.id.slice(0,128), path: path.resolve(extension.path), name: String(extension.name || 'Extensão').slice(0,128), version: String(extension.version || '').slice(0,40), enabled: extension.enabled !== false, source: extension.source === 'chrome-web-store' ? 'chrome-web-store' : 'local', error: '' }];
   });
   if (Array.isArray(saved.sitePermissions)) store.sitePermissions = saved.sitePermissions.slice(0,2000).flatMap(rule => {
     if (!rule || typeof rule.origin !== 'string' || !sitePermissionTypes.has(rule.permission) || typeof rule.allowed !== 'boolean') return [];
@@ -96,7 +98,7 @@ function flush() {
 }
 function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
-    history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, error }) => ({ id, name, version, enabled, error })),
+    history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, error }) => ({ id, name, version, enabled, source, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], maximized: win?.isMaximized() || false,
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
@@ -159,6 +161,17 @@ function checkLocalPort(port) {
     const finish = available => { socket.destroy(); resolve(available); };
     socket.setTimeout(900, () => finish(false));
     socket.once('connect', () => finish(true));
+    socket.once('error', () => finish(false));
+  });
+}
+function checkTorProxy(port) {
+  return new Promise(resolve => {
+    const socket = net.createConnection({ host: '127.0.0.1', port });
+    let done = false;
+    const finish = available => { if (done) return; done = true; socket.destroy(); resolve(available); };
+    socket.setTimeout(1200, () => finish(false));
+    socket.once('connect', () => socket.write(Buffer.from([5, 1, 0])));
+    socket.once('data', data => finish(data.length >= 2 && data[0] === 5 && data[1] === 0));
     socket.once('error', () => finish(false));
   });
 }
@@ -345,19 +358,101 @@ function extensionManifest(directory) {
   if (!manifest || ![2,3].includes(manifest.manifest_version) || typeof manifest.name !== 'string' || typeof manifest.version !== 'string') throw new Error('O manifesto precisa ser uma extensão Manifest V2 ou V3 válida.');
   return manifest;
 }
-async function installExtension(directory) {
+function extensionPermissionDetails(manifest) {
+  const declared = [...new Set([...(Array.isArray(manifest.permissions) ? manifest.permissions : []), ...(Array.isArray(manifest.host_permissions) ? manifest.host_permissions : [])].filter(value => typeof value === 'string'))];
+  if (!declared.length) return 'A extensão não declara permissões especiais no manifesto.';
+  const shown = declared.slice(0,20);
+  return `Acesso solicitado:\n${shown.map(value => `• ${value}`).join('\n')}${declared.length > shown.length ? `\n• e mais ${declared.length - shown.length}` : ''}`;
+}
+async function confirmExtensionInstall(manifest) {
+  const name = /^__MSG_.*__$/.test(manifest.name) ? manifest.short_name || 'Extensão' : manifest.name;
+  const result = await dialog.showMessageBox(win, {
+    type:'warning', title:'Permissões da extensão', message:`Adicionar ${String(name).slice(0,128)} ao Cypher?`,
+    detail:`Extensões são código de terceiros e podem ler ou alterar páginas de acordo com as permissões abaixo.\n\n${extensionPermissionDetails(manifest)}\n\nO Chromium integrado oferece compatibilidade parcial com as APIs do Chrome.`,
+    buttons:['Cancelar','Adicionar extensão'], defaultId:0, cancelId:0,
+  });
+  return result.response === 1;
+}
+async function installExtension(directory, options = {}) {
   const extensionPath = path.resolve(directory);
   const manifest = extensionManifest(extensionPath);
   if (store.extensions.some(extension => extension.path === extensionPath)) throw new Error('Esta pasta já foi adicionada ao Cypher.');
   if (store.extensions.length >= 100) throw new Error('O limite é de 100 extensões instaladas.');
+  if (options.expectedId && store.extensions.some(extension => extension.id === options.expectedId)) throw new Error('Esta extensão já está instalada. Remova a versão existente antes de instalar novamente.');
+  if (!(await confirmExtensionInstall(manifest))) return { cancelled:true };
   const loaded = await session.fromPartition('persist:cypher').extensions.loadExtension(extensionPath, { allowFileAccess: false });
   if (store.extensions.some(extension => extension.id === loaded.id)) {
     throw new Error('Uma extensão com este identificador já está instalada. Remova-a antes de adicionar outra versão.');
   }
+  if (options.expectedId && loaded.id !== options.expectedId) {
+    session.fromPartition('persist:cypher').extensions.removeExtension(loaded.id);
+    throw new Error('O identificador instalado não corresponde à assinatura e ao link da Chrome Web Store.');
+  }
   const name = /^__MSG_.*__$/.test(manifest.name) ? manifest.short_name || 'Extensão' : manifest.name;
-  store.extensions.unshift({ id: loaded.id, path: extensionPath, name: String(name).slice(0,128), version: String(loaded.version || manifest.version).slice(0,40), enabled: true, error: '' });
+  store.extensions.unshift({ id: loaded.id, path: extensionPath, name: String(loaded.name || name).slice(0,128), version: String(loaded.version || manifest.version).slice(0,40), enabled: true, source:options.source === 'chrome-web-store' ? 'chrome-web-store' : 'local', error: '' });
   persist(); emit();
   return snapshot().extensions;
+}
+function extensionIdFromStoreUrl(value) {
+  let url;
+  try { url = new URL(String(value || '').trim()); } catch { throw new Error('Cole o endereço de uma extensão da Chrome Web Store.'); }
+  const allowedHosts = new Set(['chromewebstore.google.com','chrome.google.com']);
+  if (url.protocol !== 'https:' || !allowedHosts.has(url.hostname.toLowerCase())) throw new Error('Use um endereço HTTPS da Chrome Web Store.');
+  const id = url.pathname.match(/\/detail\/[^/]+\/([a-p]{32})(?:\/|$)/i)?.[1] || '';
+  if (!/^[a-p]{32}$/.test(id)) throw new Error('Este endereço não contém um identificador de extensão válido.');
+  return id;
+}
+async function downloadChromeStoreCrx(extensionId) {
+  const routeTab = { connectionMode:active()?.connectionMode || store.settings.connectionMode, private:false };
+  const ses = session.fromPartition(sessionPartition(routeTab));
+  setupSession(ses); await prepareProxy(routeTab, ses);
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 45000);
+  let address = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${encodeURIComponent(process.versions.chrome)}&acceptformat=crx3&x=${encodeURIComponent(`id=${extensionId}&installsource=ondemand&uc`)}`;
+  try {
+    for (let redirects = 0; redirects <= 5; redirects++) {
+      const response = await ses.fetch(address, { redirect:'manual', signal:controller.signal, headers:{ 'Accept':'application/octet-stream' } });
+      if ([301,302,303,307,308].includes(response.status)) {
+        const target = new URL(response.headers.get('location') || '', address);
+        const host = target.hostname.toLowerCase();
+        if (target.protocol !== 'https:' || !(host === 'clients2.google.com' || host === 'googleusercontent.com' || host.endsWith('.googleusercontent.com'))) throw new Error('A Chrome Web Store enviou o pacote de um domínio não reconhecido.');
+        address = target.href; continue;
+      }
+      if (!response.ok) throw new Error(`A Chrome Web Store não disponibilizou o pacote da extensão (HTTP ${response.status}).`);
+      const size = Number(response.headers.get('content-length') || 0);
+      if (size > MAX_CRX_BYTES) throw new Error('O pacote da extensão ultrapassa o limite de 50 MB.');
+      const chunks = []; let total = 0;
+      if (!response.body) throw new Error('A Chrome Web Store retornou um pacote vazio.');
+      for await (const chunk of response.body) {
+        const bytes = Buffer.from(chunk); total += bytes.length;
+        if (total > MAX_CRX_BYTES) { controller.abort(); throw new Error('O pacote da extensão ultrapassa o limite de 50 MB.'); }
+        chunks.push(bytes);
+      }
+      return Buffer.concat(chunks, total);
+    }
+    throw new Error('A Chrome Web Store redirecionou o download muitas vezes.');
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('O download da extensão expirou. Confira a conexão e tente novamente.');
+    throw error;
+  } finally { clearTimeout(timeout); }
+}
+async function installChromeStoreExtension(value) {
+  const extensionId = extensionIdFromStoreUrl(value);
+  if (store.extensions.some(extension => extension.id === extensionId)) throw new Error('Esta extensão já está instalada.');
+  const packageBytes = await downloadChromeStoreCrx(extensionId);
+  const extensionsRoot = path.resolve(app.getPath('userData'), 'extensions');
+  const extensionPath = path.resolve(extensionsRoot, extensionId);
+  if (!extensionPath.startsWith(extensionsRoot + path.sep)) throw new Error('A pasta de instalação da extensão não é válida.');
+  if (fs.existsSync(extensionPath)) throw new Error('Há arquivos antigos desta extensão no perfil. Remova a pasta local antes de instalar novamente.');
+  try {
+    await fs.promises.mkdir(extensionsRoot, { recursive:true });
+    await unpackCrx(packageBytes, extensionId, extensionPath);
+    const result = await installExtension(extensionPath, { expectedId:extensionId, source:'chrome-web-store' });
+    if (result.cancelled) { await fs.promises.rm(extensionPath, { recursive:true, force:true }); return snapshot().extensions; }
+    return result;
+  } catch (error) {
+    if (!store.extensions.some(extension => extension.id === extensionId)) await fs.promises.rm(extensionPath, { recursive:true, force:true }).catch(() => {});
+    throw error;
+  }
 }
 async function loadStoredExtensions() {
   const ses = session.fromPartition('persist:cypher');
@@ -436,7 +531,10 @@ function attachView(tab) {
     template.push({ label: 'Voltar', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Avançar', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Recarregar', click: () => wc.reload() }, { type: 'separator' }, { label: 'Salvar página…', click: () => savePage(tab) }, { label: 'Imprimir…', click: () => wc.print({}) }, { label: 'Inspecionar elemento', click: () => wc.inspectElement(params.x, params.y) });
     Menu.buildFromTemplate(template).popup({ window: win });
   });
-  wc.once('destroyed', () => { if (!win.isDestroyed()) win.contentView.removeChildView(view); removeTab(tab); });
+  wc.once('destroyed', () => {
+    if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+    if (tab.view === view) removeTab(tab);
+  });
   return view;
 }
 function navigate(tab, input) {
@@ -453,6 +551,28 @@ function navigate(tab, input) {
     tab.error = `Não foi possível iniciar a conexão ${tab.connectionMode}: ${error.message}`; tab.loading = false; layout(); emit();
   });
   layout(); emit();
+}
+function applyConnectionMode(mode) {
+  store.settings.connectionMode = mode;
+  for (const tab of [...tabs]) {
+    const address = tab.url;
+    tab.connectionMode = mode;
+    tab.error = null;
+    if (tab.view && !tab.view.webContents.isDestroyed()) {
+      const previousView = tab.view;
+      if (win && !win.isDestroyed()) win.contentView.removeChildView(previousView);
+      tab.view = null;
+      previousView.webContents.destroy();
+    }
+    if (/^https?:\/\//i.test(address)) {
+      tab.loading = true;
+      attachView(tab);
+      navigate(tab, address);
+    } else {
+      tab.loading = false;
+    }
+  }
+  persist(); layout(); emit();
 }
 async function savePage(tab) {
   if (!tab?.view) return;
@@ -512,6 +632,7 @@ async function command(action, payload) {
       if (result.canceled || !result.filePaths[0]) break;
       return installExtension(result.filePaths[0]);
     }
+    case 'extension:install-webstore': return installChromeStoreExtension(payload);
     case 'extension:toggle': {
       const extension = store.extensions.find(entry => entry.id === payload?.id);
       if (!extension || typeof payload?.enabled !== 'boolean') break;
@@ -533,7 +654,12 @@ async function command(action, payload) {
       if (result.response !== 1) break;
       const ses = session.fromPartition('persist:cypher');
       if (ses.extensions.getExtension(extension.id)) ses.extensions.removeExtension(extension.id);
-      store.extensions = store.extensions.filter(entry => entry.id !== extension.id); persist(); emit(); break;
+      store.extensions = store.extensions.filter(entry => entry.id !== extension.id);
+      if (extension.source === 'chrome-web-store') {
+        const root = path.resolve(app.getPath('userData'), 'extensions'), target = path.resolve(extension.path);
+        if (target.startsWith(root + path.sep)) await fs.promises.rm(target, { recursive:true, force:true });
+      }
+      persist(); emit(); break;
     }
     case 'site-permission:remove': {
       store.sitePermissions = store.sitePermissions.filter(entry => entry.id !== payload);
@@ -593,16 +719,18 @@ async function command(action, payload) {
       const mode = payload === 'tor' || payload === 'i2p' ? payload : 'normal';
       if (mode === 'normal') return { mode, available: true, port: null };
       const port = connectionPort(mode);
-      return { mode, available: await checkLocalPort(port), port };
+      return { mode, available: mode === 'tor' ? await checkTorProxy(port) : await checkLocalPort(port), port };
     }
     case 'connection:select': {
       const mode = ['normal','tor','i2p'].includes(payload) ? payload : 'normal';
-      store.settings.connectionMode = mode;
-      if (tab) {
-        if (tab.connectionMode !== mode && /^https?:\/\//.test(tab.url)) addTab(tab.url, tab.private, mode);
-        else tab.connectionMode = mode;
+      if (mode !== 'normal') {
+        const port = connectionPort(mode);
+        const available = mode === 'tor' ? await checkTorProxy(port) : await checkLocalPort(port);
+        if (!available) throw new Error(mode === 'tor'
+          ? `O serviço Tor não respondeu ao handshake SOCKS5 na porta ${port}. O Cypher mantém a rota atual para não expor seu endereço.`
+          : `O proxy I2P não está respondendo na porta ${port}. O Cypher mantém a rota atual para evitar uma conexão fora do túnel.`);
       }
-      persist(); emit(); break;
+      applyConnectionMode(mode); break;
     }
     case 'vpn:list': return listWindowsVpnProfiles();
     case 'vpn:connect':
@@ -631,6 +759,22 @@ async function command(action, payload) {
       const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }[extension];
       if (!mime) throw new Error('Formato de imagem não suportado.');
       return `data:${mime};base64,${fs.readFileSync(imagePath).toString('base64')}`;
+    }
+    case 'appearance:wallpaper:select': {
+      const result = await dialog.showOpenDialog(win, { title: 'Escolher papel de parede', properties: ['openFile'], filters: [{ name: 'Imagem segura', extensions: ['png','jpg','jpeg','webp'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const file = result.filePaths[0], extension = path.extname(file).toLowerCase(), stat = fs.statSync(file);
+      if (stat.size > 3 * 1024 * 1024) throw new Error('O papel de parede deve ter até 3 MB.');
+      const mime = ({ '.png':'png', '.jpg':'jpeg', '.jpeg':'jpeg', '.webp':'webp' })[extension];
+      return { dataUrl: `data:image/${mime};base64,${fs.readFileSync(file).toString('base64')}` };
+    }
+    case 'appearance:music:select': {
+      const result = await dialog.showOpenDialog(win, { title: 'Escolher música de fundo', properties: ['openFile'], filters: [{ name: 'Áudio', extensions: ['mp3','wav','ogg','webm'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const file = result.filePaths[0], extension = path.extname(file).toLowerCase(), stat = fs.statSync(file);
+      if (stat.size > 10 * 1024 * 1024) throw new Error('A faixa deve ter até 10 MB.');
+      const mime = ({ '.mp3':'mpeg', '.wav':'wav', '.ogg':'ogg', '.webm':'webm' })[extension];
+      return { dataUrl: `data:audio/${mime};base64,${fs.readFileSync(file).toString('base64')}`, name: path.basename(file).slice(0,120) };
     }
     case 'profile:photo:select': {
       const result = await dialog.showOpenDialog(win, { title: 'Escolher foto do perfil', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png','jpg','jpeg','webp'] }] });
@@ -723,11 +867,11 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;
-      if (fs.statSync(result.filePaths[0]).size > 100000) throw new Error('O mod deve ter até 100 KB.');
+      if (fs.statSync(result.filePaths[0]).size > 20 * 1024 * 1024) throw new Error('O mod deve ter até 20 MB.');
       const mod = validateMod(JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'))); store.mods.push(mod); persist(); emit(); break;
     }
     case 'mod:export': {
@@ -787,7 +931,7 @@ app.whenReady().then(async () => {
     catch (error) { console.error('Não foi possível aplicar a inicialização com o Windows:', error.message); }
   }
   win = new BrowserWindow({ width: 1440, height: 940, minWidth: 960, minHeight: 650, frame: false, backgroundColor: '#090c0b', show: false, icon: path.join(__dirname,'../build/icon.png'),
-    webPreferences: { preload: path.join(__dirname,'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true } });
+    webPreferences: { preload: path.join(__dirname,'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   const devURL = process.env.CYPHER_DEV_URL;
   const trustedURL = devURL || require('node:url').pathToFileURL(path.join(__dirname,'../dist/index.html')).href;
   ipcMain.handle('cypher:command', (event, action, payload) => {
@@ -813,19 +957,17 @@ app.whenReady().then(async () => {
     for (const tab of [...tabs]) if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.close();
   });
   installMenu();
-  let homeFirstId = '';
+  const homeFirstId = addTab('cypher://newtab', false, store.settings.connectionMode);
   const startupMode = store.settings.startupMode;
-  if (startupMode === 'restore' && store.settings.showHomeFirst) homeFirstId = addTab('cypher://newtab', false, 'normal');
   if (startupMode === 'restore') {
     for (const savedTab of store.savedTabs.slice(0,50)) {
-      try { const id = addTab(savedTab.url, false, 'normal'); tabs.find(t => t.id === id).pinned = !!savedTab.pinned; } catch {}
+      try { const id = addTab(savedTab.url, false, store.settings.connectionMode); tabs.find(t => t.id === id).pinned = !!savedTab.pinned; } catch {}
     }
   } else if (startupMode === 'specific') {
-    for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, 'normal'); } catch {} }
+    for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
   }
-  if (!tabs.length) addTab();
+  for (const url of pendingExternalUrls.splice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
   if (homeFirstId) selectTab(homeFirstId);
-  for (const url of pendingExternalUrls.splice(0,10)) { try { addTab(url, false, 'normal'); } catch {} }
   if (devURL) await win.loadURL(devURL); else await win.loadFile(path.join(__dirname,'../dist/index.html'));
   win.show();
   updater.acknowledgeStartup();

@@ -1,7 +1,7 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
@@ -22,7 +22,8 @@
     "lucide-react": "^0.468.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "unzipper": "^0.12.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
@@ -52,6 +53,14 @@
       "target": ["portable"],
       "icon": "build/icon.ico",
       "artifactName": "Cypher-${version}-Windows.${ext}"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
     }
   }
 }

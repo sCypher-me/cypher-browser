@@ -90,7 +90,7 @@ namespace Cypher.Setup
 
         public static Label Label(string text, float size, Color color, FontStyle style)
         {
-            return new Label { Text = text, AutoSize = false, ForeColor = color, BackColor = Color.Transparent, Font = new Font("Segoe UI", size, style, GraphicsUnit.Point), UseCompatibleTextRendering = true };
+            return new Label { Text = text, AutoSize = false, ForeColor = color, BackColor = Color.Transparent, Font = new Font("Segoe UI", size, style, GraphicsUnit.Point), UseCompatibleTextRendering = false, UseMnemonic = false };
         }
 
         public static void DrawSidebar(Graphics g, int height)
@@ -479,7 +479,7 @@ namespace Cypher.Setup
         public SetupWindow(SetupOptions setupOptions)
         {
             options = setupOptions;
-            Text = "Cypher Setup"; ClientSize = new Size(920, 590); MinimumSize = Size; MaximumSize = Size; FormBorderStyle = FormBorderStyle.None;
+            Text = "Cypher Setup"; AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96f, 96f); ClientSize = new Size(920, 590); MinimumSize = Size; MaximumSize = Size; FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen; BackColor = CypherStyle.Background; DoubleBuffered = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             stage = new Panel { Bounds = new Rectangle(0, 0, 286, 590) };
@@ -514,7 +514,7 @@ namespace Cypher.Setup
 
         private static CheckBox MakeCheck(string text, bool check)
         {
-            return new CheckBox { Text = text, Checked = check, AutoSize = true, BackColor = Color.Transparent, ForeColor = CypherStyle.Text, Font = new Font("Segoe UI", 9f), FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand };
+            return new CheckBox { Text = text, Checked = check, AutoSize = false, Size = new Size(550, 32), BackColor = Color.Transparent, ForeColor = CypherStyle.Text, Font = new Font("Segoe UI", 9.5f), FlatStyle = FlatStyle.Standard, UseCompatibleTextRendering = false, CheckAlign = ContentAlignment.MiddleLeft, TextAlign = ContentAlignment.MiddleLeft, Cursor = Cursors.Hand, TabStop = true, Padding = new Padding(1, 0, 0, 0) };
         }
 
         private void DragWindow(object sender, MouseEventArgs e)
@@ -677,7 +677,7 @@ namespace Cypher.Setup
         private readonly CheckBox removeData;
         public UninstallerWindow()
         {
-            Text = "Remover Cypher"; ClientSize = new Size(560, 340); MinimumSize = Size; MaximumSize = Size; FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.CenterScreen; BackColor = CypherStyle.Background; DoubleBuffered = true;
+            Text = "Remover Cypher"; AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96f, 96f); ClientSize = new Size(560, 340); MinimumSize = Size; MaximumSize = Size; FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.CenterScreen; BackColor = CypherStyle.Background; DoubleBuffered = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             var header = new Panel { Bounds = new Rectangle(0, 0, 560, 52), BackColor = Color.FromArgb(13, 19, 15) }; Controls.Add(header);
             header.Paint += delegate(object sender, PaintEventArgs e) { CypherStyle.DrawMark(e.Graphics, new Rectangle(18, 11, 30, 30), CypherStyle.Accent); };
@@ -685,7 +685,7 @@ namespace Cypher.Setup
             var close = CypherStyle.Label("×", 18, CypherStyle.Muted, FontStyle.Regular); close.Location = new Point(523, 9); close.Size = new Size(27, 30); close.TextAlign = ContentAlignment.MiddleCenter; close.Cursor = Cursors.Hand; close.Click += delegate { Close(); }; header.Controls.Add(close);
             var heading = CypherStyle.Label("Deseja remover o Cypher?", 20, CypherStyle.Text, FontStyle.Bold); heading.Location = new Point(30, 83); heading.Size = new Size(500, 39); Controls.Add(heading);
             var copy = CypherStyle.Label("O navegador e os atalhos serão removidos deste dispositivo.\nSeu perfil pessoal será preservado.", 9.4f, CypherStyle.Muted, FontStyle.Regular); copy.Location = new Point(32, 131); copy.Size = new Size(495, 48); Controls.Add(copy);
-            removeData = new CheckBox { Text = "Também apagar favoritos, histórico e configurações locais", AutoSize = true, Location = new Point(32, 207), ForeColor = CypherStyle.Text, BackColor = Color.Transparent, Font = new Font("Segoe UI", 8.8f), FlatStyle = FlatStyle.Flat };
+            removeData = new CheckBox { Text = "Também apagar favoritos, histórico e configurações locais", AutoSize = false, Size = new Size(490, 34), Location = new Point(32, 207), ForeColor = CypherStyle.Text, BackColor = Color.Transparent, Font = new Font("Segoe UI", 9.2f), FlatStyle = FlatStyle.Standard, UseCompatibleTextRendering = false, CheckAlign = ContentAlignment.MiddleLeft, TextAlign = ContentAlignment.MiddleLeft, Cursor = Cursors.Hand, TabStop = true };
             Controls.Add(removeData);
             var note = CypherStyle.Label("Essa opção não pode ser desfeita.", 8f, Color.FromArgb(220, 174, 116), FontStyle.Regular); note.Location = new Point(52, 232); note.Size = new Size(420, 19); Controls.Add(note);
             var cancel = new AccentButton { Text = "CANCELAR", Bounds = new Rectangle(305, 274, 105, 40) }; cancel.Click += delegate { Close(); }; Controls.Add(cancel);
