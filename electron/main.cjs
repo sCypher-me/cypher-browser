@@ -13,6 +13,19 @@ const execFileAsync = promisify(execFile);
 app.setName('Cypher');
 nativeTheme.themeSource = 'dark';
 let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false;
+let hardwareAccelerationAtLaunch = true;
+try {
+  const bootstrap = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'cypher.json'), 'utf8'));
+  if (bootstrap.settings?.hardwareAcceleration === false) { app.disableHardwareAcceleration(); hardwareAccelerationAtLaunch = false; }
+} catch {}
+const pendingExternalUrls = process.argv.filter(value => /^https?:\/\//i.test(value)).slice(0,10);
+const hasInstanceLock = app.requestSingleInstanceLock();
+if (!hasInstanceLock) app.quit();
+else app.on('second-instance', (_event, commandLine) => {
+  const urls = commandLine.filter(value => /^https?:\/\//i.test(value)).slice(0,10);
+  if (win && !win.isDestroyed()) { win.show(); win.focus(); for (const url of urls) { try { addTab(url, false, 'normal'); } catch {} } }
+  else pendingExternalUrls.push(...urls);
+});
 let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
 const tabs = [], closedTabs = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 const proxyReady = new WeakMap();
@@ -77,7 +90,7 @@ function flush() {
   if (!storePath) return;
   try {
     fs.mkdirSync(path.dirname(storePath), { recursive: true });
-    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: store.settings.restoreSession ? tabs.filter(t => !t.private && t.connectionMode === 'normal').map(t => ({ url: t.url, pinned: t.pinned })) : [], downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
+    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal').map(t => ({ url: t.url, pinned: t.pinned })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
 }
@@ -85,6 +98,7 @@ function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, error }) => ({ id, name, version, enabled, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], maximized: win?.isMaximized() || false,
+    hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData };
 }
@@ -233,10 +247,40 @@ function setupSession(ses) {
   if (configuredSessions.has(ses)) return;
   configuredSessions.add(ses);
   const grants = new Set();
+  try {
+    ses.setSpellCheckerEnabled(store.settings.spellCheckEnabled);
+    ses.setSpellCheckerLanguages(store.settings.spellCheckLanguages.length ? store.settings.spellCheckLanguages : [store.settings.preferredLanguages[0] || 'pt-BR']);
+  } catch (error) { console.warn('Não foi possível configurar a verificação ortográfica:', error.message); }
+  const advertisingHosts = new Set(['doubleclick.net','googlesyndication.com','googleadservices.com','adservice.google.com','adroll.com','taboola.com','outbrain.com']);
+  const trackingHosts = new Set(['google-analytics.com','googletagmanager.com','clarity.ms','hotjar.com','segment.io','scorecardresearch.com','facebook.net','analytics.twitter.com']);
+  const isThirdParty = details => {
+    try {
+      const initiator = details.initiatorOrigin || details.initiator;
+      if (!initiator || initiator === 'null') return false;
+      return new URL(initiator).hostname.toLowerCase() !== new URL(details.url).hostname.toLowerCase();
+    } catch { return false; }
+  };
+  const matchesHost = (hostname, hostSet) => [...hostSet].some(host => hostname === host || hostname.endsWith(`.${host}`));
+  ses.webRequest.onBeforeRequest({ urls: ['http://*/*','https://*/*'] }, (details, callback) => {
+    let blocked = false;
+    try {
+      const hostname = new URL(details.url).hostname.toLowerCase();
+      blocked = (store.settings.blockAds && matchesHost(hostname, advertisingHosts)) || (store.settings.blockTrackers && matchesHost(hostname, trackingHosts));
+    } catch {}
+    callback(blocked ? { cancel: true } : {});
+  });
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
     if (store.settings.sendDoNotTrack) requestHeaders.DNT = '1';
+    if (store.settings.preferredLanguages.length) requestHeaders['Accept-Language'] = store.settings.preferredLanguages.map((language, index) => `${language}${index ? `;q=${Math.max(0.1,1-index*0.1).toFixed(1)}` : ''}`).join(',');
+    if (store.settings.blockThirdPartyCookies && isThirdParty(details)) for (const key of Object.keys(requestHeaders)) if (key.toLowerCase() === 'cookie') delete requestHeaders[key];
     callback({ requestHeaders });
+  });
+  ses.webRequest.onHeadersReceived((details, callback) => {
+    if (!details.responseHeaders) return callback({});
+    const responseHeaders = { ...(details.responseHeaders || {}) };
+    if (store.settings.blockThirdPartyCookies && isThirdParty(details)) for (const key of Object.keys(responseHeaders)) if (['set-cookie','set-cookie2'].includes(key.toLowerCase())) delete responseHeaders[key];
+    callback({ responseHeaders });
   });
   ses.setPermissionCheckHandler((wc, permission, origin) => {
     const tab = tabs.find(entry => entry.view?.webContents === wc);
@@ -340,7 +384,7 @@ function attachView(tab) {
   win.contentView.addChildView(view);
   const wc = view.webContents;
   wc.setZoomFactor(store.settings.defaultZoom);
-  wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? 'default' : 'disable_non_proxied_udp');
+  wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? store.settings.webrtcPolicy : 'disable_non_proxied_udp');
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) {
       if (store.settings.openLinksInNewTab) addTab(url, tab.private, tab.connectionMode);
@@ -385,6 +429,7 @@ function attachView(tab) {
   });
   wc.on('context-menu', (_event, params) => {
     const template = [];
+    if (store.settings.translationEnabled && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
     if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, { label: 'Copiar endereço do link', click: () => clipboard.writeText(params.linkURL) }, { type: 'separator' });
     if (params.isEditable) template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' });
     else if (params.selectionText) template.push({ role: 'copy' }, { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
@@ -433,6 +478,15 @@ function setSettings(payload) {
     try {
       app.setLoginItemSettings({ openAtLogin: store.settings.startWithWindows, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] });
     } catch (error) { console.error('Não foi possível atualizar a inicialização com o Windows:', error.message); }
+  }
+  for (const ses of configuredSessions) {
+    try {
+      ses.setSpellCheckerEnabled(store.settings.spellCheckEnabled);
+      ses.setSpellCheckerLanguages(store.settings.spellCheckLanguages.length ? store.settings.spellCheckLanguages : [store.settings.preferredLanguages[0] || 'pt-BR']);
+    } catch (error) { console.warn('Não foi possível atualizar a verificação ortográfica:', error.message); }
+  }
+  for (const tab of tabs) if (tab.connectionMode === 'normal') {
+    try { tab.view?.webContents.setWebRTCIPHandlingPolicy(store.settings.webrtcPolicy); } catch {}
   }
   const focusWidgets = store.settings.home.widgets.filter(widget => widget.type === 'focus');
   const validIds = new Set(focusWidgets.map(widget => widget.id));
@@ -503,6 +557,34 @@ async function command(action, payload) {
       viewport = payload; obscured = !!payload.obscured; layout(); break;
     }
     case 'settings': setSettings(payload); break;
+    case 'system:default-browser': {
+      if (process.platform !== 'win32') throw new Error('A seleção do navegador padrão é feita nas configurações do sistema operacional.');
+      await shell.openExternal('ms-settings:defaultapps');
+      return { opened: true };
+    }
+    case 'system:proxy': {
+      if (process.platform !== 'win32') throw new Error('As configurações de proxy são controladas pelo sistema operacional.');
+      await shell.openExternal('ms-settings:network-proxy');
+      return { opened: true };
+    }
+    case 'system:dns-settings': {
+      if (process.platform !== 'win32') throw new Error('As configurações de DNS seguro são controladas pelo sistema operacional.');
+      await shell.openExternal('ms-settings:network');
+      return { opened: true };
+    }
+    case 'system:restart': {
+      if (store.settings.hardwareAcceleration === hardwareAccelerationAtLaunch) return { restarted: false };
+      app.relaunch();
+      quitting = true; closing = true; flush(); app.exit(0);
+      return { restarted: true };
+    }
+    case 'page:translate': {
+      if (!store.settings.translationEnabled) throw new Error('Ative a tradução nas configurações de Idiomas e entrada.');
+      if (!tab || !/^https?:\/\//.test(tab.url)) throw new Error('Abra primeiro uma página HTTP ou HTTPS para traduzir.');
+      const targetLanguage = store.settings.preferredLanguages[0] || 'pt-BR';
+      const url = `https://translate.google.com/translate?sl=auto&tl=${encodeURIComponent(targetLanguage)}&u=${encodeURIComponent(tab.url)}`;
+      return addTab(url, tab.private, tab.connectionMode);
+    }
     case 'update:check': return updater.check();
     case 'update:install': return updater.downloadAndInstall();
     case 'update:dismiss': return updater.dismiss();
@@ -641,7 +723,7 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;
@@ -696,6 +778,7 @@ function installMenu() {
   ]));
 }
 app.whenReady().then(async () => {
+  if (!hasInstanceLock) return;
   loadStore();
   await loadStoredExtensions();
   updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });
@@ -730,10 +813,19 @@ app.whenReady().then(async () => {
     for (const tab of [...tabs]) if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.close();
   });
   installMenu();
-  for (const savedTab of (store.settings.restoreSession ? store.savedTabs : []).slice(0,50)) {
-    try { const id = addTab(savedTab.url, false, 'normal'); tabs.find(t => t.id === id).pinned = !!savedTab.pinned; } catch {}
+  let homeFirstId = '';
+  const startupMode = store.settings.startupMode;
+  if (startupMode === 'restore' && store.settings.showHomeFirst) homeFirstId = addTab('cypher://newtab', false, 'normal');
+  if (startupMode === 'restore') {
+    for (const savedTab of store.savedTabs.slice(0,50)) {
+      try { const id = addTab(savedTab.url, false, 'normal'); tabs.find(t => t.id === id).pinned = !!savedTab.pinned; } catch {}
+    }
+  } else if (startupMode === 'specific') {
+    for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, 'normal'); } catch {} }
   }
   if (!tabs.length) addTab();
+  if (homeFirstId) selectTab(homeFirstId);
+  for (const url of pendingExternalUrls.splice(0,10)) { try { addTab(url, false, 'normal'); } catch {} }
   if (devURL) await win.loadURL(devURL); else await win.loadFile(path.join(__dirname,'../dist/index.html'));
   win.show();
   updater.acknowledgeStartup();

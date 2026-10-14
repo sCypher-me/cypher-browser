@@ -157,6 +157,20 @@
 .sc-channel-badge>i { width:6px;height:6px;border-radius:50%;background:#778174; }
 .sc-channel-badge.is-active { border-color:color-mix(in srgb,var(--accent) 22%,transparent);color:#c4d4bc;background:color-mix(in srgb,var(--accent) 4%,transparent); }
 .sc-channel-badge.is-active>i { background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 50%,transparent); }
+.sc-button:disabled { opacity:.42;cursor:not-allowed; }
+.sc-language-add { align-items:center;margin:12px 0 4px;padding:0; }
+.sc-inline-actions { display:flex;align-items:center;gap:6px; }
+.sc-startup-pages { display:grid;gap:8px;padding:14px 2px 3px; }
+.sc-startup-pages>label,.sc-startup-pages .sc-action-row>span { color:#899587;font-size:8px;line-height:1.5; }
+.sc-textarea { width:100%;height:116px;resize:vertical;padding:10px;line-height:1.6;font-family:inherit; }
+.sc-radio-list { display:grid;gap:0;padding:14px 2px 4px; }
+.sc-radio-list>strong { padding:0 0 7px;color:#cbd7c5;font-size:9px;font-weight:500; }
+.sc-radio-option { display:flex;align-items:flex-start;gap:10px;padding:11px 2px;border-bottom:1px solid var(--sc-line);cursor:pointer; }
+.sc-radio-option:last-child { border-bottom:0; }
+.sc-radio-option input { flex:none;margin:2px 0 0;accent-color:var(--accent); }
+.sc-radio-option>span { display:grid;gap:4px; }
+.sc-radio-option strong { color:#cbd7c5;font-size:9px;font-weight:500; }
+.sc-radio-option small { color:#899587;font-size:8px;line-height:1.45; }
 
 @media(max-width:1120px) {
   .sc-layout { grid-template-columns:1fr;gap:15px; }

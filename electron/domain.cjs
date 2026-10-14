@@ -5,7 +5,11 @@ const defaults = {
   background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital',
   motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
-  restoreSession: true, openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
+  restoreSession: true, startupMode: 'restore', startupPages: [], showHomeFirst: false,
+  openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
+  blockAds: false, blockTrackers: false, blockThirdPartyCookies: false,
+  preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true,
+  hardwareAcceleration: true, webrtcPolicy: 'default',
   showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true,
   clearDataOnExit: false, clearHistoryOnExit: false, confirmCloseWithMultipleTabs: false,
   defaultZoom: 1, downloadDirectory: '', startWithWindows: false,
@@ -40,10 +44,24 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], font: ['system','mono'], wallpaper: ['orbital','grid','none'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'] })) {
+  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], font: ['system','mono'], wallpaper: ['orbital','grid','none'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['motion','compact','restoreSession','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  if (input.startupMode === 'home' || input.startupMode === 'restore' || input.startupMode === 'specific') {
+    output.startupMode = input.startupMode;
+    output.restoreSession = input.startupMode === 'restore';
+  } else if (typeof input.restoreSession === 'boolean') {
+    output.startupMode = input.restoreSession ? 'restore' : 'home';
+  } else output.restoreSession = output.startupMode === 'restore';
+  if (Array.isArray(input.startupPages)) output.startupPages = input.startupPages.slice(0,10).flatMap(value => {
+    if (typeof value !== 'string' || value.length > 2048) return [];
+    try { const url = new URL(value.trim()); return ['http:','https:'].includes(url.protocol) ? [url.href] : []; } catch { return []; }
+  });
+  const languageCodes = new Set(['pt-BR','pt','en-US','en','es','fr','de','it','ja','ko','zh-CN']);
+  for (const key of ['preferredLanguages','spellCheckLanguages']) if (Array.isArray(input[key])) {
+    output[key] = [...new Set(input[key].filter(code => typeof code === 'string' && languageCodes.has(code)))].slice(0,8);
+  }
   if (Number.isFinite(input.radius)) output.radius = Math.max(0, Math.min(24, input.radius));
   if (Number.isFinite(input.sidebarWidth)) output.sidebarWidth = Math.max(210, Math.min(360, input.sidebarWidth));
   if (Number.isFinite(input.defaultZoom)) output.defaultZoom = Math.max(0.75, Math.min(1.5, input.defaultZoom));
@@ -62,12 +80,24 @@ function validateMod(input) {
   settings.torSocksPort = defaults.torSocksPort;
   settings.i2pHttpPort = defaults.i2pHttpPort;
   settings.restoreSession = defaults.restoreSession;
+  settings.startupMode = defaults.startupMode;
+  settings.startupPages = defaults.startupPages;
+  settings.showHomeFirst = defaults.showHomeFirst;
   settings.openLinksInNewTab = defaults.openLinksInNewTab;
   settings.showSearchSuggestions = defaults.showSearchSuggestions;
   settings.showBookmarksBar = defaults.showBookmarksBar;
   settings.suggestBookmarks = defaults.suggestBookmarks;
   settings.suggestHistory = defaults.suggestHistory;
   settings.sendDoNotTrack = defaults.sendDoNotTrack;
+  settings.blockAds = defaults.blockAds;
+  settings.blockTrackers = defaults.blockTrackers;
+  settings.blockThirdPartyCookies = defaults.blockThirdPartyCookies;
+  settings.preferredLanguages = defaults.preferredLanguages;
+  settings.spellCheckEnabled = defaults.spellCheckEnabled;
+  settings.spellCheckLanguages = defaults.spellCheckLanguages;
+  settings.translationEnabled = defaults.translationEnabled;
+  settings.hardwareAcceleration = defaults.hardwareAcceleration;
+  settings.webrtcPolicy = defaults.webrtcPolicy;
   settings.clearDataOnExit = defaults.clearDataOnExit;
   settings.clearHistoryOnExit = defaults.clearHistoryOnExit;
   settings.confirmCloseWithMultipleTabs = defaults.confirmCloseWithMultipleTabs;

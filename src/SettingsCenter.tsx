@@ -9,10 +9,11 @@ import type { Settings, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
 import WindowsVpnSettings from './WindowsVpnSettings';
 
-type Category = 'appearance' | 'tabs' | 'home' | 'search' | 'privacy' | 'connections' | 'downloads' | 'accessibility' | 'system' | 'updates' | 'shortcuts' | 'mods' | 'profile';
+type Category = 'appearance' | 'tabs' | 'home' | 'search' | 'languages' | 'privacy' | 'connections' | 'downloads' | 'accessibility' | 'startup' | 'system' | 'updates' | 'shortcuts' | 'mods' | 'profile';
 type Props = {
   settings: Settings;
   update: UpdateStatus;
+  hardwareAccelerationPending: boolean;
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
   navigate: (page: string) => void;
@@ -23,11 +24,13 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
   { id: 'tabs', label: 'Abas e navegação', group: 'PERSONALIZAÇÃO', icon: LayoutPanelLeft },
   { id: 'home', label: 'Página inicial', group: 'PERSONALIZAÇÃO', icon: House },
   { id: 'search', label: 'Pesquisa', group: 'NAVEGAÇÃO', icon: Search },
+  { id: 'languages', label: 'Idiomas e entrada', group: 'NAVEGAÇÃO', icon: Globe2 },
   { id: 'connections', label: 'Conexões e VPN', group: 'NAVEGAÇÃO', icon: Globe2 },
   { id: 'downloads', label: 'Downloads', group: 'NAVEGAÇÃO', icon: Download },
   { id: 'privacy', label: 'Privacidade e segurança', group: 'PROTEÇÃO', icon: ShieldCheck },
   { id: 'accessibility', label: 'Acessibilidade', group: 'PROTEÇÃO', icon: Accessibility },
   { id: 'system', label: 'Sistema', group: 'SISTEMA', icon: MonitorCog },
+  { id: 'startup', label: 'Ao iniciar', group: 'SISTEMA', icon: PanelTop },
   { id: 'updates', label: 'Atualização', group: 'SISTEMA', icon: RefreshCw },
   { id: 'shortcuts', label: 'Atalhos', group: 'SISTEMA', icon: Keyboard },
   { id: 'mods', label: 'Mods', group: 'SISTEMA', icon: Puzzle },
@@ -41,7 +44,6 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'appearance-motion', title: 'Animações', detail: 'Movimento e transições da interface', category: 'appearance' },
   { id: 'tabs-position', title: 'Posição das abas', detail: 'Abas laterais ou verticais no topo', category: 'tabs' },
   { id: 'tabs-width', title: 'Largura das abas', detail: 'Barra lateral compacta ou largura personalizada', category: 'tabs' },
-  { id: 'tabs-behavior', title: 'Comportamento das abas', detail: 'Restaurar sessão, abrir links e confirmar o fechamento', category: 'tabs' },
   { id: 'tabs-bookmark-bar', title: 'Barra de favoritos', detail: 'Exibir atalhos para seus sites favoritos sob a barra de endereço', category: 'tabs' },
   { id: 'home-editor', title: 'Widgets da página inicial', detail: 'Editar, mover, redimensionar e personalizar widgets', category: 'home' },
   { id: 'search-engine', title: 'Mecanismo de pesquisa', detail: 'DuckDuckGo, Google, Bing ou um mecanismo personalizado', category: 'search' },
@@ -54,8 +56,18 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'privacy-data', title: 'Dados de navegação', detail: 'Limpar cookies, cache e histórico', category: 'privacy' },
   { id: 'privacy-clear-exit', title: 'Limpeza ao sair', detail: 'Apagar dados dos sites ou histórico ao fechar o Cypher', category: 'privacy' },
   { id: 'privacy-private', title: 'Navegação privada', detail: 'Abrir abas que não entram no histórico', category: 'privacy' },
+  { id: 'privacy-ad-block', title: 'Bloquear anúncios e rastreadores', detail: 'Bloquear domínios conhecidos de publicidade e análise externa', category: 'privacy' },
+  { id: 'privacy-third-party-cookies', title: 'Cookies de terceiros', detail: 'Bloquear cookies em solicitações entre domínios diferentes', category: 'privacy' },
+  { id: 'privacy-site-permissions', title: 'Permissões de sites', detail: 'Câmera, microfone, localização, notificações e área de transferência', category: 'privacy' },
+  { id: 'startup-mode', title: 'Ao iniciar', detail: 'Abrir a página inicial, restaurar a sessão ou páginas específicas', category: 'startup' },
+  { id: 'languages-preferred', title: 'Idiomas preferidos', detail: 'Ordem dos idiomas enviados aos sites', category: 'languages' },
+  { id: 'languages-spellcheck', title: 'Verificação ortográfica', detail: 'Ativar o corretor e escolher os idiomas', category: 'languages' },
+  { id: 'languages-translate', title: 'Tradução de páginas', detail: 'Abrir a página atual no Google Tradutor quando solicitado', category: 'languages' },
   { id: 'accessibility-zoom', title: 'Zoom padrão das páginas', detail: 'Aumentar ou reduzir a escala inicial dos sites', category: 'accessibility' },
   { id: 'system-startup', title: 'Iniciar com o Windows', detail: 'Abrir o Cypher ao entrar no computador', category: 'system' },
+  { id: 'system-default-browser', title: 'Navegador padrão', detail: 'Escolher o Cypher nas configurações de aplicativos padrão do Windows', category: 'system' },
+  { id: 'system-hardware', title: 'Aceleração gráfica', detail: 'Usar a GPU para renderizar páginas e a interface', category: 'system' },
+  { id: 'system-webrtc', title: 'WebRTC', detail: 'Escolher como os sites podem descobrir endereços de rede', category: 'system' },
   { id: 'updates-status', title: 'Atualização do Cypher', detail: 'Verificar versões, acompanhar o canal e instalar atualizações', category: 'updates' },
   { id: 'system-close-confirm', title: 'Confirmar fechamento de abas', detail: 'Pedir confirmação ao fechar uma janela com várias abas abertas', category: 'system' },
   { id: 'shortcuts-list', title: 'Atalhos de teclado', detail: 'Comandos e teclas rápidas do navegador', category: 'shortcuts' },
@@ -82,10 +94,19 @@ const themePresets = [
   { id: 'ember', name: 'Ember', accent: '#ff9b6a', surface: '#1b1412', background: '#100b09' },
 ];
 
-export default function SettingsCenter({ settings: s, update, onSettings, command, navigate }: Props) {
+const languageOptions = [
+  { code: 'pt-BR', label: 'português (Brasil)' }, { code: 'pt', label: 'português' },
+  { code: 'en-US', label: 'inglês (Estados Unidos)' }, { code: 'en', label: 'inglês' },
+  { code: 'es', label: 'espanhol' }, { code: 'fr', label: 'francês' }, { code: 'de', label: 'alemão' },
+  { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
+];
+
+export default function SettingsCenter({ settings: s, update, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
   const [category, setCategory] = useState<Category>('appearance');
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
+  const [startupPagesDraft, setStartupPagesDraft] = useState(s.startupPages.join('\n'));
+  const [preferredLanguageChoice, setPreferredLanguageChoice] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const groups = [...new Set(categories.map(item => item.group))];
   const matches = useMemo(() => {
@@ -96,6 +117,7 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
   const customSearchReady = customSearchDraft.includes('{query}') && (() => { try { return new URL(customSearchDraft.replace('{query}', 'cypher-query')).protocol === 'https:'; } catch { return false; } })();
   const activeCategory = categories.find(item => item.id === category)!;
   useEffect(() => setCustomSearchDraft(s.customSearchUrl), [s.customSearchUrl]);
+  useEffect(() => setStartupPagesDraft(s.startupPages.join('\n')), [s.startupPages]);
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchRef.current?.focus(); }
@@ -135,7 +157,7 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
             return <button type="button" className="sc-result" key={item.id} onClick={() => openMatch(item.id, item.category)}><span className="sc-result-icon"><Icon size={16}/></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><span className="sc-result-category">{categories.find(entry => entry.id === item.category)?.label}</span><ArrowRight size={15}/></button>;
           })}</div> : <div className="sc-no-results"><CircleHelp size={20}/><span>Tente buscar por aparência, abas, pesquisa, VPN ou acessibilidade.</span></div>}
         </> : <>
-          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'connections' ? 'Gerencie rotas, serviços locais e a VPN do Windows.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div><span className="sc-category-count">{preferenceIndex.filter(item => item.category === category).length.toString().padStart(2, '0')} AJUSTES</span></div>
+          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie rotas, serviços locais e a VPN do Windows.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div><span className="sc-category-count">{preferenceIndex.filter(item => item.category === category).length.toString().padStart(2, '0')} AJUSTES</span></div>
 
           {category === 'appearance' && <>
             <Panel id="appearance-presets" eyebrow="IDENTIDADE VISUAL" title="Temas" detail="Comece por uma combinação de cores e depois ajuste cada detalhe." icon={Sparkles}>
@@ -159,7 +181,6 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
             </div>
             <Row id="tabs-width" title="Barra de abas compacta" detail="Recolha a lateral e mantenha apenas os ícones"><Switch label="Barra de abas compacta" checked={s.compact} onChange={() => onSettings({ compact: !s.compact })}/></Row>
             {s.tabPosition === 'side' && <Row id="tabs-width-slider" title="Largura da barra lateral" detail={`${s.sidebarWidth} px`}><input className="sc-range" aria-label="Largura da barra lateral" type="range" min="210" max="360" value={s.sidebarWidth} onChange={event => onSettings({ sidebarWidth: +event.target.value })}/><span className="sc-value">{s.sidebarWidth}px</span></Row>}
-            <Row id="tabs-behavior" title="Restaurar sessão anterior" detail="Reabra as abas normais ao iniciar o Cypher"><Switch label="Restaurar sessão anterior" checked={s.restoreSession} onChange={() => onSettings({ restoreSession: !s.restoreSession })}/></Row>
             <Row id="tabs-links" title="Abrir links em nova aba" detail="Links que abrem janelas serão enviados para uma nova aba"><Switch label="Abrir links em nova aba" checked={s.openLinksInNewTab} onChange={() => onSettings({ openLinksInNewTab: !s.openLinksInNewTab })}/></Row>
             <Row id="tabs-bookmark-bar" title="Mostrar barra de favoritos" detail="Exibe os primeiros favoritos logo abaixo da barra de endereço"><Switch label="Mostrar barra de favoritos" checked={s.showBookmarksBar} onChange={() => onSettings({ showBookmarksBar: !s.showBookmarksBar })}/></Row>
           </Panel>}
@@ -180,6 +201,21 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
             <div className="sc-info-strip"><Search size={16}/><span>Enter pesquisa o texto digitado. Endereços completos abrem o site diretamente.</span></div>
           </Panel>}
 
+          {category === 'languages' && <>
+            <Panel id="languages-preferred" eyebrow="IDIOMAS PREFERIDOS" title="Idiomas dos sites" detail="A ordem da lista é enviada aos sites no cabeçalho Accept-Language. Ela não muda o idioma da interface do Cypher." icon={Globe2}>
+              <div className="sc-action-row sc-language-add"><select className="sc-select" aria-label="Adicionar idioma preferido" value={preferredLanguageChoice} onChange={event => setPreferredLanguageChoice(event.target.value)}><option value="">Adicionar idioma…</option>{languageOptions.filter(language => !s.preferredLanguages.includes(language.code)).map(language => <option key={language.code} value={language.code}>{language.label}</option>)}</select><button className="sc-button sc-button-primary" disabled={!preferredLanguageChoice} onClick={() => { if (preferredLanguageChoice) onSettings({ preferredLanguages: [...s.preferredLanguages, preferredLanguageChoice] }); setPreferredLanguageChoice(''); }}>Adicionar idioma</button></div>
+              {s.preferredLanguages.map((code, index) => <Row key={code} title={`${index + 1}. ${languageOptions.find(language => language.code === code)?.label || code}`} detail={index === 0 ? 'Idioma enviado primeiro aos sites' : 'Idioma alternativo'}><div className="sc-inline-actions"><button className="sc-button sc-button-subtle" aria-label={`Mover ${code} para cima`} disabled={index === 0} onClick={() => { const next = [...s.preferredLanguages]; [next[index - 1],next[index]] = [next[index],next[index - 1]]; onSettings({ preferredLanguages: next }); }}>↑</button><button className="sc-button sc-button-subtle" aria-label={`Remover ${code}`} disabled={s.preferredLanguages.length <= 1} onClick={() => onSettings({ preferredLanguages: s.preferredLanguages.filter(item => item !== code) })}>Remover</button></div></Row>)}
+            </Panel>
+            <Panel id="languages-spellcheck" eyebrow="VERIFICAÇÃO ORTOGRÁFICA" title="Corretor ao digitar" detail="O dicionário pode ser baixado pelo Chromium na primeira utilização; escolha os idiomas revisados." icon={Check}>
+              <Row title="Verificar ortografia em campos de texto" detail="Usa os dicionários do Chromium em formulários editáveis"><Switch label="Verificação ortográfica" checked={s.spellCheckEnabled} onChange={() => onSettings({ spellCheckEnabled: !s.spellCheckEnabled })}/></Row>
+              {languageOptions.slice(0,7).map(language => <Row key={language.code} title={language.label}><Switch label={`Verificar ortografia em ${language.label}`} checked={s.spellCheckLanguages.includes(language.code)} onChange={() => { const current = s.spellCheckLanguages; const next = current.includes(language.code) ? current.filter(code => code !== language.code) : [...current, language.code]; onSettings({ spellCheckLanguages: next }); }}/></Row>)}
+            </Panel>
+            <Panel id="languages-translate" eyebrow="TRADUÇÃO SOB DEMANDA" title="Traduzir páginas" detail="A tradução abre a página pelo Google Tradutor somente quando você escolhe essa ação." icon={Globe2}>
+              <Row title="Mostrar a opção Traduzir esta página" detail="Disponível no menu do botão direito em páginas HTTP e HTTPS"><Switch label="Habilitar tradução de páginas" checked={s.translationEnabled} onChange={() => onSettings({ translationEnabled: !s.translationEnabled })}/></Row>
+              <div className="sc-info-strip"><ShieldCheck size={16}/><span>Ao traduzir, o endereço da página é enviado ao Google Tradutor. A opção não inicia tradução automática.</span></div>
+            </Panel>
+          </>}
+
           {category === 'connections' && <>
             <div id="connection-routes"><ConnectionSettings settings={s} onSettings={onSettings}/></div>
             <div id="connection-vpn"><WindowsVpnSettings/></div>
@@ -197,14 +233,18 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
 
           {category === 'privacy' && <>
             <Panel eyebrow="PRIVACIDADE" title="Controles da sessão" detail="Ajuste o que o navegador informa e gerencie os dados guardados." icon={ShieldCheck}>
+              <Row id="privacy-ad-block" title="Bloquear anúncios conhecidos" detail="Impede solicitações a uma lista local e limitada de domínios de publicidade"><Switch label="Bloquear domínios de anúncios conhecidos" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
+              <Row title="Bloquear rastreadores conhecidos" detail="Bloqueia alguns domínios externos de análise e rastreamento; não detecta todos os rastreadores"><Switch label="Bloquear domínios de rastreamento conhecidos" checked={s.blockTrackers} onChange={() => onSettings({ blockTrackers: !s.blockTrackers })}/></Row>
+              <Row id="privacy-third-party-cookies" title="Bloquear cookies de terceiros" detail="Remove cookies enviados ou recebidos em solicitações cujo host difere do site iniciador"><Switch label="Bloquear cookies entre domínios" checked={s.blockThirdPartyCookies} onChange={() => onSettings({ blockThirdPartyCookies: !s.blockThirdPartyCookies })}/></Row>
               <Row id="privacy-do-not-track" title="Enviar sinal Não rastrear" detail="Inclui o cabeçalho DNT: 1 nas solicitações aos sites. Cada site decide se respeita o sinal."><Switch label="Enviar sinal Não rastrear" checked={s.sendDoNotTrack} onChange={() => onSettings({ sendDoNotTrack: !s.sendDoNotTrack })}/></Row>
               <Row id="privacy-data" title="Cookies e dados dos sites" detail="Limpa cookies e cache; você pode sair das contas abertas"><button className="sc-button sc-button-subtle" onClick={() => void command('data:clear')}>Limpar dados <ArrowRight size={14}/></button></Row>
               <Row id="privacy-history" title="Histórico de navegação" detail="Apague os endereços visitados e mantenha os favoritos"><button className="sc-button sc-button-subtle" onClick={() => void command('history:clear')}>Limpar histórico <Clock3 size={14}/></button></Row>
               <Row id="privacy-private" title="Nova aba privada" detail="A navegação privada não entra no histórico e usa uma sessão temporária"><button className="sc-button sc-button-subtle" onClick={() => void command('tab:new', { private: true })}>Abrir aba privada <LockKeyhole size={14}/></button></Row>
               <Row id="privacy-clear-exit" title="Limpar dados dos sites ao sair" detail="Remove cookies e cache de sessões normal, Tor e I2P ao encerrar o navegador"><Switch label="Limpar dados dos sites ao sair" checked={s.clearDataOnExit} onChange={() => onSettings({ clearDataOnExit: !s.clearDataOnExit })}/></Row>
               <Row id="privacy-history-exit" title="Limpar histórico ao sair" detail="Remove o histórico local quando o Cypher for fechado"><Switch label="Limpar histórico ao sair" checked={s.clearHistoryOnExit} onChange={() => onSettings({ clearHistoryOnExit: !s.clearHistoryOnExit })}/></Row>
+              <Row id="privacy-site-permissions" title="Permissões de sites" detail="Gerencie câmera, microfone, localização, tela cheia e notificações"><button className="sc-button sc-button-subtle" onClick={() => navigate('security')}>Abrir permissões <ChevronRight size={14}/></button></Row>
             </Panel>
-            <div className="sc-privacy-note"><ShieldCheck size={16}/><span>Permissões de câmera, microfone, localização e notificações podem ser lembradas por site. Revise ou remova essas regras em Segurança.</span></div>
+            <div className="sc-privacy-note"><ShieldCheck size={16}/><span>Sites não recebem permissão silenciosa para ler a área de transferência. O Cypher não envia relatórios de uso ou falhas e não exibe promoções.</span></div>
           </>}
 
           {category === 'accessibility' && <Panel id="accessibility-zoom" eyebrow="LEITURA E MOVIMENTO" title="Acessibilidade" detail="Defina um zoom confortável para os sites e reduza movimento na interface." icon={Accessibility}>
@@ -213,12 +253,36 @@ export default function SettingsCenter({ settings: s, update, onSettings, comman
             <div className="sc-info-strip"><Accessibility size={16}/><span>O zoom também pode ser ajustado por aba no menu do Cypher.</span></div>
           </Panel>}
 
-          {category === 'system' && <Panel id="system-startup" eyebrow="CYPHER NO COMPUTADOR" title="Sistema" detail="Controle como o aplicativo se integra ao Windows." icon={MonitorCog}>
+          {category === 'startup' && <Panel id="startup-mode" eyebrow="PÁGINAS DE INICIALIZAÇÃO" title="Ao iniciar o Cypher" detail="Escolha se o navegador abre uma página nova, restaura a sessão ou abre endereços definidos por você." icon={PanelTop}>
+            <Row title="Comportamento ao iniciar"><select className="sc-select" value={s.startupMode} onChange={event => onSettings({ startupMode: event.target.value as Settings['startupMode'] })}><option value="home">Começar pela página inicial</option><option value="restore">Restaurar a sessão anterior</option><option value="specific">Abrir páginas específicas</option></select></Row>
+            {s.startupMode === 'restore' && <Row title="Mostrar a Home primeiro" detail="Abre a página inicial antes das abas da sessão anterior"><Switch label="Mostrar a Home primeiro" checked={s.showHomeFirst} onChange={() => onSettings({ showHomeFirst: !s.showHomeFirst })}/></Row>}
+            {s.startupMode === 'specific' && <div className="sc-startup-pages"><label htmlFor="startup-pages">Um endereço HTTP ou HTTPS por linha, até 10 páginas</label><textarea id="startup-pages" className="sc-text-input sc-textarea" value={startupPagesDraft} onChange={event => setStartupPagesDraft(event.target.value)} placeholder="https://example.com\nhttps://news.example.com"/><div className="sc-action-row"><button className="sc-button sc-button-primary" onClick={() => onSettings({ startupPages: startupPagesDraft.split(/\r?\n/).map(url => url.trim()).filter(Boolean).slice(0,10) })}>Salvar páginas</button><span>Endereços inválidos são ignorados.</span></div></div>}
+            <div className="sc-info-strip"><House size={16}/><span>“Começar pela página inicial” abre a Home personalizável do Cypher. O modo de inicialização com o Windows fica em Sistema.</span></div>
+          </Panel>}
+
+          {category === 'system' && <>
+            <Panel id="system-startup" eyebrow="CYPHER NO COMPUTADOR" title="Sistema e integração" detail="Controle como o aplicativo se integra ao Windows e ao hardware." icon={MonitorCog}>
+              <Row id="system-default-browser" title="Navegador padrão" detail="O Windows solicita que você escolha o aplicativo responsável por HTTP e HTTPS"><button className="sc-button sc-button-primary" onClick={() => void command('system:default-browser')}>Escolher no Windows <ExternalLink size={14}/></button></Row>
             <Row title="Iniciar com o Windows" detail="Abre o Cypher quando você entrar no computador"><Switch label="Iniciar com o Windows" checked={s.startWithWindows} onChange={() => onSettings({ startWithWindows: !s.startWithWindows })}/></Row>
             <Row id="system-close-confirm" title="Confirmar ao fechar várias abas" detail="Evita fechar a janela sem querer quando duas ou mais abas estão abertas"><Switch label="Confirmar ao fechar várias abas" checked={s.confirmCloseWithMultipleTabs} onChange={() => onSettings({ confirmCloseWithMultipleTabs: !s.confirmCloseWithMultipleTabs })}/></Row>
-            <Row title="Restaurar sessão" detail={s.restoreSession ? 'A sessão anterior será aberta junto ao navegador.' : 'Uma nova aba será aberta a cada início.'}><button className="sc-button sc-button-subtle" onClick={() => setCategory('tabs')}>Ajustar preferência <ChevronRight size={14}/></button></Row>
+            <Row title="Opções de inicialização" detail={s.startupMode === 'restore' ? 'A sessão anterior será restaurada.' : s.startupMode === 'specific' ? `${s.startupPages.length} página(s) definida(s).` : 'O Cypher abrirá a Home.'}><button className="sc-button sc-button-subtle" onClick={() => setCategory('startup')}>Configurar <ChevronRight size={14}/></button></Row>
             <Row title="Conexões protegidas" detail="Tor, I2P e VPN nativa podem ser configurados na área de conexão"><button className="sc-button sc-button-subtle" onClick={() => setCategory('connections')}>Abrir conexões <ChevronRight size={14}/></button></Row>
-          </Panel>}
+            </Panel>
+            <Panel eyebrow="REDE DO SISTEMA" title="Proxy e DNS" detail="Estas opções abrem os controles de rede do Windows; o Cypher usa a resolução DNS do sistema." icon={Globe2}>
+              <Row title="Proxy do computador" detail="Abra as opções de proxy de rede do Windows"><button className="sc-button sc-button-subtle" onClick={() => void command('system:proxy')}>Abrir proxy <ExternalLink size={14}/></button></Row>
+              <Row title="DNS seguro (DoH)" detail="Configure DNS sobre HTTPS nas opções de rede do Windows. O Cypher não altera o DNS da máquina."><button className="sc-button sc-button-subtle" onClick={() => void command('system:dns-settings')}>Abrir rede <ExternalLink size={14}/></button></Row>
+            </Panel>
+            <Panel id="system-hardware" eyebrow="DESEMPENHO E PRIVACIDADE DE REDE" title="Aceleração gráfica e WebRTC" detail="A aceleração pode exigir reinício. A política WebRTC vale para novas conexões; Tor e I2P sempre bloqueiam UDP fora do proxy." icon={MonitorCog}>
+              <Row title="Usar aceleração gráfica" detail={hardwareAccelerationPending ? 'A alteração está pendente e será aplicada após reiniciar.' : 'Usa a GPU disponível para renderizar sites e a interface.'}><Switch label="Aceleração gráfica" checked={s.hardwareAcceleration} onChange={() => onSettings({ hardwareAcceleration: !s.hardwareAcceleration })}/></Row>
+              {hardwareAccelerationPending && <Row title="Aplicar alteração" detail="O Cypher vai fechar e abrir novamente para mudar o modo gráfico."><button className="sc-button sc-button-primary" onClick={() => void command('system:restart')}>Reiniciar agora <RefreshCw size={14}/></button></Row>}
+              <div className="sc-radio-list" id="system-webrtc"><strong>Política de endereços WebRTC</strong>{[
+                ['default','Qualquer interface de rede adequada','Pode expor endereços públicos e locais.'],
+                ['default_public_and_private_interfaces','Interfaces públicas e privadas','Expõe interfaces públicas e privadas conforme a rede.'],
+                ['default_public_interface_only','Somente interfaces públicas','Restringe endereços locais; ainda pode revelar IP público.'],
+                ['disable_non_proxied_udp','Desabilitar UDP sem proxy','Reduz vazamento de IP via UDP; pode afetar chamadas WebRTC.'],
+              ].map(([policy,label,detail]) => <label className="sc-radio-option" key={policy}><input type="radio" name="webrtc-policy" checked={s.webrtcPolicy === policy} onChange={() => onSettings({ webrtcPolicy: policy as Settings['webrtcPolicy'] })}/><span><strong>{label}</strong><small>{detail}</small></span></label>)}</div>
+            </Panel>
+          </>}
 
           {category === 'updates' && <>
             <Panel id="updates-status" eyebrow="CYPHER / UPDATE CENTER" title="Atualizações do navegador" detail="Veja sua versão, confira novidades e escolha quando instalar uma atualização." icon={RefreshCw}>

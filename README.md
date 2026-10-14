@@ -35,6 +35,11 @@ O canal está configurado para `sCypher-me/cypher-browser`. Até a primeira Rele
 - Downloads com progresso, pausa, continuação enquanto o processo está aberto, cancelamento e acesso à pasta do arquivo. Downloads em andamento não são retomados automaticamente após reiniciar.
 - Localizar na página, zoom, impressão, salvar HTML, tela cheia, ferramentas de desenvolvedor e menu de contexto.
 - Solicitação de permissões para câmera/microfone, localização, notificações, tela cheia e área de transferência. É possível permitir uma vez, lembrar a escolha por site, bloquear ou rever/remover as regras na página Segurança; abas privadas nunca persistem essas escolhas.
+- Proteções opcionais de privacidade: bloqueio local de uma lista limitada de domínios de anúncios e rastreadores, remoção de cookies em requisições entre hosts e sinal Não rastrear. Isso não equivale a um filtro completo de conteúdo.
+- Integração de navegador padrão no instalador Windows: o Cypher se registra como candidato para HTTP/HTTPS e abre a tela de aplicativos padrão; a escolha final continua sendo feita pelo usuário no Windows.
+- Inicialização configurável: Home, restauração de sessão ou até 10 páginas específicas, com opção de mostrar a Home primeiro; integração opcional com a inicialização do Windows.
+- Idiomas preferidos enviados aos sites, verificação ortográfica do Chromium e opção de tradução sob demanda pelo Google Tradutor. A tradução só compartilha o endereço com o serviço quando você aciona a opção no menu da página.
+- Aceleração gráfica configurável (aplicada após reiniciar), quatro políticas WebRTC e atalhos para configurações de proxy/rede do Windows. O DNS sobre HTTPS permanece configurado no sistema operacional.
 - Gerenciador de extensões Chromium: carregar pasta descompactada local, ativar/desativar, reinstalar após falhas e remover a referência sem apagar os arquivos originais. O Electron não aceita `.crx` nem oferece todas as APIs do Chrome; extensões não carregam nas sessões privada, Tor ou I2P.
 - Personalização de destaque, superfícies, fundo, fontes, cantos, animações e layout.
 - Home de composição livre: arraste e redimensione widgets, que se ajustam para evitar sobreposição e recuperam o tamanho preferido quando o espaço fica livre.
@@ -53,7 +58,7 @@ O formato `schemaVersion: 1` aceita nome, autor, descrição e preferências vis
 
 ## Próximas etapas
 
-O objetivo é um navegador completo, mas ainda faltam gerenciador de senhas, autofill, sincronização, importação de perfis, múltiplas janelas, marketplace de mods, sons personalizados, mods funcionais, bloqueador de anúncios e integração como navegador padrão. O suporte a extensões é parcial: o Electron não fornece equivalência total às extensões e serviços do Chrome. Conteúdo com DRM e alguns fluxos de autenticação precisam de trabalho específico e validação antes de serem prometidos.
+O objetivo é um navegador completo, mas ainda faltam gerenciador de senhas, autofill, sincronização, importação de perfis, múltiplas janelas, marketplace de mods, sons personalizados e mods funcionais. O suporte a extensões é parcial: o Electron não fornece equivalência total às extensões e serviços do Chrome. Conteúdo com DRM e alguns fluxos de autenticação precisam de trabalho específico e validação antes de serem prometidos.
 
 O perfil local fica em `%APPDATA%/Cypher/`. Nunca é enviado para um servidor do Cypher; os sites e o mecanismo de busca recebem as requisições de navegação normalmente. Uma aba privada não torna a navegação anônima para sites ou provedores de internet.
 
