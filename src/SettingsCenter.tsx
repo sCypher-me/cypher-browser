@@ -3,7 +3,7 @@ import {
   Accessibility, ArrowRight, ArrowUpRight, Check, ChevronRight, CircleHelp, Clock3,
   Download, ExternalLink, FolderOpen, Globe2, House, Keyboard, LayoutPanelLeft,
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
-  Puzzle, Search, Settings2, ShieldCheck, Sparkles, UserRound, WandSparkles,
+  Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound,
 } from 'lucide-react';
 import type { Settings, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
@@ -39,6 +39,7 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
 
 const preferenceIndex: { id: string; title: string; detail: string; category: Category }[] = [
   { id: 'appearance-presets', title: 'Temas e cores', detail: 'Tema, destaque, superfícies e fundo do navegador', category: 'appearance' },
+  { id: 'appearance-mode', title: 'Modo claro ou escuro', detail: 'Escolha uma interface clara ou escura para o navegador', category: 'appearance' },
   { id: 'appearance-shape', title: 'Cantos e tipografia', detail: 'Arredondamento, fonte e identidade visual', category: 'appearance' },
   { id: 'appearance-wallpaper', title: 'Papel de parede', detail: 'Fundo da página inicial orbital, grade ou minimal', category: 'appearance' },
   { id: 'appearance-motion', title: 'Animações', detail: 'Movimento e transições da interface', category: 'appearance' },
@@ -130,19 +131,21 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
     setQuery('');
     window.setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
   };
-  const chooseTheme = (theme: typeof themePresets[number]) => onSettings({ accent: theme.accent, surface: theme.surface, background: theme.background });
+  const chooseTheme = (theme: typeof themePresets[number]) => onSettings({ appearanceMode: 'dark', accent: theme.accent, surface: theme.surface, background: theme.background });
+  const chooseAppearanceMode = (mode: Settings['appearanceMode']) => onSettings(mode === 'light'
+    ? { appearanceMode: mode, accent: '#587b35', surface: '#ffffff', background: '#f0f3ee' }
+    : { appearanceMode: mode, accent: '#b6f36a', surface: '#111513', background: '#090c0b' });
 
   return <div className="settings-center">
     <header className="sc-header">
       <div><span className="sc-eyebrow"><Settings2 size={12}/> CYPHER / CENTRAL DE CONTROLE</span><h1>Configurações</h1><p>Ajuste o navegador ao seu ritmo, do visual à forma de navegar.</p></div>
-      <div className="sc-header-mark"><WandSparkles size={18}/><span>Seu espaço,<br/><strong>suas regras.</strong></span></div>
     </header>
 
     <label className="sc-search"><Search size={17}/><input ref={searchRef} aria-label="Buscar nas configurações" placeholder="Buscar nas configurações…" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setQuery(''); if (event.key === 'Enter' && matches[0]) { event.preventDefault(); openMatch(matches[0].id, matches[0].category); } }}/>{query ? <button type="button" onClick={() => setQuery('')} aria-label="Limpar busca">Esc</button> : <kbd>Ctrl K</kbd>}</label>
 
     <div className="sc-layout">
       <aside className="sc-nav" aria-label="Categorias de configurações">
-        {groups.map(group => <div className="sc-nav-group" key={group}><span className="sc-eyebrow">{group}</span>{categories.filter(item => item.group === group).map(item => {
+        {groups.map(group => <div className="sc-nav-group" key={group}><span className="sc-eyebrow">{group}</span>{categories.filter(item => item.group === group && item.id !== 'home').map(item => {
           const Icon = item.icon;
           return <button type="button" key={item.id} className={`sc-nav-item ${category === item.id && !query ? 'selected' : ''}`} aria-current={category === item.id && !query ? 'page' : undefined} onClick={() => { setCategory(item.id); setQuery(''); }}><Icon size={15}/><span>{item.label}</span>{category === item.id && !query && <ChevronRight size={14}/>}</button>;
         })}</div>)}
@@ -157,9 +160,15 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
             return <button type="button" className="sc-result" key={item.id} onClick={() => openMatch(item.id, item.category)}><span className="sc-result-icon"><Icon size={16}/></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><span className="sc-result-category">{categories.find(entry => entry.id === item.category)?.label}</span><ArrowRight size={15}/></button>;
           })}</div> : <div className="sc-no-results"><CircleHelp size={20}/><span>Tente buscar por aparência, abas, pesquisa, VPN ou acessibilidade.</span></div>}
         </> : <>
-          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie rotas, serviços locais e a VPN do Windows.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div><span className="sc-category-count">{preferenceIndex.filter(item => item.category === category).length.toString().padStart(2, '0')} AJUSTES</span></div>
+          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie rotas, serviços locais e a VPN do Windows.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div></div>
 
           {category === 'appearance' && <>
+            <Panel id="appearance-mode" eyebrow="MODO DE EXIBIÇÃO" title="Claro ou escuro" detail="Escolha o aspecto da interface do Cypher." icon={s.appearanceMode === 'light' ? Sun : Moon}>
+              <div className="sc-choice-grid">
+                <button type="button" className={`sc-choice-card ${s.appearanceMode === 'light' ? 'chosen' : ''}`} onClick={() => chooseAppearanceMode('light')} aria-pressed={s.appearanceMode === 'light'}><span className="sc-choice-icon"><Sun size={16}/></span><span><strong>Claro</strong><small>Superfícies claras e texto escuro.</small></span>{s.appearanceMode === 'light' && <Check size={15}/>}</button>
+                <button type="button" className={`sc-choice-card ${s.appearanceMode === 'dark' ? 'chosen' : ''}`} onClick={() => chooseAppearanceMode('dark')} aria-pressed={s.appearanceMode === 'dark'}><span className="sc-choice-icon"><Moon size={16}/></span><span><strong>Escuro</strong><small>Superfícies escuras e texto claro.</small></span>{s.appearanceMode === 'dark' && <Check size={15}/>}</button>
+              </div>
+            </Panel>
             <Panel id="appearance-presets" eyebrow="IDENTIDADE VISUAL" title="Temas" detail="Comece por uma combinação de cores e depois ajuste cada detalhe." icon={Sparkles}>
               <div className="sc-theme-grid">{themePresets.map(theme => <button type="button" key={theme.id} className={`sc-theme ${s.accent.toLowerCase() === theme.accent ? 'chosen' : ''}`} onClick={() => chooseTheme(theme)} aria-pressed={s.accent.toLowerCase() === theme.accent}>
                 <span className="sc-theme-preview" style={{ '--theme-accent': theme.accent, '--theme-surface': theme.surface, '--theme-base': theme.background } as CSSProperties}><i/><i/><i/><b/></span><span className="sc-theme-meta"><strong>{theme.name}</strong>{s.accent.toLowerCase() === theme.accent && <Check size={14}/>}</span><small><i style={{ background: theme.accent }}/><i style={{ background: theme.surface }}/><i style={{ background: theme.background }}/></small>

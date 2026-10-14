@@ -7,4 +7,5 @@ import './connection.css';
 import './navigation.css';
 import './vpn.css';
 import './settings-center.css';
+import './appearance-theme.css';
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);

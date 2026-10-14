@@ -1,0 +1,107 @@
+.app[data-appearance="light"] {
+  color-scheme: light;
+  --border: #263c2a1d;
+  --hairline: #263c2a16;
+  --muted: #667368;
+  --text: #273229;
+  --raised: color-mix(in srgb,var(--surface) 88%,#000 12%);
+  color: var(--text);
+}
+
+.app[data-appearance="light"] :is(.titlebar-caption,.alpha-tag,.rail-monogram,.rail .icon-button,.profile-avatar,.workspace-mark,.workspace-text span,.tabs-heading,.tabs-heading>span:last-child,.tab,.tab-close,.new-tab-button,.new-tab-button kbd,.sidebar-mod-card p,.icon-button,.addressbar,.addressbar kbd,.address-status,.toolbar,.internal-page,.collection-toolbar,.link-details,.download-details,.link-date,.empty-state,.muted-text,.profile-copy p,.extension-intro p,.extension-intro small,.security-status) {
+  color: var(--muted);
+}
+.app[data-appearance="light"] .titlebar { background: var(--base); border-color: var(--hairline); }
+.app[data-appearance="light"] .brand,
+.app[data-appearance="light"] .workspace-text strong,
+.app[data-appearance="light"] .tab.selected,
+.app[data-appearance="light"] .link-details strong,
+.app[data-appearance="light"] .download-details strong,
+.app[data-appearance="light"] .empty-state h2,
+.app[data-appearance="light"] .profile-copy h2,
+.app[data-appearance="light"] .settings-card h2 { color: var(--text); }
+.app[data-appearance="light"] .rail,
+.app[data-appearance="light"] .tab-sidebar,
+.app[data-appearance="light"] .viewport,
+.app[data-appearance="light"] .internal-page,
+.app[data-appearance="light"] .home-page,
+.app[data-appearance="light"] .home-workspace { background-color: var(--base); }
+.app[data-appearance="light"] .tab-sidebar,
+.app[data-appearance="light"] .rail,
+.app[data-appearance="light"] .viewport,
+.app[data-appearance="light"] .settings-card,
+.app[data-appearance="light"] .link-list,
+.app[data-appearance="light"] .profile-card,
+.app[data-appearance="light"] .extension-card,
+.app[data-appearance="light"] .site-permission-list { border-color: var(--border); }
+.app[data-appearance="light"] .workspace-mark,
+.app[data-appearance="light"] .sidebar-mod-card,
+.app[data-appearance="light"] .settings-card,
+.app[data-appearance="light"] .link-row,
+.app[data-appearance="light"] .download-row,
+.app[data-appearance="light"] .profile-card,
+.app[data-appearance="light"] .extension-card,
+.app[data-appearance="light"] .browser-menu,
+.app[data-appearance="light"] .address-suggestions,
+.app[data-appearance="light"] .toast { background-color: var(--surface); }
+.app[data-appearance="light"] .tab.selected {
+  background: color-mix(in srgb,var(--accent) 9%,var(--surface));
+  border-color: color-mix(in srgb,var(--accent) 24%,transparent);
+}
+.app[data-appearance="light"] .addressbar,
+.app[data-appearance="light"] .filter-input,
+.app[data-appearance="light"] .findbar input,
+.app[data-appearance="light"] .browser-menu,
+.app[data-appearance="light"] .address-suggestions,
+.app[data-appearance="light"] .toast { border-color: var(--border); }
+.app[data-appearance="light"] .addressbar input,
+.app[data-appearance="light"] .filter-input input,
+.app[data-appearance="light"] .findbar input { color: var(--text); }
+.app[data-appearance="light"] .browser-menu>button,
+.app[data-appearance="light"] .address-suggestions>button { color: #465348; }
+.app[data-appearance="light"] .browser-menu>button:hover,
+.app[data-appearance="light"] .address-suggestions>button:hover,
+.app[data-appearance="light"] .icon-button:hover { background: #1727190b; color: var(--text); }
+.app[data-appearance="light"] .sc-header h1,
+.app[data-appearance="light"] .sc-section-heading h2,
+.app[data-appearance="light"] .sc-panel-heading h2,
+.app[data-appearance="light"] .sc-row-copy strong,
+.app[data-appearance="light"] .sc-choice-card strong,
+.app[data-appearance="light"] .sc-theme-meta,
+.app[data-appearance="light"] .sc-result strong,
+.app[data-appearance="light"] .sc-result-category,
+.app[data-appearance="light"] .sc-radio-list>strong,
+.app[data-appearance="light"] .sc-radio-option strong,
+.app[data-appearance="light"] .sc-select { color: var(--text); }
+.app[data-appearance="light"] .settings-center { --sc-line: #263c2a1c; --sc-muted: #667368; }
+.app[data-appearance="light"] :is(.sc-eyebrow,.sc-header p,.sc-section-heading p,.sc-panel-heading p,.sc-row-copy small,.sc-search,.sc-search input::placeholder,.sc-theme-meta,.sc-theme>small,.sc-choice-card small,.sc-color-choice strong,.sc-color-choice small,.sc-info-strip,.sc-privacy-note,.sc-result small,.sc-no-results,.sc-nav-footer,.sc-startup-pages>label,.sc-startup-pages .sc-action-row>span,.sc-radio-option small,.sc-channel-badge,.sc-update-summary>div small,.sc-release-notes p) {
+  color: #657266;
+}
+.app[data-appearance="light"] .sc-search,
+.app[data-appearance="light"] .sc-nav,
+.app[data-appearance="light"] .sc-panel,
+.app[data-appearance="light"] .sc-theme,
+.app[data-appearance="light"] .sc-choice-card,
+.app[data-appearance="light"] .sc-result,
+.app[data-appearance="light"] .sc-text-input,
+.app[data-appearance="light"] .sc-select,
+.app[data-appearance="light"] .sc-keycap { background-color: var(--surface); }
+.app[data-appearance="light"] .sc-nav-item { color: #59675b; }
+.app[data-appearance="light"] .sc-nav-item:hover { background: #1b30200b; color: var(--text); }
+.app[data-appearance="light"] .sc-nav-item.selected { color: var(--text); }
+.app[data-appearance="light"] .sc-nav-item>svg:first-child { color: #657266; }
+.app[data-appearance="light"] .sc-text-input,
+.app[data-appearance="light"] .sc-select { border-color: var(--border); }
+.app[data-appearance="light"] .sc-switch { border-color: #43524635; background: #dbe2da; }
+.app[data-appearance="light"] .sc-switch span { background: #78867a; }
+.app[data-appearance="light"] .sc-switch.is-on { background: color-mix(in srgb,var(--accent) 18%,#fff); }
+.app[data-appearance="light"] .sc-switch.is-on span { background: var(--accent); }
+.app[data-appearance="light"] .home-widget.widget-style-solid,
+.app[data-appearance="light"] .home-widget.widget-style-outlined,
+.app[data-appearance="light"] .widget-style-minimal :is(.widget-notes,.widget-focus,.widget-bookmarks) { background: var(--surface); border-color: var(--border); }
+.app[data-appearance="light"] :is(.home-edit-trigger,.welcome-widget .home-label,.welcome-widget p,.widget-clock small,.widget-date,.widget-shortcuts small,.widget-note textarea,.widget-tasks label,.widget-weather p,.widget-bookmarks small,.widget-focus small) { color: var(--muted); }
+.app[data-appearance="light"] .widget-note textarea { background: var(--surface); border-color: var(--border); }
+
+@media (prefers-color-scheme: light) {
+  .app[data-appearance="dark"] { color-scheme: dark; }
+}

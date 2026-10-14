@@ -1,7 +1,7 @@
 const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensions', 'bookmarks', 'history', 'downloads', 'mods']);
 const { defaultHome, sanitizeHome } = require('./home-layout.mjs');
 const defaults = {
-  tabPosition: 'side', sidebarWidth: 248, accent: '#b6f36a', surface: '#111513',
+  tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513',
   background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital',
   motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
@@ -44,7 +44,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], font: ['system','mono'], wallpaper: ['orbital','grid','none'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
+  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
   for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows']) if (typeof input[key] === 'boolean') output[key] = input[key];

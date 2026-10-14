@@ -2,7 +2,7 @@ import type { HomeConfig } from '../electron/home-layout.mjs';
 export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
   home: HomeConfig;
-  tabPosition: 'side' | 'top'; sidebarWidth: number; accent: string; surface: string; background: string;
+  tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
   radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none'; motion: boolean;
   compact: boolean; searchEngine: 'duckduckgo' | 'google' | 'bing' | 'custom'; customSearchUrl: string; activeMod: string;
   connectionMode: ConnectionMode; torSocksPort: number; i2pHttpPort: number; profilePhoto: string;
