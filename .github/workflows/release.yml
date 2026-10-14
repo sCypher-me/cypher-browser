@@ -36,8 +36,12 @@ jobs:
           $expectedTag = "v$($package.version)"
           if ($env:RELEASE_TAG -ne $expectedTag) { throw "A tag precisa ser $expectedTag para corresponder ao package.json." }
           @{ repository = $env:GITHUB_REPOSITORY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
-      - name: Compilar instalador e versão portátil do Cypher
-        run: npm run dist -- --publish never
+      - name: Compilar a interface do Cypher
+        run: npm run build
+      - name: Gerar aplicativo Windows e versão portátil
+        run: npx electron-builder --win dir portable --publish never
+      - name: Compilar o instalador autoral Cypher
+        run: node scripts/build-installer.cjs
       - name: Gerar manifesto HTTPS e SHA-512
         shell: pwsh
         run: |

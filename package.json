@@ -1,7 +1,7 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
@@ -10,10 +10,9 @@
     "dev": "node scripts/dev.cjs",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
-    "dist": "npm run build && electron-builder --win",
-    "dist:installer": "npm run build && electron-builder --win nsis",
+    "dist": "npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
+    "dist:installer": "npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
     "dist:portable": "npm run build && electron-builder --win portable",
-    "generate:installer-assets": "node scripts/generate-installer-assets.cjs",
     "check": "node --check electron/main.cjs && node --check electron/preload.cjs && tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:smoke": "node scripts/run-smoke.cjs"
@@ -50,28 +49,9 @@
       "package.json"
     ],
     "win": {
-      "target": ["nsis", "portable"],
+      "target": ["portable"],
       "icon": "build/icon.ico",
       "artifactName": "Cypher-${version}-Windows.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowElevation": true,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Cypher",
-      "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico",
-      "installerHeader": "build/installer-header.bmp",
-      "installerSidebar": "build/installer-sidebar.bmp",
-      "uninstallerSidebar": "build/installer-sidebar.bmp",
-      "installerLanguages": ["pt_BR"],
-      "artifactName": "Cypher-${version}-Setup.${ext}",
-      "include": "build/installer.nsh",
-      "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false
     }
   }
 }

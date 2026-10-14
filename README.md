@@ -1,6 +1,6 @@
 # Cypher
 
-Navegador desktop para Windows com interface dark própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.3**, com navegação real em Chromium através do Electron.
+Navegador desktop para Windows com interface dark própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.4**, com navegação real em Chromium através do Electron.
 
 ## Executar
 
@@ -15,7 +15,7 @@ npm start
 
 Para desenvolver com atualização da interface: `npm run dev`.
 
-Para gerar as duas opções para Windows: `npm run dist`. O instalador personalizado `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O instalador tem assistente em português, permite escolher a pasta e o escopo da instalação, cria atalhos e usa a identidade visual do Cypher. O pacote local ainda não tem assinatura digital.
+Para gerar as duas opções para Windows: `npm run dist`. O instalador autoral `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O Setup é um aplicativo próprio do Cypher, com interface e fluxo desenhados para o navegador, escolha de pasta, atalhos, progresso de instalação, tela de conclusão e desinstalador visual correspondente. Atualizações silenciosas usam o mesmo mecanismo, mantêm os atalhos escolhidos e reabrem o navegador quando terminam. O perfil de navegação é preservado ao atualizar e também ao desinstalar, a menos que a pessoa escolha removê-lo. O pacote local ainda não tem assinatura digital.
 
 ## Atualizações automáticas
 
