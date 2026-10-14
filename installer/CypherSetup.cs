@@ -241,7 +241,7 @@ namespace Cypher.Setup
                 return true;
             }
             WaitForUpdateRequester(options.WaitForProcessId);
-            CloseCypher();
+            CloseCypher(options.Updated);
             progress(3, "Preparando o pacote verificado do Cypher");
 
             string parent = Path.GetDirectoryName(target);
@@ -365,10 +365,10 @@ namespace Cypher.Setup
             catch (ArgumentException) { }
         }
 
-        private static void CloseCypher()
+        private static void CloseCypher(bool waitForUpdater)
         {
             var closeRequested = new HashSet<int>();
-            DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(waitForUpdater ? 120 : 30);
             while (DateTime.UtcNow < deadline)
             {
                 bool running = false;
@@ -380,7 +380,7 @@ namespace Cypher.Setup
                         {
                             if (process.HasExited) continue;
                             running = true;
-                            if (process.MainWindowHandle != IntPtr.Zero && closeRequested.Add(process.Id)) process.CloseMainWindow();
+                            if (!waitForUpdater && process.MainWindowHandle != IntPtr.Zero && closeRequested.Add(process.Id)) process.CloseMainWindow();
                         }
                         catch { }
                     }
@@ -395,7 +395,9 @@ namespace Cypher.Setup
             {
                 using (process) { try { if (!process.HasExited) stillRunning = true; } catch { } }
             }
-            if (stillRunning) throw new InvalidOperationException("O Cypher ainda está finalizando. Feche todas as janelas e tente novamente.");
+            if (stillRunning) throw new InvalidOperationException(waitForUpdater
+                ? "O Cypher não encerrou após iniciar a atualização. Feche o navegador manualmente e tente novamente."
+                : "O Cypher ainda está finalizando. Feche todas as janelas e tente novamente.");
         }
 
         private static void RegisterInstallation(string target, SetupOptions options)
