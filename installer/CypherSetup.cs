@@ -29,6 +29,9 @@ namespace Cypher.Setup
         [STAThread]
         private static void Main(string[] args)
         {
+            // The updater may launch Setup while its inherited working directory is
+            // inside the installation. Release that directory handle before replacing it.
+            try { Environment.CurrentDirectory = Path.GetTempPath(); } catch { }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 #if UNINSTALLER
@@ -382,6 +385,7 @@ namespace Cypher.Setup
             {
                 UseShellExecute = true,
                 Verb = "runas",
+                WorkingDirectory = Path.GetTempPath(),
                 Arguments = "/S " + (options.ForceRun ? "--force-run " : "") + (options.Updated ? "--updated " : "") + (options.WaitForProcessId > 0 ? "--wait-for-process=" + options.WaitForProcessId + " " : "") + (options.Desktop ? "" : "--no-desktop ") + (options.StartMenu ? "" : "--no-start-menu ") + (!options.Silent ? "--defer-launch " : "") + "--target " + Quote(target)
             };
             try
