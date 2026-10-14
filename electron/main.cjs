@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -13,6 +13,7 @@ const execFileAsync = promisify(execFile);
 
 app.setName('Cypher');
 nativeTheme.themeSource = 'dark';
+protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }]);
 let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false;
 let hardwareAccelerationAtLaunch = true;
 try {
@@ -923,6 +924,7 @@ function installMenu() {
 }
 app.whenReady().then(async () => {
   if (!hasInstanceLock) return;
+  protocol.registerSource('cypher-ui', { routes: [{ match: { host: 'app' }, source: { type: 'directory', root: path.resolve(__dirname, '../dist'), index: 'index.html', headers: { 'X-Content-Type-Options': 'nosniff' } } }] });
   loadStore();
   await loadStoredExtensions();
   updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });
@@ -933,7 +935,7 @@ app.whenReady().then(async () => {
   win = new BrowserWindow({ width: 1440, height: 940, minWidth: 960, minHeight: 650, frame: false, backgroundColor: '#090c0b', show: false, icon: path.join(__dirname,'../build/icon.png'),
     webPreferences: { preload: path.join(__dirname,'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   const devURL = process.env.CYPHER_DEV_URL;
-  const trustedURL = devURL || require('node:url').pathToFileURL(path.join(__dirname,'../dist/index.html')).href;
+  const trustedURL = devURL || 'cypher-ui://app/index.html';
   ipcMain.handle('cypher:command', (event, action, payload) => {
     if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== trustedURL + (devURL ? '/' : '')) throw new Error('Origem não autorizada.');
     return command(action, payload);
@@ -968,7 +970,7 @@ app.whenReady().then(async () => {
   }
   for (const url of pendingExternalUrls.splice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
   if (homeFirstId) selectTab(homeFirstId);
-  if (devURL) await win.loadURL(devURL); else await win.loadFile(path.join(__dirname,'../dist/index.html'));
+  await win.loadURL(trustedURL);
   win.show();
   updater.acknowledgeStartup();
   updater.start();
