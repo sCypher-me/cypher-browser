@@ -282,26 +282,77 @@ namespace Cypher.Setup
                 {
                     if (!File.Exists(Path.Combine(target, "Cypher.exe")) && Directory.EnumerateFileSystemEntries(target).Any())
                         throw new IOException("A pasta escolhida contém arquivos que não pertencem ao Cypher. Escolha uma pasta vazia ou a instalação existente.");
-                    Directory.Move(target, backup);
+                    MoveDirectoryWithRetry(target, backup, "substituir a instalação anterior");
                     movedOld = true;
                 }
-                Directory.Move(staging, target);
+                MoveDirectoryWithRetry(staging, target, "ativar os arquivos da nova versão");
                 RegisterInstallation(target, options);
-                progress(100, "Cypher está pronto para abrir");
-                if (options.Silent && !options.DeferLaunch && (options.ForceRun || options.Updated)) StartCypher(target, options.Updated);
                 if (movedOld) TryDelete(backup);
-                return true;
             }
-            catch
+            catch (Exception installError)
             {
                 TryDelete(staging);
                 if (movedOld && Directory.Exists(backup))
                 {
-                    if (Directory.Exists(target)) TryDelete(target);
-                    if (!Directory.Exists(target)) Directory.Move(backup, target);
+                    try
+                    {
+                        if (Directory.Exists(target))
+                        {
+                            string failedInstall = target + ".cypher-failed-" + Guid.NewGuid().ToString("N");
+                            MoveDirectoryWithRetry(target, failedInstall, "preservar os arquivos da nova versão com falha");
+                            TryDelete(failedInstall);
+                        }
+                        MoveDirectoryWithRetry(backup, target, "restaurar a versão anterior");
+                    }
+                    catch (Exception rollbackError)
+                    {
+                        throw new IOException("A instalação não foi concluída e o Cypher não conseguiu restaurar os arquivos automaticamente. A versão anterior foi preservada em: " + backup + ". Detalhes: " + rollbackError.Message, installError);
+                    }
                 }
                 throw;
             }
+
+            // A instalação já está confirmada. Uma falha ao abrir o navegador não deve
+            // restaurar a versão antiga depois de a interface mostrar 100%.
+            progress(100, "Cypher está pronto para abrir");
+            if (options.Silent && !options.DeferLaunch && (options.ForceRun || options.Updated))
+            {
+                try { StartCypherWithRetry(target, options.Updated); }
+                catch (Exception ex)
+                {
+                    throw new IOException("A atualização foi instalada, mas o Cypher não conseguiu abrir automaticamente. Abra-o pelo atalho do navegador. Detalhes: " + ex.Message, ex);
+                }
+            }
+            return true;
+        }
+
+        private static void MoveDirectoryWithRetry(string source, string destination, string operation)
+        {
+            Exception lastError = null;
+            for (int attempt = 0; attempt < 24; attempt++)
+            {
+                try { Directory.Move(source, destination); return; }
+                catch (IOException ex)
+                {
+                    lastError = ex;
+                    if (attempt == 23) break;
+                    Thread.Sleep(500);
+                }
+            }
+            throw new IOException("Não foi possível " + operation + " porque um arquivo ainda está em uso. Feche todas as janelas do Cypher e tente novamente. Detalhes: " + (lastError == null ? "erro de acesso aos arquivos" : lastError.Message), lastError);
+        }
+
+        private static void StartCypherWithRetry(string target, bool updated)
+        {
+            Exception lastError = null;
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                try { StartCypher(target, updated); return; }
+                catch (IOException ex) { lastError = ex; }
+                catch (System.ComponentModel.Win32Exception ex) { lastError = ex; }
+                if (attempt < 7) Thread.Sleep(750);
+            }
+            throw new IOException("O Windows não conseguiu iniciar o executável instalado.", lastError);
         }
 
         public static void EnsureValidTarget(string target)
