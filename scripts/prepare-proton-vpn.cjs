@@ -28,7 +28,7 @@ function run(args) {
   }
 }
 
-if (!fs.existsSync(webpack)) run(['ci', '--ignore-scripts']);
+if (!fs.existsSync(webpack)) run(['ci', '--ignore-scripts', '--legacy-peer-deps']);
 run(['run', 'build:cypher']);
 
 const manifest = JSON.parse(fs.readFileSync(output, 'utf8'));
