@@ -3,7 +3,7 @@ export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
   home: HomeConfig;
   tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
-  radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none' | 'custom'; wallpaperImageData: string;
+  radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
   buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';
   soundEffectsEnabled: boolean; soundTheme: 'cypher' | 'soft' | 'arcade';
   backgroundMusicData: string; backgroundMusicName: string; backgroundMusicEnabled: boolean; motion: boolean;
@@ -19,6 +19,7 @@ export interface Settings {
   defaultZoom: number; downloadDirectory: string; startWithWindows: boolean;
 }
 export interface Tab { id: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null }
+export interface NowPlaying { tabId: string; tabTitle: string; pageUrl: string; title: string; artist: string; album: string; artwork: string; currentTime: number; duration: number; playing: boolean }
 export interface Link { id: string; title: string; url: string; date: number }
 export interface Download { id: string; name: string; url: string; total: number; received: number; state: string; date: number; path: string; private: boolean }
 export interface BrowserExtension { id: string; name: string; version: string; enabled: boolean; source?: 'chrome-web-store' | 'local'; error?: string }
@@ -29,7 +30,8 @@ export interface HomeTask { id: string; title: string; done: boolean }
 export interface HomeData { notes: Record<string,string>; focus: FocusTimerData; focusById?: Record<string,FocusTimerData>; tasksById?: Record<string,HomeTask[]> }
 export interface UpdateStatus { state: 'unconfigured' | 'unsupported' | 'idle' | 'checking' | 'up-to-date' | 'available' | 'dismissed' | 'downloading' | 'restarting' | 'complete' | 'error'; currentVersion: string; version: string; progress: number; message: string; releaseNotes: string; repository: string }
 export interface TrackerProtectionStatus { available: boolean; name: string; source: string; lastModified: string; fetchedAt?: string; networkRuleCount: number; blockedRequests: number; error?: string }
-export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus }
+export interface ProfileSyncStatus { configured: boolean; endpoint: string; username: string; syncing: boolean; lastSync: number; error: string }
+export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus }
 declare global {
   interface Window { cypher: { invoke: (action: string, payload?: unknown) => Promise<any>; onState: (callback: (state: BrowserState) => void) => () => void; onShortcut: (callback: (action: string) => void) => () => void } }
 }

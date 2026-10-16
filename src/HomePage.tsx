@@ -150,6 +150,7 @@ export default function HomePage({ settings,data = emptyData,bookmarks,isPrivate
     return <div className="bookmarks-widget"><div className="widget-title"><span><Star size={14}/>{title}</span><span>{bookmarks.length}</span></div><div className="widget-bookmarks-list">{widgetBookmarks.map(link => <button key={link.id} disabled={editing} onClick={() => navigate(link.url)} title={link.url}>{widget.showBookmarkIcons && <Globe2 size={15}/>}<span>{link.title}</span><ArrowUpRight size={13}/></button>)}</div>{!bookmarks.length && <p className="widget-empty">Clique na estrela da barra de endereço para guardar seus sites aqui.</p>}</div>;
   }
   return <div className={cn('home-page','home-customizable',`wallpaper-${settings.wallpaper}`,editing && 'home-editing')} style={style}>
+    {settings.wallpaper === 'video' && settings.wallpaperVideoPath && <video className="home-wallpaper-video" src="cypher-wallpaper://wallpaper/current" muted autoPlay loop playsInline preload="metadata" aria-hidden="true"/>}
     <div className="home-workspace">
       <div className="home-canvas-header"><span className="home-coordinate"><LayoutGrid size={14}/> ESPAÇO PESSOAL <span className="home-coordinate-divider">/</span> {editing ? 'SEU LAYOUT' : 'NOVA ABA'}</span><button className={cn('button',editing ? 'secondary' : 'home-edit-trigger')} onClick={editing ? () => setPanel('widgets') : begin}><Settings2 size={15}/>{editing ? 'Editando Home' : 'Editar Home'}</button></div>
       {home.showArt && <OrbitalArt/>}

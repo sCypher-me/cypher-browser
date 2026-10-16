@@ -1,21 +1,22 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.14",
+  "version": "0.7.15",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "npm run prepare:tracker-list && node scripts/dev.cjs",
-    "build": "npm run prepare:tracker-list && tsc --noEmit && vite build",
-    "start": "electron .",
+    "dev": "npm run prepare:tracker-list && npm run prepare:proton-vpn && node scripts/dev.cjs",
+    "build": "npm run prepare:tracker-list && npm run prepare:proton-vpn && tsc --noEmit && vite build",
+    "start": "npm run prepare:proton-vpn && electron .",
     "prepare:privacy-runtime": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-privacy-runtime.ps1",
+    "prepare:proton-vpn": "node scripts/prepare-proton-vpn.cjs",
     "prepare:tracker-list": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-tracker-list.ps1",
     "dist": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
     "dist:installer": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
     "dist:portable": "npm run prepare:privacy-runtime && npm run build && electron-builder --win portable",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && tsc --noEmit",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/proton-preload.cjs && tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:smoke": "node scripts/run-smoke.cjs"
   },
@@ -59,6 +60,68 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/distribution-cypher",
+        "to": "proton-vpn",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/LICENSE",
+        "to": "licenses/proton-vpn/LICENSE"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/source",
+        "to": "licenses/proton-vpn/source",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/config.js",
+        "to": "licenses/proton-vpn/config.js"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/package.json",
+        "to": "licenses/proton-vpn/package.json"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/webpack.config.js",
+        "to": "licenses/proton-vpn/webpack.config.js"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/webpack-cypher.config.js",
+        "to": "licenses/proton-vpn/webpack-cypher.config.js"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/webpack-directive-loader.js",
+        "to": "licenses/proton-vpn/webpack-directive-loader.js"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/package-lock.json",
+        "to": "licenses/proton-vpn/package-lock.json"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/readme.md",
+        "to": "licenses/proton-vpn/readme.md"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/CYPHER-INTEGRATION.md",
+        "to": "licenses/proton-vpn/CYPHER-INTEGRATION.md"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/.babelrc",
+        "to": "licenses/proton-vpn/.babelrc"
+      },
+      {
+        "from": "vendor/proton-vpn-browser-extension/tsconfig.json",
+        "to": "licenses/proton-vpn/tsconfig.json"
+      },
+      {
+        "from": "scripts/prepare-proton-vpn.cjs",
+        "to": "licenses/proton-vpn/prepare-proton-vpn.cjs"
       }
     ],
     "win": {

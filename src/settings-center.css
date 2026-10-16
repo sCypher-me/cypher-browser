@@ -110,6 +110,25 @@
 .sc-folder-current small { color:#899587;font-size:8px; }
 .sc-action-row { display:flex;flex-wrap:wrap;gap:7px;padding:0 0 15px 44px; }
 .sc-privacy-note { margin:0;padding:12px 14px; }
+.profile-sync-panel { grid-column:1/-1;min-width:0; }
+.profile-sync-heading { display:flex;align-items:flex-start;gap:13px;margin-bottom:19px; }
+.profile-sync-heading>span { width:36px;height:36px;display:grid;place-items:center;flex:none;border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:10px;background:color-mix(in srgb,var(--accent) 7%,var(--base));color:var(--accent); }
+.profile-sync-heading>div { min-width:0;flex:1; }
+.profile-sync-heading>div>strong { font-size:13px;font-weight:550; }
+.profile-sync-heading p { max-width:620px;margin:6px 0 0;color:#95a08f;font-size:10px;line-height:1.7; }
+.profile-sync-heading>small { display:flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--border);border-radius:20px;color:#909b8c;font-size:8px;white-space:nowrap; }
+.profile-sync-heading>small i { width:6px;height:6px;border-radius:50%;background:#7a8476; }
+.profile-sync-heading>small.connected i { background:#9fe07d;box-shadow:0 0 8px #9fe07d55; }
+.profile-sync-form { display:grid;gap:12px; }
+.profile-sync-form label { min-width:0;display:grid;gap:6px;color:#a8b2a3;font-size:9px; }
+.profile-sync-form input { width:100%;min-height:36px;padding:9px 11px;border:1px solid var(--sc-line);border-radius:7px;background:var(--base);color:var(--text);font-size:10px; }
+.profile-sync-form input:focus { border-color:color-mix(in srgb,var(--accent) 45%,transparent); }
+.profile-sync-credentials { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+.profile-sync-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:2px; }
+.profile-sync-meta,.profile-sync-notice { margin:12px 0 0;color:#9db08f;font-size:9px; }
+.profile-sync-error { margin:12px 0 0;color:#e6a392;font-size:9px;line-height:1.6; }
+.profile-sync-footnote { margin:14px 0 0;padding-top:12px;border-top:1px solid var(--sc-line);color:#879386;font-size:8px;line-height:1.7; }
+@media(max-width:560px) { .profile-sync-heading { flex-wrap:wrap; }.profile-sync-heading>small { margin-left:49px; }.profile-sync-credentials { grid-template-columns:1fr; } }
 .sc-keycap { min-width:88px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--text) 12%,transparent);border-radius:5px;background:#ffffff03;color:#aab7a5;font-size:8px;text-align:center; }
 .sc-result-list { display:flex;flex-direction:column;gap:7px; }
 .sc-result { min-width:0;display:flex;align-items:center;gap:12px;padding:12px;border:1px solid var(--sc-line);border-radius:9px;background:color-mix(in srgb,var(--surface) 75%,var(--base));text-align:left;color:#9ba796; }
@@ -123,7 +142,7 @@
 .sc-no-results { min-height:140px;display:flex;align-items:center;justify-content:center;gap:10px;padding:18px;border:1px dashed var(--sc-line);border-radius:10px;color:#899587;font-size:9px; }
 .sc-no-results svg { color:var(--accent); }
 .sc-content>#connection-routes,.sc-content>#connection-vpn { min-width:0;scroll-margin:20px; }
-.sc-content .connection-settings,.sc-content .windows-vpn-card { padding:19px 20px 17px; }
+.sc-content .connection-settings { padding:19px 20px 17px; }
 .sc-content .connection-settings { margin-bottom:0; }
 .sc-content .connection-options { gap:8px; }
 .sc-content .connection-option { padding:12px; }

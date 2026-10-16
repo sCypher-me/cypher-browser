@@ -39,6 +39,7 @@ function firstFile(root, filename) {
 function createPrivacyServices({ app, spawnProcess = spawn, logger = console } = {}) {
   const managed = new Map();
   const startPromises = new Map();
+  const executablePaths = new Map();
 
   function runtimeRoot() {
     return app.isPackaged
@@ -54,8 +55,11 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
   }
 
   function executable(mode) {
+    if (executablePaths.has(mode)) return executablePaths.get(mode);
     const root = path.join(runtimeRoot(), mode === 'tor' ? 'tor' : 'i2pd');
-    return firstFile(root, mode === 'tor' ? 'tor.exe' : 'i2pd.exe');
+    const found = firstFile(root, mode === 'tor' ? 'tor.exe' : 'i2pd.exe');
+    executablePaths.set(mode, found);
+    return found;
   }
 
   async function waitForProxy(mode, port, child, timeoutMs) {
@@ -196,7 +200,7 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
     await Promise.all(['tor', 'i2p'].map(stop));
   }
 
-  return { start, stop, stopOther, stopAll, check };
+  return { start, stop, stopOther, stopAll, check, installed: mode => !!executable(mode) };
 }
 
 module.exports = { createPrivacyServices };

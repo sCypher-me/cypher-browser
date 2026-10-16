@@ -2,7 +2,7 @@ const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensio
 const { defaultHome, sanitizeHome } = require('./home-layout.mjs');
 const defaults = {
   tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513',
-  background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital', wallpaperImageData: '',
+  background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital', wallpaperImageData: '', wallpaperVideoPath: '', wallpaperVideoName: '',
   buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher',
   backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false,
   motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
@@ -48,7 +48,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
+  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
   for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
@@ -74,6 +74,8 @@ function sanitizeSettings(input = {}, base = defaults) {
   output.customSearchUrl = typeof input.customSearchUrl === 'string' && input.customSearchUrl.length <= 500 ? input.customSearchUrl : (base.customSearchUrl || '');
   output.profilePhoto = typeof input.profilePhoto === 'string' && input.profilePhoto.length <= 2_800_000 && /^data:image\/(?:png|jpeg|webp);base64,[\da-z+/=]+$/i.test(input.profilePhoto) ? input.profilePhoto : (base.profilePhoto || '');
   output.wallpaperImageData = typeof input.wallpaperImageData === 'string' && input.wallpaperImageData.length <= 4_200_000 && /^data:image\/(?:png|jpeg|webp);base64,[\da-z+/=]+$/i.test(input.wallpaperImageData) ? input.wallpaperImageData : (base.wallpaperImageData || '');
+  output.wallpaperVideoPath = typeof input.wallpaperVideoPath === 'string' && input.wallpaperVideoPath.length <= 4096 ? input.wallpaperVideoPath : (base.wallpaperVideoPath || '');
+  output.wallpaperVideoName = typeof input.wallpaperVideoName === 'string' ? input.wallpaperVideoName.slice(0,160) : (base.wallpaperVideoName || '');
   output.backgroundMusicData = typeof input.backgroundMusicData === 'string' && input.backgroundMusicData.length <= 14_000_000 && /^data:audio\/(?:mpeg|wav|ogg|webm);base64,[\da-z+/=]+$/i.test(input.backgroundMusicData) ? input.backgroundMusicData : (base.backgroundMusicData || '');
   output.backgroundMusicName = typeof input.backgroundMusicName === 'string' ? input.backgroundMusicName.slice(0,120) : (base.backgroundMusicName || '');
   output.home = sanitizeHome(input.home,base.home || defaultHome);

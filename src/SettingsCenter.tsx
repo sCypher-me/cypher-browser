@@ -5,15 +5,16 @@ import {
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
   Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound, Volume2,
 } from 'lucide-react';
-import type { Settings, TrackerProtectionStatus, UpdateStatus } from './types';
+import type { ProfileSyncStatus, Settings, TrackerProtectionStatus, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
-import WindowsVpnSettings from './WindowsVpnSettings';
+import ProfileSyncPanel from './ProfileSyncPanel';
 
 type Category = 'appearance' | 'tabs' | 'home' | 'search' | 'languages' | 'privacy' | 'connections' | 'downloads' | 'accessibility' | 'startup' | 'system' | 'updates' | 'shortcuts' | 'mods' | 'profile';
 type Props = {
   settings: Settings;
   update: UpdateStatus;
   trackerProtection: TrackerProtectionStatus;
+  profileSync?: ProfileSyncStatus;
   hardwareAccelerationPending: boolean;
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
@@ -26,7 +27,7 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
   { id: 'home', label: 'Página inicial', group: 'PERSONALIZAÇÃO', icon: House },
   { id: 'search', label: 'Pesquisa', group: 'NAVEGAÇÃO', icon: Search },
   { id: 'languages', label: 'Idiomas e entrada', group: 'NAVEGAÇÃO', icon: Globe2 },
-  { id: 'connections', label: 'Conexões e VPN', group: 'NAVEGAÇÃO', icon: Globe2 },
+  { id: 'connections', label: 'Conexões', group: 'NAVEGAÇÃO', icon: Globe2 },
   { id: 'downloads', label: 'Downloads', group: 'NAVEGAÇÃO', icon: Download },
   { id: 'privacy', label: 'Privacidade e segurança', group: 'PROTEÇÃO', icon: ShieldCheck },
   { id: 'accessibility', label: 'Acessibilidade', group: 'PROTEÇÃO', icon: Accessibility },
@@ -42,7 +43,7 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'appearance-presets', title: 'Temas e cores', detail: 'Tema, destaque, superfícies e fundo do navegador', category: 'appearance' },
   { id: 'appearance-mode', title: 'Modo claro ou escuro', detail: 'Escolha uma interface clara ou escura para o navegador', category: 'appearance' },
   { id: 'appearance-shape', title: 'Cantos e tipografia', detail: 'Arredondamento, fonte e identidade visual', category: 'appearance' },
-  { id: 'appearance-wallpaper', title: 'Papel de parede', detail: 'Fundo da página inicial orbital, grade ou minimal', category: 'appearance' },
+  { id: 'appearance-wallpaper', title: 'Papel de parede', detail: 'Fundo orbital, grade, imagem própria ou vídeo animado na Home', category: 'appearance' },
   { id: 'appearance-controls', title: 'Botões e efeitos', detail: 'Forma dos controles e efeitos visuais do Cypher', category: 'appearance' },
   { id: 'appearance-sounds', title: 'Sons e música', detail: 'Sons de interface e música de fundo local', category: 'appearance' },
   { id: 'appearance-motion', title: 'Animações', detail: 'Movimento e transições da interface', category: 'appearance' },
@@ -54,7 +55,6 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'search-custom-url', title: 'URL de pesquisa personalizada', detail: 'Configure uma URL HTTPS que contenha {query}', category: 'search' },
   { id: 'search-suggestions', title: 'Sugestões de pesquisa', detail: 'Controle sugestões e escolha entre histórico e favoritos', category: 'search' },
   { id: 'connection-routes', title: 'Rotas de conexão', detail: 'Conexão normal, Tor, I2P e portas locais', category: 'connections' },
-  { id: 'connection-vpn', title: 'VPN nativa do Windows', detail: 'Perfis de VPN do sistema operacional', category: 'connections' },
   { id: 'download-location', title: 'Local dos downloads', detail: 'Pasta padrão ou perguntar onde salvar arquivos', category: 'downloads' },
   { id: 'privacy-do-not-track', title: 'Não rastrear', detail: 'Enviar o cabeçalho Do Not Track aos sites', category: 'privacy' },
   { id: 'privacy-data', title: 'Dados de navegação', detail: 'Limpar cookies, cache e histórico', category: 'privacy' },
@@ -106,7 +106,7 @@ const languageOptions = [
   { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
 ];
 
-export default function SettingsCenter({ settings: s, update, trackerProtection, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
+export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
   const [category, setCategory] = useState<Category>('appearance');
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
@@ -164,7 +164,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             return <button type="button" className="sc-result" key={item.id} onClick={() => openMatch(item.id, item.category)}><span className="sc-result-icon"><Icon size={16}/></span><span><strong>{item.title}</strong><small>{item.detail}</small></span><span className="sc-result-category">{categories.find(entry => entry.id === item.category)?.label}</span><ArrowRight size={15}/></button>;
           })}</div> : <div className="sc-no-results"><CircleHelp size={20}/><span>Tente buscar por aparência, abas, pesquisa, VPN ou acessibilidade.</span></div>}
         </> : <>
-          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie rotas, serviços locais e a VPN do Windows.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div></div>
+          <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie as rotas Tor e I2P do navegador.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div></div>
 
           {category === 'appearance' && <>
             <Panel id="appearance-mode" eyebrow="MODO DE EXIBIÇÃO" title="Claro ou escuro" detail="Escolha o aspecto da interface do Cypher." icon={s.appearanceMode === 'light' ? Sun : Moon}>
@@ -182,7 +182,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
               <div className="sc-color-grid">{[{ key: 'accent', label: 'Cor de destaque' }, { key: 'surface', label: 'Superfícies' }, { key: 'background', label: 'Fundo' }].map(({ key, label }) => <label className="sc-color-choice" key={key}><span className="sc-color-swatch"><input type="color" aria-label={label} value={s[key as 'accent']} onChange={event => onSettings({ [key]: event.target.value })}/></span><span><strong>{label}</strong><small>{s[key as 'accent'].toUpperCase()}</small></span></label>)}</div>
               <Row id="appearance-radius" title="Cantos da interface" detail={`${s.radius} px · Ajusta painéis, botões e cartões`}><input className="sc-range" aria-label="Arredondamento dos cantos" type="range" min="0" max="24" value={s.radius} onChange={event => onSettings({ radius: +event.target.value })}/><span className="sc-value">{s.radius}px</span></Row>
               <Row id="appearance-font" title="Tipografia" detail="A fonte é aplicada à interface do Cypher"><select className="sc-select" value={s.font} onChange={event => onSettings({ font: event.target.value as Settings['font'] })}><option value="system">Sistema</option><option value="mono">Monoespaçada</option></select></Row>
-              <Row id="appearance-wallpaper" title="Fundo da página inicial" detail={s.wallpaper === 'custom' ? 'Imagem pessoal salva neste perfil' : 'Escolha a atmosfera da Home'}><div className="sc-control-stack"><select className="sc-select" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option>{s.wallpaper === 'custom' && <option value="custom">Imagem pessoal</option>}</select><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper:select'); if (result?.dataUrl) onSettings({ wallpaper:'custom', wallpaperImageData:result.dataUrl }); }}>Escolher imagem</button>{s.wallpaperImageData && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ wallpaper:'orbital', wallpaperImageData:'' })}>Remover imagem</button>}</div></Row>
+              <Row id="appearance-wallpaper" title="Fundo da página inicial" detail={s.wallpaper === 'video' ? s.wallpaperVideoName || 'Vídeo pessoal em reprodução contínua' : s.wallpaper === 'custom' ? 'Imagem pessoal salva neste perfil' : 'Escolha a atmosfera da Home'}><div className="sc-control-stack"><select className="sc-select" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option>{s.wallpaper === 'custom' && <option value="custom">Imagem pessoal</option>}{s.wallpaper === 'video' && <option value="video">Vídeo pessoal</option>}</select><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper:select'); if (result?.dataUrl) onSettings({ wallpaper:'custom', wallpaperImageData:result.dataUrl, wallpaperVideoPath:'', wallpaperVideoName:'' }); }}>Escolher imagem</button><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper-video:select'); if (result?.path) onSettings({ wallpaper:'video', wallpaperVideoPath:result.path, wallpaperVideoName:result.name, wallpaperImageData:'' }); }}>Escolher vídeo</button>{s.wallpaperVideoPath && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ wallpaper:'orbital', wallpaperVideoPath:'', wallpaperVideoName:'' })}>Remover vídeo</button>}{s.wallpaperImageData && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ wallpaper:'orbital', wallpaperImageData:'' })}>Remover imagem</button>}</div></Row>
               <Row id="appearance-motion" title="Animações da interface" detail="Transições suaves e movimento entre telas"><Switch label="Animações da interface" checked={s.motion} onChange={() => onSettings({ motion: !s.motion })}/></Row>
             </Panel>
             <Panel id="appearance-controls" eyebrow="IDENTIDADE DO CYPHER" title="Controles e efeitos" detail="A forma dos botões, os efeitos de superfície e a assinatura visual também fazem parte dos seus mods." icon={Sparkles}>
@@ -210,7 +210,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
           {category === 'home' && <Panel id="home-editor" eyebrow="PÁGINA INICIAL" title="Uma tela feita por você" detail="Adicione widgets, arraste para organizar e abra as opções de cada um para personalizar o conteúdo e o design." icon={LayoutTemplate}>
             <div className="sc-home-card"><span className="sc-home-mark"><House size={22}/></span><div><strong>Editor livre da Home</strong><p>Redimensione widgets puxando as bordas, reposicione-os e personalize estilos, cores, imagens e conteúdo. A Home também aceita stickers, imagens e widgets com código próprio.</p><button className="sc-button sc-button-primary" onClick={() => navigate('newtab')}>Abrir página inicial <ArrowUpRight size={15}/></button></div></div>
-            <Row id="home-wallpaper-link" title="Papel de parede atual" detail={`Estilo ${s.wallpaper === 'none' ? 'minimal' : s.wallpaper === 'grid' ? 'grade' : 'orbital'}`}><button className="sc-button sc-button-subtle" onClick={() => setCategory('appearance')}>Personalizar visual <ChevronRight size={14}/></button></Row>
+            <Row id="home-wallpaper-link" title="Papel de parede atual" detail={`Estilo ${s.wallpaper === 'video' ? s.wallpaperVideoName || 'vídeo' : s.wallpaper === 'custom' ? 'imagem pessoal' : s.wallpaper === 'none' ? 'minimal' : s.wallpaper === 'grid' ? 'grade' : 'orbital'}`}><button className="sc-button sc-button-subtle" onClick={() => setCategory('appearance')}>Personalizar visual <ChevronRight size={14}/></button></Row>
           </Panel>}
 
           {category === 'search' && <Panel id="search-panel" eyebrow="BUSCA E ENDEREÇOS" title="Pesquisa" detail="Defina o mecanismo usado na Home e na barra de endereço." icon={Search}>
@@ -241,7 +241,6 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
           {category === 'connections' && <>
             <div id="connection-routes"><ConnectionSettings settings={s} onSettings={onSettings} onConnection={mode => { void command('connection:select',mode); }}/></div>
-            <div id="connection-vpn"><WindowsVpnSettings/></div>
           </>}
 
           {category === 'downloads' && <>
@@ -292,7 +291,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             <Row title="Iniciar com o Windows" detail="Abre o Cypher quando você entrar no computador"><Switch label="Iniciar com o Windows" checked={s.startWithWindows} onChange={() => onSettings({ startWithWindows: !s.startWithWindows })}/></Row>
             <Row id="system-close-confirm" title="Confirmar ao fechar várias abas" detail="Evita fechar a janela sem querer quando duas ou mais abas estão abertas"><Switch label="Confirmar ao fechar várias abas" checked={s.confirmCloseWithMultipleTabs} onChange={() => onSettings({ confirmCloseWithMultipleTabs: !s.confirmCloseWithMultipleTabs })}/></Row>
             <Row title="Opções de inicialização" detail={s.startupMode === 'restore' ? 'A sessão anterior será restaurada.' : s.startupMode === 'specific' ? `${s.startupPages.length} página(s) definida(s).` : 'O Cypher abrirá a Home.'}><button className="sc-button sc-button-subtle" onClick={() => setCategory('startup')}>Configurar <ChevronRight size={14}/></button></Row>
-            <Row title="Conexões protegidas" detail="Tor, I2P e VPN nativa podem ser configurados na área de conexão"><button className="sc-button sc-button-subtle" onClick={() => setCategory('connections')}>Abrir conexões <ChevronRight size={14}/></button></Row>
+            <Row title="Conexões protegidas" detail="Tor e I2P podem ser configurados na área de conexão"><button className="sc-button sc-button-subtle" onClick={() => setCategory('connections')}>Abrir conexões <ChevronRight size={14}/></button></Row>
             </Panel>
             <Panel eyebrow="REDE DO SISTEMA" title="Proxy e DNS" detail="Estas opções abrem os controles de rede do Windows; o Cypher usa a resolução DNS do sistema." icon={Globe2}>
               <Row title="Proxy do computador" detail="Abra as opções de proxy de rede do Windows"><button className="sc-button sc-button-subtle" onClick={() => void command('system:proxy')}>Abrir proxy <ExternalLink size={14}/></button></Row>
@@ -334,9 +333,9 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             <Row title="Importar um mod" detail="Aplicar um pacote de personalização salvo no computador"><button className="sc-button sc-button-subtle" onClick={() => void command('mod:import')}>Importar arquivo <ArrowRight size={14}/></button></Row>
           </Panel>}
 
-          {category === 'profile' && <Panel id="profile-local" eyebrow="PERFIL LOCAL" title="Seu Cypher" detail="Seus dados e personalizações ficam neste dispositivo." icon={UserRound}>
-            <div className="sc-home-card"><span className="sc-home-mark sc-avatar-mark">{s.profilePhoto ? <img src={s.profilePhoto} alt=""/> : <UserRound size={22}/>}</span><div><strong>Perfil deste dispositivo</strong><p>Favoritos, histórico, abas e preferências são armazenados localmente.</p><button className="sc-button sc-button-primary" onClick={() => navigate('profile')}>Gerenciar perfil <ArrowUpRight size={14}/></button></div></div>
-          </Panel>}
+          {category === 'profile' && <><Panel id="profile-local" eyebrow="PERFIL" title="Seu Cypher" detail="Seu perfil local e a sincronização entre dispositivos." icon={UserRound}>
+            <div className="sc-home-card"><span className="sc-home-mark sc-avatar-mark">{s.profilePhoto ? <img src={s.profilePhoto} alt=""/> : <UserRound size={22}/>}</span><div><strong>Perfil deste dispositivo</strong><p>Fotos, preferências, favoritos, histórico e Home são mantidos neste perfil.</p><button className="sc-button sc-button-primary" onClick={() => navigate('profile')}>Gerenciar foto do perfil <ArrowUpRight size={14}/></button></div></div>
+          </Panel><ProfileSyncPanel sync={profileSync} command={command}/></>}
         </>}
       </main>
     </div>

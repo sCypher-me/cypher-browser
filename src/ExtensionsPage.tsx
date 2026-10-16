@@ -23,7 +23,7 @@ export default function ExtensionsPage({ extensions, command }: Props) {
   return <div className="extension-manager">
     <section className="settings-card extension-manager-hero">
       <span className="extension-manager-mark"><Puzzle size={23}/></span>
-      <div className="extension-manager-intro"><span className="eyebrow">CYPHER / PERSONALIZE A NAVEGAÇÃO</span><h2>Suas extensões</h2><p>Instale pacotes compatíveis da Chrome Web Store pelo link ou carregue uma pasta local. O Cypher pede confirmação antes de conceder as permissões declaradas.</p></div>
+      <div className="extension-manager-intro"><span className="eyebrow">CYPHER / PERSONALIZE A NAVEGAÇÃO</span><h2>Suas extensões</h2><p>Abra a Chrome Web Store e clique em instalar: o Cypher identifica a extensão, valida o pacote e pede confirmação das permissões. Você também pode colar um link ou carregar uma pasta local.</p></div>
       <button className="button secondary" disabled={choosing} onClick={() => void install()}><FolderPlus size={16}/>{choosing ? 'Selecionando…' : 'Adicionar pasta local'}</button>
     </section>
 

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, Check, Circle, Globe2, Radio, Router, Shield } from 'lucide-react';
 import type { ConnectionMode, Settings } from './types';
+import ProtonVpnPanel from './ProtonVpnPanel';
 
 type Props = {
   settings: Pick<Settings, 'connectionMode' | 'torSocksPort' | 'i2pHttpPort'>;
   onSettings: (patch: Partial<Settings>) => void;
   onConnection: (mode: Settings['connectionMode']) => void;
 };
-type Health = { available: boolean; port: number | null };
+type Health = { available: boolean; installed?: boolean; port: number | null };
 const modes: { id: ConnectionMode; name: string; subtitle: string; detail: string; icon: typeof Globe2 }[] = [
-  { id: 'normal', name: 'Normal', subtitle: 'Conexão do sistema', detail: 'Usa a conexão e as configurações de proxy do Windows.', icon: Globe2 },
+  { id: 'normal', name: 'Normal', subtitle: 'Navegação padrão', detail: 'Usa a conexão padrão; com a Proton ativa, as abas normais passam pelo túnel integrado do Cypher.', icon: Globe2 },
   { id: 'tor', name: 'Tor', subtitle: 'Proxy SOCKS5 local', detail: 'Encaminha o tráfego pelo serviço Tor em execução neste computador.', icon: Shield },
   { id: 'i2p', name: 'I2P', subtitle: 'Proxy HTTP local', detail: 'Acessa a rede I2P pelo roteador local. A web externa depende de um outproxy.', icon: Router },
 ];
@@ -48,15 +49,15 @@ export default function ConnectionSettings({ settings, onSettings, onConnection 
   }, [settings.torSocksPort, settings.i2pHttpPort]);
 
   return <section className="settings-card connection-settings">
-    <div className="connection-heading"><div><h2><Radio size={18}/> Rotas de conexão</h2><p>Escolha o padrão para novas abas. Você também pode mudar a rota na barra do navegador.</p></div><span className="connection-native"><Circle size={7}/> PROXY LOCAL</span></div>
+    <div className="connection-heading"><div><h2><Radio size={18}/> Rotas de conexão</h2><p>Escolha o padrão para novas abas. Você também pode mudar a rota na barra do navegador.</p></div><span className="connection-native"><Circle size={7}/> ROTAS DO NAVEGADOR</span></div>
     <div className="connection-options">
       {modes.map(({ id, name, subtitle, detail, icon: Icon }) => {
         const selected = settings.connectionMode === id;
         const status = health[id];
         return <button key={id} className={`connection-option ${selected ? 'chosen' : ''}`} aria-pressed={selected} onClick={() => onConnection(selected && id !== 'normal' ? 'normal' : id)}>
           <span className="connection-option-icon"><Icon size={18}/></span><span className="connection-option-copy"><strong>{name}</strong><small>{subtitle}</small><span>{detail}</span></span>
-          <span className={`connection-health ${status ? status.available ? 'available' : 'unavailable' : 'checking'}`}>
-            {selected && <Check size={13}/>}<i/>{status ? status.available ? id === 'normal' ? 'Pronta' : `Ativo · ${status.port}` : id === 'normal' ? 'Padrão' : 'Serviço local ausente' : 'Verificando'}
+          <span className={`connection-health ${status ? status.available || id === 'normal' ? 'available' : status.installed ? 'installed' : 'unavailable' : 'checking'}`}>
+            {selected && <Check size={13}/>}<i/>{status ? status.available ? id === 'normal' ? 'Pronta' : `Ativo · ${status.port}` : id === 'normal' ? 'Padrão' : status.installed ? 'Pronto para iniciar' : 'Runtime não incluído' : 'Verificando'}
           </span>
         </button>;
       })}
@@ -66,6 +67,7 @@ export default function ConnectionSettings({ settings, onSettings, onConnection 
       <ul>{protection.details.map(detail => <li key={detail}>{detail}</li>)}</ul>
       <p>{protection.caveat}</p>
     </div>}
+    <ProtonVpnPanel/>
     <div className="connection-ports">
       <label><span><strong>Porta SOCKS do Tor</strong><small>Usual: 9050 · Tor Browser: 9150</small></span><input type="number" min="1" max="65535" aria-label="Porta SOCKS do Tor" value={settings.torSocksPort} onChange={event => { const value = Number(event.target.value); if (value >= 1 && value <= 65535) onSettings({ torSocksPort: value }); }}/></label>
       <label><span><strong>Proxy HTTP do I2P</strong><small>Porta local usual: 4444</small></span><input type="number" min="1" max="65535" aria-label="Porta HTTP do I2P" value={settings.i2pHttpPort} onChange={event => { const value = Number(event.target.value); if (value >= 1 && value <= 65535) onSettings({ i2pHttpPort: value }); }}/></label>

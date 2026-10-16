@@ -1,25 +1,25 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
-const { execFile, spawn } = require('node:child_process');
-const { promisify } = require('node:util');
 const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
-const execFileAsync = promisify(execFile);
 const privacyServices = createPrivacyServices({ app });
 
 app.setName('Cypher');
 // Prevent speculative hostname lookups from bypassing anonymous proxies.
 app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
-protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }]);
-let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
-let hardwareAccelerationAtLaunch = true;
+protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }, { scheme: 'cypher-wallpaper', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+let win, store, storePath, activeId, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
+let hardwareAccelerationAtLaunch = true, mediaTimer = null;
+const protonExtensionId = 'jplgfhpmjnbigmhklmmbgecoobifkmpa';
+let protonExtensionReady = false, protonPopupWindow = null, protonProxyValue = null;
 let trackerEngine = null;
 let trackerList = { available: false, name: 'EasyPrivacy', source: 'https://easylist.to/easylist/easyprivacy.txt', lastModified: '', networkRuleCount: 0, blockedRequests: 0 };
 let trackerCountTimer = null;
@@ -57,7 +57,13 @@ function loadStore() {
     if (typeof value === 'string' && id !== '__proto__') notes[id] = value.slice(0,20000);
   }
   store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
+    profileSync: { endpoint: String(saved.profileSync?.endpoint || '').slice(0,2048), username: String(saved.profileSync?.username || '').slice(0,256), passwordEncrypted: String(saved.profileSync?.passwordEncrypted || '').slice(0,8192), deviceId: /^[a-f\d-]{36}$/i.test(saved.profileSync?.deviceId || '') ? saved.profileSync.deviceId : randomUUID(), localUpdatedAt: Number.isFinite(saved.profileSync?.localUpdatedAt) ? saved.profileSync.localUpdatedAt : 0, lastSync: Number.isFinite(saved.profileSync?.lastSync) ? saved.profileSync.lastSync : 0 },
     homeData: { notes, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } };
+  if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
+    store.settings.wallpaperVideoPath = '';
+    store.settings.wallpaperVideoName = '';
+    if (store.settings.wallpaper === 'video') store.settings.wallpaper = 'orbital';
+  }
   if (saved.trackerProtectionConfigured !== true) {
     store.settings.blockTrackers = true;
     store.trackerProtectionConfigured = true;
@@ -99,7 +105,19 @@ function loadStore() {
 }
 function persist() {
   clearTimeout(saveTimer);
+  if (profileSyncReady && !profileSyncBusy && store?.profileSync) store.profileSync.localUpdatedAt = Date.now();
   saveTimer = setTimeout(flush, 200);
+  if (profileSyncReady && !profileSyncBusy && store?.profileSync?.endpoint) {
+    clearTimeout(profileSyncTimer);
+    profileSyncTimer = setTimeout(() => void syncProfile().catch(error => console.warn('Sincronização do perfil:', error.message)), 5000);
+  }
+}
+function wallpaperDirectory() { return path.resolve(app.getPath('userData'), 'wallpapers'); }
+function safeWallpaperFile(value) {
+  if (typeof value !== 'string' || !value) return null;
+  const root = wallpaperDirectory(), resolved = path.resolve(value);
+  if (!resolved.startsWith(root + path.sep) || !/\.(?:mp4|webm|ogv)$/i.test(resolved)) return null;
+  try { return fs.statSync(resolved).isFile() ? resolved : null; } catch { return null; }
 }
 function flush() {
   if (!storePath) return;
@@ -109,17 +127,188 @@ function flush() {
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
 }
+function profileSyncSnapshot() {
+  const profile = store?.profileSync;
+  return { configured: !!profile?.endpoint, endpoint: profile?.endpoint || '', username: profile?.username || '', syncing: profileSyncBusy, lastSync: profile?.lastSync || 0, error: profile?.lastError || '' };
+}
+function profileDataForSync() {
+  const settings = { ...store.settings, wallpaperVideoPath: '', wallpaperVideoName: '', downloadDirectory: '', startWithWindows: false, connectionMode: 'normal', torSocksPort: defaults.torSocksPort, i2pHttpPort: defaults.i2pHttpPort };
+  if (settings.wallpaper === 'video') settings.wallpaper = 'orbital';
+  return {
+    settings, bookmarks: store.bookmarks, history: store.history.slice(0,1000),
+    savedTabs: tabs.filter(tab => !tab.private && tab.connectionMode === 'normal' && /^https?:\/\//.test(tab.url)).map(tab => ({ url: tab.url, pinned: tab.pinned })).slice(0,50),
+    sitePermissions: store.sitePermissions, homeData: store.homeData,
+  };
+}
+function profileSyncAuth() {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('A criptografia segura do Windows não está disponível neste dispositivo.');
+  const profile = store.profileSync;
+  let password = '';
+  try { password = safeStorage.decryptString(Buffer.from(profile.passwordEncrypted, 'base64')); }
+  catch { throw new Error('Não foi possível abrir a senha criptografada salva. Informe a senha novamente.'); }
+  return `Basic ${Buffer.from(`${profile.username}:${password}`, 'utf8').toString('base64')}`;
+}
+async function profileSyncRequest(method, body) {
+  const profile = store.profileSync;
+  const url = new URL(profile.endpoint);
+  if (url.protocol !== 'https:' && !['localhost','127.0.0.1'].includes(url.hostname)) throw new Error('A sincronização exige HTTPS. HTTP só é aceito em um servidor local de teste.');
+  const mode = store.settings.connectionMode || 'normal';
+  const routeTab = { private:false, connectionMode:mode };
+  const ses = session.fromPartition(sessionPartition(routeTab));
+  setupSession(ses, mode);
+  if (mode !== 'normal') {
+    await privacyServices.start(mode, connectionPort(mode));
+    await privacyServices.stopOther(mode);
+  }
+  await prepareProxy(routeTab, ses);
+  const response = await ses.fetch(url.href, { method, redirect:'error', signal:AbortSignal.timeout(25000), headers:{ Authorization:profileSyncAuth(), ...(body ? { 'Content-Type':'application/json; charset=utf-8' } : {}) }, ...(body ? { body:JSON.stringify(body) } : {}) });
+  return response;
+}
+async function syncProfile() {
+  if (profileSyncBusy || !store?.profileSync?.endpoint) return profileSyncSnapshot();
+  profileSyncBusy = true; store.profileSync.lastError = ''; emit();
+  try {
+    const response = await profileSyncRequest('GET');
+    if (response.status === 404) {
+      const document = { schema:1, deviceId:store.profileSync.deviceId, updatedAt:store.profileSync.localUpdatedAt || Date.now(), profile:profileDataForSync() };
+      const uploaded = await profileSyncRequest('PUT', document);
+      if (!uploaded.ok) throw new Error(`O servidor recusou a gravação do perfil (HTTP ${uploaded.status}).`);
+      store.profileSync.localUpdatedAt = document.updatedAt;
+    } else {
+      if (!response.ok) throw new Error(`O servidor de sincronização respondeu HTTP ${response.status}.`);
+      const length = Number(response.headers.get('content-length') || 0);
+      if (length > 20 * 1024 * 1024) throw new Error('O arquivo de sincronização ultrapassa 20 MB.');
+      const raw = await response.text();
+      if (Buffer.byteLength(raw, 'utf8') > 20 * 1024 * 1024) throw new Error('O arquivo de sincronização ultrapassa 20 MB.');
+      let remote;
+      try { remote = JSON.parse(raw); } catch { throw new Error('O arquivo remoto não contém um perfil Cypher válido.'); }
+      if (remote?.schema !== 1 || !Number.isFinite(remote.updatedAt) || !remote.profile || typeof remote.profile !== 'object') throw new Error('O arquivo remoto usa um formato de perfil incompatível.');
+      if (remote.updatedAt > store.profileSync.localUpdatedAt || store.profileSync.localUpdatedAt === 0) {
+        profileSyncBusy = true;
+        const incoming = remote.profile;
+        const mergeRecords = (remoteItems, localItems, identity) => {
+          const merged = new Map();
+          for (const item of [...(Array.isArray(localItems) ? localItems : []), ...(Array.isArray(remoteItems) ? remoteItems : [])]) {
+            if (!item || typeof item !== 'object') continue;
+            const key = identity(item);
+            if (key) merged.set(key, item);
+          }
+          return [...merged.values()];
+        };
+        const localProfileExists = store.bookmarks.length > 0 || store.history.length > 0 || store.savedTabs.length > 0
+          || Object.keys(store.homeData.notes || {}).length > 0 || Object.keys(store.homeData.focusById || {}).length > 0
+          || Object.values(store.homeData.tasksById || {}).some(items => Array.isArray(items) && items.length > 0);
+        store.settings = sanitizeSettings(incoming.settings, store.settings);
+        if (store.settings.wallpaper === 'video' && !store.settings.wallpaperVideoPath) store.settings.wallpaper = 'orbital';
+        if (Array.isArray(incoming.bookmarks)) {
+          const remotes = incoming.bookmarks.filter(item => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url)).map(item => ({ id:String(item.id || randomUUID()), title:String(item.title || item.url).slice(0,512), url:String(item.url).slice(0,4096), date:Number.isFinite(item.date) ? item.date : Date.now() }));
+          store.bookmarks = mergeRecords(remotes, store.bookmarks, item => item.url).slice(-1000);
+        }
+        if (Array.isArray(incoming.history)) {
+          const remotes = incoming.history.filter(item => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url)).map(item => ({ id:String(item.id || randomUUID()), title:String(item.title || item.url).slice(0,512), url:String(item.url).slice(0,4096), date:Number.isFinite(item.date) ? item.date : Date.now() }));
+          store.history = mergeRecords(remotes, store.history, item => `${item.id}:${item.date}`).sort((a,b) => b.date-a.date).slice(0,1000);
+        }
+        if (Array.isArray(incoming.savedTabs)) {
+          const remotes = incoming.savedTabs.filter(item => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url)).map(item => ({ url:String(item.url).slice(0,4096), pinned:item.pinned === true }));
+          store.savedTabs = mergeRecords(remotes, store.savedTabs, item => item.url).slice(0,50);
+        }
+        if (Array.isArray(incoming.sitePermissions)) {
+          const remotes = incoming.sitePermissions.slice(0,2000).filter(item => item && typeof item.origin === 'string' && sitePermissionTypes.has(item.permission) && typeof item.allowed === 'boolean').flatMap(item => {
+            try { const origin = new URL(item.origin).origin; return origin === item.origin && ['http:','https:'].includes(new URL(origin).protocol) ? [{ id:`${origin}|${item.permission}`, origin, permission:item.permission, allowed:item.allowed, updated:Number.isFinite(item.updated) ? item.updated : Date.now() }] : []; } catch { return []; }
+          });
+          store.sitePermissions = mergeRecords(remotes, store.sitePermissions, item => item.id).slice(-2000);
+        }
+        if (incoming.homeData && typeof incoming.homeData === 'object') {
+          const incomingNotes = incoming.homeData.notes && typeof incoming.homeData.notes === 'object' ? incoming.homeData.notes : {};
+          const notes = Object.fromEntries(Object.entries(incomingNotes).filter(([id,value]) => id !== '__proto__' && typeof value === 'string').slice(0,100).map(([id,value]) => [id.slice(0,128),value.slice(0,20000)]));
+          const focusWidgetIds = new Set(store.settings.home.widgets.filter(widget => widget.type === 'focus').map(widget => widget.id));
+          const taskWidgetIds = new Set(store.settings.home.widgets.filter(widget => widget.type === 'tasks').map(widget => widget.id));
+          const incomingFocusById = incoming.homeData.focusById && typeof incoming.homeData.focusById === 'object' ? incoming.homeData.focusById : {};
+          const focusById = Object.fromEntries(Object.entries(incomingFocusById).filter(([id,value]) => focusWidgetIds.has(id) && value && [value.duration,value.remaining].every(Number.isFinite)).slice(0,50).map(([id,value]) => [id, {
+            duration:Math.max(60,Math.min(7200,value.duration)), remaining:Math.max(0,Math.min(7200,value.remaining)),
+            endsAt:Number.isFinite(value.endsAt) ? Math.max(0,Math.min(value.endsAt,Date.now()+7200000)) : null,
+          }]));
+          const incomingTasksById = incoming.homeData.tasksById && typeof incoming.homeData.tasksById === 'object' ? incoming.homeData.tasksById : {};
+          const tasksById = Object.fromEntries(Object.entries(incomingTasksById).filter(([id,items]) => taskWidgetIds.has(id) && Array.isArray(items)).slice(0,50).map(([id,items]) => {
+            const remoteTasks = items.slice(0,50).flatMap(item => item && typeof item.id === 'string' && typeof item.title === 'string'
+              ? [{ id:item.id.slice(0,80), title:item.title.slice(0,180), done:item.done === true }]
+              : []);
+            const localTasks = localProfileExists && Array.isArray(store.homeData.tasksById[id]) ? store.homeData.tasksById[id] : [];
+            const merged = new Map([...remoteTasks,...localTasks].map(item => [item.id,item]));
+            return [id,[...merged.values()].slice(-50)];
+          }));
+          store.homeData = {
+            ...store.homeData,
+            notes:localProfileExists ? { ...notes,...store.homeData.notes } : notes,
+            focusById:localProfileExists ? { ...focusById,...store.homeData.focusById } : { ...store.homeData.focusById,...focusById },
+            tasksById:localProfileExists ? { ...tasksById,...store.homeData.tasksById } : { ...store.homeData.tasksById,...tasksById },
+          };
+          if (!localProfileExists && incoming.homeData.focus && [incoming.homeData.focus.duration,incoming.homeData.focus.remaining].every(Number.isFinite)) store.homeData.focus = { duration:Math.max(60,Math.min(7200,incoming.homeData.focus.duration)), remaining:Math.max(0,Math.min(7200,incoming.homeData.focus.remaining)), endsAt:Number.isFinite(incoming.homeData.focus.endsAt) ? incoming.homeData.focus.endsAt : null };
+        }
+        store.profileSync.localUpdatedAt = localProfileExists && store.profileSync.localUpdatedAt === 0 ? Date.now() : remote.updatedAt;
+        if (localProfileExists && remote.updatedAt > 0 && store.profileSync.localUpdatedAt > remote.updatedAt) {
+          const uploaded = await profileSyncRequest('PUT', { schema:1, deviceId:store.profileSync.deviceId, updatedAt:store.profileSync.localUpdatedAt, profile:profileDataForSync() });
+          if (!uploaded.ok) throw new Error(`O servidor recusou a gravação do perfil mesclado (HTTP ${uploaded.status}).`);
+        }
+        flush();
+      } else if (remote.deviceId !== store.profileSync.deviceId || remote.updatedAt < store.profileSync.localUpdatedAt) {
+        const uploaded = await profileSyncRequest('PUT', { schema:1, deviceId:store.profileSync.deviceId, updatedAt:store.profileSync.localUpdatedAt || Date.now(), profile:profileDataForSync() });
+        if (!uploaded.ok) throw new Error(`O servidor recusou a gravação do perfil (HTTP ${uploaded.status}).`);
+      }
+    }
+    store.profileSync.lastSync = Date.now(); store.profileSync.lastError = '';
+    flush(); emit(); return profileSyncSnapshot();
+  } catch (error) {
+    store.profileSync.lastError = String(error?.message || error).slice(0,500);
+    flush(); emit(); throw error;
+  } finally { profileSyncBusy = false; emit(); }
+}
 function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, error }) => ({ id, name, version, enabled, source, error })),
-    sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], maximized: win?.isMaximized() || false,
+    sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
     trackerProtection: trackerList,
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
-    homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData };
+    homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
+    nowPlaying: getNowPlaying() };
 }
 function emit() { if (win && !win.isDestroyed()) win.webContents.send('cypher:state', snapshot()); }
 function active() { return tabs.find(tab => tab.id === activeId); }
+function getNowPlaying() {
+  let tab = tabs.find(entry => entry.id === nowPlayingTabId && entry.mediaPlaying && entry.mediaInfo);
+  if (!tab) tab = [...tabs].reverse().find(entry => entry.mediaPlaying && entry.mediaInfo) || tabs.find(entry => entry.id === nowPlayingTabId && entry.mediaInfo) || [...tabs].reverse().find(entry => entry.mediaInfo);
+  return tab?.mediaInfo ? { ...tab.mediaInfo, tabId: tab.id, tabTitle: tab.title, pageUrl: tab.url, playing: !!tab.mediaPlaying } : null;
+}
+function refreshMediaInfo(tab, started = false) {
+  const wc = tab.view?.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  const script = `(() => {
+    const elements = [...document.querySelectorAll('audio,video')];
+    const media = elements.find(item => !item.paused && !item.ended && item.readyState >= 2) || elements.find(item => !item.paused && !item.ended) || elements.find(item => item.currentSrc);
+    const metadata = navigator.mediaSession?.metadata;
+    const artwork = metadata?.artwork?.find(item => typeof item.src === 'string' && item.src.startsWith('data:image/'))?.src || '';
+    return { title: metadata?.title || media?.getAttribute('title') || document.title || location.hostname,
+      artist: metadata?.artist || '', album: metadata?.album || '', artwork,
+      currentTime: Number.isFinite(media?.currentTime) ? media.currentTime : 0,
+      duration: Number.isFinite(media?.duration) ? media.duration : 0,
+      playing: !!media && !media.paused && !media.ended };
+  })()`;
+  wc.executeJavaScript(script, true).then(info => {
+    if (!tabs.includes(tab) || wc.isDestroyed()) return;
+    const actuallyPlaying = !!info?.playing || (started && wc.isCurrentlyAudible());
+    tab.mediaPlaying = actuallyPlaying;
+    if (actuallyPlaying) nowPlayingTabId = tab.id;
+    tab.mediaInfo = {
+      title: String(info?.title || wc.getTitle() || new URL(tab.url).hostname).slice(0, 240),
+      artist: String(info?.artist || '').slice(0, 160), album: String(info?.album || '').slice(0, 160),
+      artwork: typeof info?.artwork === 'string' ? info.artwork.slice(0, 250000) : '',
+      currentTime: Number.isFinite(info?.currentTime) ? Math.max(0, info.currentTime) : 0,
+      duration: Number.isFinite(info?.duration) ? Math.max(0, info.duration) : 0,
+    };
+    emit();
+  }).catch(() => {});
+}
 function shortcut(action) { win.webContents.send('cypher:shortcut', action); }
 function layout() {
   if (!win || win.isDestroyed()) return;
@@ -215,54 +404,107 @@ function prepareProxy(tab, ses) {
   }
   return proxyReady.get(ses);
 }
-function windowsSystemTool(name) {
-  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', name);
+function protonExtensionDirectory() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'proton-vpn')
+    : path.resolve(__dirname, '../vendor/proton-vpn-browser-extension/distribution-cypher');
 }
-function vpnPhonebook(allUsers) {
-  return allUsers
-    ? path.join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Network', 'Connections', 'Pbk', 'rasphone.pbk')
-    : path.join(app.getPath('appData'), 'Microsoft', 'Network', 'Connections', 'Pbk', 'rasphone.pbk');
-}
-async function listWindowsVpnProfiles() {
-  if (process.platform !== 'win32') return { supported: false, profiles: [] };
-  const script = [
-    "$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false)",
-    '$items = New-Object System.Collections.Generic.List[object]',
-    'foreach ($shared in @($false, $true)) {',
-    '  try {',
-    '    if ($shared) { $entries = @(Get-VpnConnection -AllUserConnection -ErrorAction Stop) } else { $entries = @(Get-VpnConnection -ErrorAction Stop) }',
-    '    foreach ($entry in $entries) { $items.Add([pscustomobject]@{ name=[string]$entry.Name; serverAddress=[string]$entry.ServerAddress; tunnelType=[string]$entry.TunnelType; connectionStatus=[string]$entry.ConnectionStatus; allUserConnection=[bool]$shared }) }',
-    '  } catch { }',
-    '}',
-    '$profiles = @($items.ToArray() | Sort-Object name, allUserConnection -Unique)',
-    '[pscustomobject]@{ profiles=$profiles } | ConvertTo-Json -Depth 4 -Compress',
-  ].join('; ');
+async function loadBuiltInProtonVpn() {
+  const ses = session.fromPartition('persist:cypher');
   try {
-    const { stdout } = await execFileAsync(windowsSystemTool('WindowsPowerShell\\v1.0\\powershell.exe'), ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true, timeout: 12000, maxBuffer: 1024 * 1024, encoding: 'utf8' });
-    const result = JSON.parse(stdout.trim() || '{"profiles":[]}');
-    return { supported: true, profiles: Array.isArray(result.profiles) ? result.profiles : result.profiles ? [result.profiles] : [] };
+    ses.registerPreloadScript({ type:'frame', filePath:path.join(__dirname, 'proton-preload.cjs') });
+    const loaded = await ses.extensions.loadExtension(protonExtensionDirectory(), { allowFileAccess:false });
+    if (loaded.id !== protonExtensionId) {
+      ses.extensions.removeExtension(loaded.id);
+      throw new Error('O identificador da extensão Proton embutida não corresponde ao esperado.');
+    }
+    protonExtensionReady = true;
+    return true;
   } catch (error) {
-    throw new Error(`O Windows não conseguiu ler os perfis de VPN: ${error.stderr?.trim() || error.message}`);
+    protonExtensionReady = false;
+    console.error('Não foi possível carregar a VPN Proton integrada:', error.message);
+    return false;
   }
 }
-async function openWindowsVpnProfile(profile) {
-  const executable = windowsSystemTool('rasphone.exe');
-  await new Promise((resolve, reject) => {
-    const processHandle = spawn(executable, ['-d', profile.name], { detached: true, stdio: 'ignore', windowsHide: false });
-    processHandle.once('error', reject);
-    processHandle.once('spawn', () => { processHandle.unref(); resolve(); });
+function assertProtonBridgeSender(event) {
+  let url;
+  try { url = new URL(event.senderFrame?.url || ''); } catch { throw new Error('Origem da integração VPN inválida.'); }
+  if (event.sender.session !== session.fromPartition('persist:cypher') || url.protocol !== 'chrome-extension:' || url.hostname !== protonExtensionId) {
+    throw new Error('A integração VPN só pode ser chamada pelo painel Proton embutido.');
+  }
+}
+function protonVpnStatus() {
+  const proxy = protonProxyValue?.rules?.singleProxy;
+  const connecting = proxy?.host === 'localhost' && proxy?.port === 9;
+  return { bundled:true, available:protonExtensionReady, active:!!proxy && !connecting, connecting, server:proxy?.host || '', version:'1.3.6' };
+}
+async function setProtonProxy(value) {
+  const ses = session.fromPartition('persist:cypher');
+  let config;
+  if (value?.mode === 'fixed_servers') {
+    const proxy = value?.rules?.singleProxy;
+    if (!proxy || !['http','https'].includes(proxy.scheme) || !Number.isInteger(proxy.port) || proxy.port < 1 || proxy.port > 65535 || typeof proxy.host !== 'string' || proxy.host.length > 253 || /[\s/@?#]/.test(proxy.host)) throw new Error('A configuração de proxy recebida da extensão Proton é inválida.');
+    const bypass = Array.isArray(value.rules.bypassList) ? value.rules.bypassList.filter(item => typeof item === 'string' && item.length <= 255).slice(0,100).join(',') : '';
+    config = { mode:'fixed_servers', proxyRules:proxy.scheme + '://' + proxy.host + ':' + proxy.port, ...(bypass ? { proxyBypassRules:bypass } : {}) };
+  } else if (value?.mode === 'pac_script') {
+    throw new Error('O tunelamento dividido do Proton não está disponível na integração Cypher.');
+  } else if (value?.mode === 'system') {
+    config = { mode:'system' };
+  } else {
+    throw new Error('Modo de proxy Proton não permitido.');
+  }
+  await ses.setProxy(config);
+  await ses.closeAllConnections();
+  protonProxyValue = value.mode === 'system' ? null : value;
+  for (const tab of tabs) {
+    if (tab.private || tab.connectionMode !== 'normal' || !tab.view || tab.view.webContents.isDestroyed()) continue;
+    try { tab.view.webContents.setWebRTCIPHandlingPolicy(protonProxyValue ? 'disable_non_proxied_udp' : store.settings.webrtcPolicy); } catch {}
+  }
+  emit();
+  return true;
+}
+async function openProtonVpn() {
+  if (!protonExtensionReady) throw new Error('O painel Proton integrado não foi carregado. Reinstale ou atualize o Cypher.');
+  if (protonPopupWindow && !protonPopupWindow.isDestroyed()) {
+    protonPopupWindow.show();
+    protonPopupWindow.focus();
+    return { opened:true };
+  }
+  const ses = session.fromPartition('persist:cypher');
+  protonPopupWindow = new BrowserWindow({ width:420, height:640, minWidth:380, minHeight:520, parent:win, show:false, backgroundColor:'#0a0d0c', autoHideMenuBar:true,
+    webPreferences:{ session:ses, nodeIntegration:false, contextIsolation:true, sandbox:true, webSecurity:true } });
+  protonPopupWindow.setMenuBarVisibility(false);
+  protonPopupWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) addTab(url, false, 'normal');
+    return { action:'deny' };
   });
-  return { started: true };
+  protonPopupWindow.on('closed', () => { protonPopupWindow = null; });
+  await protonPopupWindow.loadURL('chrome-extension://' + protonExtensionId + '/popup.html');
+  protonPopupWindow.show();
+  protonPopupWindow.focus();
+  return { opened:true };
 }
-async function disconnectWindowsVpnProfile(profile) {
-  try {
-    await execFileAsync(windowsSystemTool('rasdial.exe'), [profile.name, '/disconnect', `/phonebook:${vpnPhonebook(profile.allUserConnection)}`], { windowsHide: true, timeout: 15000, maxBuffer: 256 * 1024, encoding: 'utf8' });
-    return { disconnected: true };
-  } catch (error) {
-    const detail = String(error.stderr || error.stdout || '').trim();
-    if (error.code === 623 || /623/.test(detail)) throw new Error('O Windows não encontrou este perfil na agenda VPN. Abra as configurações de VPN e atualize a lista.');
-    throw new Error(`Não foi possível desconectar a VPN: ${detail || error.message}`);
-  }
+function registerProtonIpcBridge() {
+  ipcMain.handle('cypher-proton:proxy:get', event => {
+    assertProtonBridgeSender(event);
+    return { active:!!protonProxyValue, value:protonProxyValue };
+  });
+  ipcMain.handle('cypher-proton:proxy:set', async (event, value) => {
+    assertProtonBridgeSender(event);
+    if (!protonExtensionReady) throw new Error('A extensão Proton embutida não está carregada.');
+    return setProtonProxy(value);
+  });
+  ipcMain.handle('cypher-proton:proxy:clear', async event => {
+    assertProtonBridgeSender(event);
+    return setProtonProxy({ mode:'system' });
+  });
+  ipcMain.handle('cypher-proton:open-url', (event, value) => {
+    assertProtonBridgeSender(event);
+    let url;
+    try { url = new URL(String(value || '')); } catch { throw new Error('Endereço solicitado pela extensão Proton inválido.'); }
+    if (url.protocol !== 'https:' || url.username || url.password) throw new Error('A extensão Proton só pode abrir endereços HTTPS sem credenciais.');
+    return { id:addTab(url.href, false, 'normal') };
+  });
 }
 function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode = store.settings.connectionMode) {
   const url = resolveAddress(address, store.settings.searchEngine, store.settings.customSearchUrl);
@@ -277,6 +519,7 @@ function removeTab(tab) {
   const index = tabs.indexOf(tab);
   if (index < 0) return;
   tabs.splice(index, 1);
+  if (nowPlayingTabId === tab.id) nowPlayingTabId = null;
   if (!tab.private) closedTabs.push({ url: tab.url, title: tab.title, connectionMode: tab.connectionMode });
   if (closedTabs.length > 20) closedTabs.shift();
   if (activeId === tab.id) activeId = tabs[Math.min(index, tabs.length - 1)]?.id;
@@ -424,6 +667,7 @@ async function confirmExtensionInstall(manifest) {
 async function installExtension(directory, options = {}) {
   const extensionPath = path.resolve(directory);
   const manifest = extensionManifest(extensionPath);
+  if (options.expectedId === protonExtensionId || manifest.name === 'Proton VPN: Fast & Secure') throw new Error('O Proton VPN já vem integrado ao Cypher e não precisa ser instalado como extensão separada.');
   if (store.extensions.some(extension => extension.path === extensionPath)) throw new Error('Esta pasta já foi adicionada ao Cypher.');
   if (store.extensions.length >= 100) throw new Error('O limite é de 100 extensões instaladas.');
   if (options.expectedId && store.extensions.some(extension => extension.id === options.expectedId)) throw new Error('Esta extensão já está instalada. Remova a versão existente antes de instalar novamente.');
@@ -485,6 +729,7 @@ async function downloadChromeStoreCrx(extensionId) {
 }
 async function installChromeStoreExtension(value) {
   const extensionId = extensionIdFromStoreUrl(value);
+  if (extensionId === protonExtensionId) throw new Error('O Proton VPN já vem integrado ao Cypher e não precisa ser instalado como extensão separada.');
   if (store.extensions.some(extension => extension.id === extensionId)) throw new Error('Esta extensão já está instalada.');
   const packageBytes = await downloadChromeStoreCrx(extensionId);
   const extensionsRoot = path.resolve(app.getPath('userData'), 'extensions');
@@ -502,10 +747,50 @@ async function installChromeStoreExtension(value) {
     throw error;
   }
 }
+function installStoreClickHandler(tab) {
+  const wc = tab.view?.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  let current;
+  try { current = new URL(tab.url); } catch { return; }
+  if (!['chromewebstore.google.com','chrome.google.com'].includes(current.hostname.toLowerCase())) return;
+  const script = `(() => {
+    if (window.__cypherWebStoreInstallBridge) return;
+    window.__cypherWebStoreInstallBridge = true;
+    let pending = false;
+    document.addEventListener('click', event => {
+      if (pending) return;
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+      const button = path.find(node => node instanceof Element && /^(BUTTON|A)$/.test(node.tagName));
+      if (!button) return;
+      const label = [button.innerText, button.getAttribute('aria-label'), button.getAttribute('title'), button.getAttribute('data-label')].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+      if (!/(?:^|\s)(?:add to chrome|adicionar ao chrome|install extension|instalar extens[aã]o|install|instalar)(?:\s|$)/i.test(label)) return;
+      const id = location.pathname.match(/\\/detail\\/[^/]+\\/([a-p]{32})(?:\\/|$)/i)?.[1];
+      if (!id) return;
+      event.preventDefault(); event.stopImmediatePropagation(); pending = true;
+      location.assign('cypher://install-extension/' + id);
+    }, true);
+  })()`;
+  void wc.executeJavaScript(script, true).catch(() => {});
+}
+function handleStoreInstallNavigation(tab, event, targetUrl) {
+  const match = String(targetUrl).match(/^cypher:\/\/install-extension\/([a-p]{32})\/?$/i);
+  if (!match) return false;
+  event.preventDefault();
+  let host = '';
+  try { host = new URL(tab.url).hostname.toLowerCase(); } catch {}
+  if (!['chromewebstore.google.com','chrome.google.com'].includes(host)) return true;
+  const url = `https://chromewebstore.google.com/detail/extensao/${match[1]}`;
+  void installChromeStoreExtension(url).catch(async error => {
+    console.error('Não foi possível instalar a extensão pela Chrome Web Store:', error.message);
+    if (win && !win.isDestroyed()) await dialog.showMessageBox(win, { type:'error', title:'Instalação da extensão', message:'O Cypher não conseguiu instalar esta extensão.', detail:error.message, buttons:['OK'] });
+  });
+  return true;
+}
 async function loadStoredExtensions() {
   const ses = session.fromPartition('persist:cypher');
   for (const extension of store.extensions) {
     if (!extension.enabled) continue;
+    if (extension.id === protonExtensionId) { extension.error = 'Já incluída no Cypher'; continue; }
     try {
       const loaded = await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
       extension.id = loaded.id;
@@ -534,7 +819,7 @@ function attachView(tab) {
     wc.setUserAgent(normalizedUserAgent);
   }
   wc.setZoomFactor(store.settings.defaultZoom);
-  wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? store.settings.webrtcPolicy : 'disable_non_proxied_udp');
+  wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? (protonProxyValue ? 'disable_non_proxied_udp' : store.settings.webrtcPolicy) : 'disable_non_proxied_udp');
   wc.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) {
       if (store.settings.openLinksInNewTab) addTab(url, tab.private, tab.connectionMode);
@@ -542,11 +827,11 @@ function attachView(tab) {
     }
     return { action: 'deny' };
   });
-  wc.on('will-navigate', (event, url) => { if (!/^https?:\/\//.test(url)) event.preventDefault(); });
-  wc.on('will-redirect', (event, url) => { if (!/^https?:\/\//.test(url)) event.preventDefault(); });
-  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; update(tab); layout(); });
+  wc.on('will-navigate', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
+  wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
+  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
-  wc.on('page-title-updated', (_event, title) => { tab.title = title; update(tab); });
+  wc.on('page-title-updated', (_event, title) => { tab.title = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
     tab.url = url; tab.error = null;
     if (!tab.private && tab.connectionMode === 'normal') {
@@ -555,8 +840,10 @@ function attachView(tab) {
     }
     layout(); update(tab);
   });
-  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); } });
+  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); installStoreClickHandler(tab); } });
   wc.on('did-finish-load', () => {
+    installStoreClickHandler(tab);
+    if (tab.mediaPlaying) refreshMediaInfo(tab, true);
     if (!tab.private && tab.connectionMode === 'normal') { const entry = store.history.find(h => h.url === tab.url); if (entry) { entry.title = wc.getTitle(); persist(); } }
     update(tab);
   });
@@ -565,7 +852,9 @@ function attachView(tab) {
     tab.error = `${description} (${code})`; tab.loading = false; layout(); emit();
   });
   wc.on('render-process-gone', () => { tab.error = 'A página foi encerrada. Recarregue para continuar.'; tab.loading = false; layout(); emit(); });
-  wc.on('media-started-playing', () => update(tab)); wc.on('media-paused', () => update(tab));
+  wc.on('media-started-playing', () => { tab.mediaPlaying = true; nowPlayingTabId = tab.id; refreshMediaInfo(tab, true); update(tab); });
+  wc.on('media-paused', () => setTimeout(() => refreshMediaInfo(tab, false), 180));
+  wc.on('audio-state-changed', (_event, audible) => { tab.audible = !!audible; if (audible) { tab.mediaPlaying = true; nowPlayingTabId = tab.id; } setTimeout(() => refreshMediaInfo(tab, !!audible), 120); update(tab); });
   wc.on('will-prevent-unload', async () => {
     const result = await dialog.showMessageBox(win, { type: 'question', message: 'Esta página pode ter alterações não salvas. Sair mesmo assim?', buttons: ['Ficar na página','Sair'], defaultId: 0, cancelId: 0 });
     if (result.response === 1) { wc.removeAllListeners('will-prevent-unload'); wc.close(); }
@@ -659,6 +948,14 @@ async function clearSiteData() {
 function setSettings(payload) {
   const previous = store.settings;
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
+  if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
+    store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
+    store.settings.wallpaperVideoName = previous.wallpaperVideoName || '';
+  }
+  if (previous.wallpaperVideoPath && previous.wallpaperVideoPath !== store.settings.wallpaperVideoPath) {
+    const oldVideo = safeWallpaperFile(previous.wallpaperVideoPath);
+    if (oldVideo) void fs.promises.rm(oldVideo, { force: true }).catch(() => {});
+  }
   if (previous.startWithWindows !== store.settings.startWithWindows && process.platform === 'win32') {
     try {
       app.setLoginItemSettings({ openAtLogin: store.settings.startWithWindows, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] });
@@ -737,6 +1034,33 @@ async function command(action, payload) {
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
     case 'tab:mute': { const target = tabs.find(t => t.id === payload); if (target) { target.muted = !target.muted; target.view?.webContents.setAudioMuted(target.muted); emit(); } break; }
+    case 'media:select': {
+      const target = tabs.find(entry => entry.id === payload && entry.mediaInfo);
+      if (target) { nowPlayingTabId = target.id; emit(); }
+      break;
+    }
+    case 'media:control': {
+      const target = tabs.find(entry => entry.id === payload?.tabId && entry.view && !entry.view.webContents.isDestroyed());
+      if (!target || !['toggle','play','pause','seek-back','seek-forward','seek'].includes(payload?.action)) break;
+      nowPlayingTabId = target.id;
+      const operation = payload.action;
+      const value = Number.isFinite(payload.value) ? Math.max(0, Math.min(86400, payload.value)) : 0;
+      await target.view.webContents.executeJavaScript(`(() => {
+        const items = [...document.querySelectorAll('audio,video')];
+        const media = items.find(item => !item.paused && !item.ended) || items.find(item => item.currentSrc) || items[0];
+        if (!media) return false;
+        const action = ${JSON.stringify(operation)}, value = ${value};
+        if (action === 'pause') items.forEach(item => item.pause());
+        else if (action === 'play') { if (media.paused) void media.play().catch(() => {}); }
+        else if (action === 'toggle') { if (media.paused) void media.play().catch(() => {}); else items.forEach(item => item.pause()); }
+        else if (action === 'seek') media.currentTime = Math.min(Number.isFinite(media.duration) ? media.duration : value, value);
+        else if (action === 'seek-back') media.currentTime = Math.max(0, media.currentTime - 10);
+        else if (action === 'seek-forward') media.currentTime = Math.min(Number.isFinite(media.duration) ? media.duration : media.currentTime + 10, media.currentTime + 10);
+        return true;
+      })()`, true).catch(() => false);
+      setTimeout(() => refreshMediaInfo(target, operation === 'play' || operation === 'toggle'), 160);
+      break;
+    }
     case 'tab:move': { const from = tabs.findIndex(t => t.id === payload?.from), to = tabs.findIndex(t => t.id === payload?.to); if (from >= 0 && to >= 0) tabs.splice(to, 0, tabs.splice(from, 1)[0]); emit(); break; }
     case 'navigate': if (tab) navigate(tab, payload); break;
     case 'back': if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
@@ -748,6 +1072,28 @@ async function command(action, payload) {
       viewport = payload; obscured = !!payload.obscured; layout(); break;
     }
     case 'settings': setSettings(payload); break;
+    case 'profile:sync:configure': {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('A criptografia segura do Windows não está disponível neste dispositivo.');
+      let endpoint;
+      try { endpoint = new URL(String(payload?.endpoint || '').trim()); } catch { throw new Error('Informe o endereço HTTPS do arquivo WebDAV do perfil.'); }
+      if (!['https:','http:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || (endpoint.protocol === 'http:' && !['localhost','127.0.0.1'].includes(endpoint.hostname))) throw new Error('Use uma URL HTTPS sem credenciais, parâmetros ou fragmentos; HTTP só é aceito em localhost.');
+      if (endpoint.pathname === '/' || endpoint.pathname.length < 2) throw new Error('Informe o caminho completo do arquivo de perfil no servidor WebDAV.');
+      const username = String(payload?.username || '').trim().slice(0,256), password = typeof payload?.password === 'string' ? payload.password : '';
+      if (!username || username.includes(':')) throw new Error('Informe um usuário WebDAV válido, sem dois-pontos.');
+      if (password.length > 1024) throw new Error('A senha do WebDAV deve ter até 1.024 caracteres.');
+      if (!password && !store.profileSync.passwordEncrypted) throw new Error('Informe a senha do WebDAV.');
+      store.profileSync.endpoint = endpoint.href;
+      store.profileSync.username = username;
+      if (password) store.profileSync.passwordEncrypted = safeStorage.encryptString(password).toString('base64');
+      store.profileSync.lastError = '';
+      flush(); emit();
+      return syncProfile();
+    }
+    case 'profile:sync:run': return syncProfile();
+    case 'profile:sync:disconnect': {
+      store.profileSync.endpoint = ''; store.profileSync.username = ''; store.profileSync.passwordEncrypted = ''; store.profileSync.lastError = '';
+      clearTimeout(profileSyncTimer); flush(); emit(); break;
+    }
     case 'system:default-browser': {
       if (process.platform !== 'win32') throw new Error('A seleção do navegador padrão é feita nas configurações do sistema operacional.');
       await shell.openExternal('ms-settings:defaultapps');
@@ -784,8 +1130,12 @@ async function command(action, payload) {
       const mode = payload === 'tor' || payload === 'i2p' ? payload : 'normal';
       if (mode === 'normal') return { mode, available: true, port: null };
       const port = connectionPort(mode);
-      return { mode, available: await privacyServices.check(mode, port), port };
+      return { mode, available: await privacyServices.check(mode, port), installed: privacyServices.installed(mode), port };
     }
+    case 'vpn:proton:status': return protonVpnStatus();
+    case 'vpn:proton:open': return openProtonVpn();
+    case 'vpn:proton:account': return addTab('https://protonvpn.com/free-vpn', false, 'normal');
+    case 'vpn:proton:verify': return addTab('https://protonvpn.com/what-is-my-ip-address', false, 'normal');
     case 'connection:select': {
       const mode = ['normal','tor','i2p'].includes(payload) ? payload : 'normal';
       if (mode !== 'normal') {
@@ -796,23 +1146,6 @@ async function command(action, payload) {
       if (mode === 'normal') await privacyServices.stopAll();
       else await privacyServices.stopOther(mode);
       break;
-    }
-    case 'vpn:list': return listWindowsVpnProfiles();
-    case 'vpn:connect':
-    case 'vpn:disconnect': {
-      if (process.platform !== 'win32') throw new Error('A VPN nativa está disponível na versão Windows do Cypher.');
-      const name = typeof payload?.name === 'string' ? payload.name.slice(0, 256) : '';
-      if (!name) throw new Error('Selecione um perfil de VPN do Windows.');
-      const allUserConnection = payload?.allUserConnection === true;
-      const { profiles } = await listWindowsVpnProfiles();
-      const profile = profiles.find(entry => entry.name === name && entry.allUserConnection === allUserConnection);
-      if (!profile) throw new Error('Este perfil não existe mais no Windows. Atualize a lista de VPNs.');
-      return action === 'vpn:connect' ? openWindowsVpnProfile(profile) : disconnectWindowsVpnProfile(profile);
-    }
-    case 'vpn:settings': {
-      if (process.platform !== 'win32') throw new Error('A configuração de VPN nativa está disponível no Windows.');
-      await shell.openExternal('ms-settings:network-vpnsettings');
-      return { opened: true };
     }
     case 'home:image:select': {
       const result = await dialog.showOpenDialog(win, { title: 'Escolher imagem para a Home', properties: ['openFile'], filters: [{ name: 'Imagens', extensions: ['png','jpg','jpeg','webp','gif'] }] });
@@ -832,6 +1165,18 @@ async function command(action, payload) {
       if (stat.size > 3 * 1024 * 1024) throw new Error('O papel de parede deve ter até 3 MB.');
       const mime = ({ '.png':'png', '.jpg':'jpeg', '.jpeg':'jpeg', '.webp':'webp' })[extension];
       return { dataUrl: `data:image/${mime};base64,${fs.readFileSync(file).toString('base64')}` };
+    }
+    case 'appearance:wallpaper-video:select': {
+      const result = await dialog.showOpenDialog(win, { title: 'Escolher vídeo para o fundo', properties: ['openFile'], filters: [{ name: 'Vídeos', extensions: ['mp4','webm','ogv'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const file = result.filePaths[0], extension = path.extname(file).toLowerCase(), stat = fs.statSync(file);
+      if (stat.size > 250 * 1024 * 1024) throw new Error('O vídeo deve ter até 250 MB.');
+      if (!['.mp4','.webm','.ogv'].includes(extension)) throw new Error('Formato não suportado. Use MP4, WebM ou OGV.');
+      const directory = wallpaperDirectory();
+      await fs.promises.mkdir(directory, { recursive: true });
+      const target = path.join(directory, `${randomUUID()}${extension}`);
+      await fs.promises.copyFile(file, target, fs.constants.COPYFILE_EXCL);
+      return { path: target, name: path.basename(file).slice(0,160) };
     }
     case 'appearance:music:select': {
       const result = await dialog.showOpenDialog(win, { title: 'Escolher música de fundo', properties: ['openFile'], filters: [{ name: 'Áudio', extensions: ['mp3','wav','ogg','webm'] }] });
@@ -988,9 +1333,21 @@ function installMenu() {
 }
 app.whenReady().then(async () => {
   if (!hasInstanceLock) return;
+  protocol.handle('cypher-wallpaper', request => {
+    const url = new URL(request.url);
+    if (!['GET','HEAD'].includes(request.method) || url.hostname !== 'wallpaper' || url.pathname !== '/current') return new Response('Not found', { status: 404 });
+    const file = safeWallpaperFile(store?.settings.wallpaperVideoPath);
+    if (!file) return new Response('Not found', { status: 404 });
+    return net.fetch(pathToFileURL(file).href, { headers: request.headers });
+  });
   protocol.registerSource('cypher-ui', { routes: [{ match: { host: 'app' }, source: { type: 'directory', root: path.resolve(__dirname, '../dist'), index: 'index.html', headers: { 'X-Content-Type-Options': 'nosniff' } } }] });
   loadTrackerEngine();
   loadStore();
+  registerProtonIpcBridge();
+  await loadBuiltInProtonVpn();
+  mediaTimer = setInterval(() => {
+    for (const tab of tabs) if (tab.mediaPlaying || tab.audible) refreshMediaInfo(tab, tab.mediaPlaying);
+  }, 1500);
   await loadStoredExtensions();
   updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });
   if (process.platform === 'win32' && store.settings.startWithWindows) {
@@ -1037,11 +1394,17 @@ app.whenReady().then(async () => {
   if (homeFirstId) selectTab(homeFirstId);
   await win.loadURL(trustedURL);
   win.show();
+  profileSyncReady = true;
+  if (store.profileSync.endpoint) setTimeout(() => void syncProfile().catch(error => console.warn('Sincronização inicial do perfil:', error.message)), 1800);
+  profileSyncInterval = setInterval(() => { if (store?.profileSync?.endpoint) void syncProfile().catch(error => console.warn('Sincronização periódica do perfil:', error.message)); }, 5 * 60 * 1000);
   updater.acknowledgeStartup();
   updater.start();
 });
 app.on('window-all-closed', () => app.quit());
 app.on('before-quit', event => {
+  if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = null; }
+  if (profileSyncInterval) { clearInterval(profileSyncInterval); profileSyncInterval = null; }
+  clearTimeout(profileSyncTimer);
   if (!exitCleanupStarted && (store?.settings.clearDataOnExit || store?.settings.clearHistoryOnExit)) {
     event.preventDefault();
     exitCleanupStarted = true;
