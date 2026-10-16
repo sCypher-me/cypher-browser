@@ -4,3 +4,4 @@ release/
 *.log
 .cypher-test-profile/
 artifacts/
+vendor/privacy-runtime/

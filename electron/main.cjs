@@ -2,19 +2,20 @@ const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, she
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const net = require('node:net');
 const { execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
+const { createPrivacyServices } = require('./privacy-services.cjs');
 
 const execFileAsync = promisify(execFile);
+const privacyServices = createPrivacyServices({ app });
 
 app.setName('Cypher');
 nativeTheme.themeSource = 'dark';
 protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }]);
-let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false;
+let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
 let hardwareAccelerationAtLaunch = true;
 try {
   const bootstrap = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'cypher.json'), 'utf8'));
@@ -155,26 +156,6 @@ function prepareProxy(tab, ses) {
     proxyReady.set(ses, ready);
   }
   return proxyReady.get(ses);
-}
-function checkLocalPort(port) {
-  return new Promise(resolve => {
-    const socket = net.createConnection({ host: '127.0.0.1', port });
-    const finish = available => { socket.destroy(); resolve(available); };
-    socket.setTimeout(900, () => finish(false));
-    socket.once('connect', () => finish(true));
-    socket.once('error', () => finish(false));
-  });
-}
-function checkTorProxy(port) {
-  return new Promise(resolve => {
-    const socket = net.createConnection({ host: '127.0.0.1', port });
-    let done = false;
-    const finish = available => { if (done) return; done = true; socket.destroy(); resolve(available); };
-    socket.setTimeout(1200, () => finish(false));
-    socket.once('connect', () => socket.write(Buffer.from([5, 1, 0])));
-    socket.once('data', data => finish(data.length >= 2 && data[0] === 5 && data[1] === 0));
-    socket.once('error', () => finish(false));
-  });
 }
 function windowsSystemTool(name) {
   return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', name);
@@ -548,7 +529,10 @@ function navigate(tab, input) {
   const view = tab.view || attachView(tab);
   tab.title = new URL(url).hostname; tab.loading = true;
   const ses = view.webContents.session;
-  void (proxyReady.get(ses) || Promise.resolve()).then(() => view.webContents.loadURL(url)).catch(error => {
+  const routeReady = tab.connectionMode === 'normal'
+    ? Promise.resolve()
+    : privacyServices.start(tab.connectionMode, connectionPort(tab.connectionMode));
+  void routeReady.then(() => proxyReady.get(ses) || Promise.resolve()).then(() => view.webContents.loadURL(url)).catch(error => {
     tab.error = `Não foi possível iniciar a conexão ${tab.connectionMode}: ${error.message}`; tab.loading = false; layout(); emit();
   });
   layout(); emit();
@@ -702,7 +686,7 @@ async function command(action, payload) {
     case 'system:restart': {
       if (store.settings.hardwareAcceleration === hardwareAccelerationAtLaunch) return { restarted: false };
       app.relaunch();
-      quitting = true; closing = true; flush(); app.exit(0);
+      quitting = true; closing = true; flush(); app.quit();
       return { restarted: true };
     }
     case 'page:translate': {
@@ -720,18 +704,18 @@ async function command(action, payload) {
       const mode = payload === 'tor' || payload === 'i2p' ? payload : 'normal';
       if (mode === 'normal') return { mode, available: true, port: null };
       const port = connectionPort(mode);
-      return { mode, available: mode === 'tor' ? await checkTorProxy(port) : await checkLocalPort(port), port };
+      return { mode, available: await privacyServices.check(mode, port), port };
     }
     case 'connection:select': {
       const mode = ['normal','tor','i2p'].includes(payload) ? payload : 'normal';
       if (mode !== 'normal') {
         const port = connectionPort(mode);
-        const available = mode === 'tor' ? await checkTorProxy(port) : await checkLocalPort(port);
-        if (!available) throw new Error(mode === 'tor'
-          ? `O serviço Tor não respondeu ao handshake SOCKS5 na porta ${port}. O Cypher mantém a rota atual para não expor seu endereço.`
-          : `O proxy I2P não está respondendo na porta ${port}. O Cypher mantém a rota atual para evitar uma conexão fora do túnel.`);
+        await privacyServices.start(mode, port);
       }
-      applyConnectionMode(mode); break;
+      applyConnectionMode(mode);
+      if (mode === 'normal') await privacyServices.stopAll();
+      else await privacyServices.stopOther(mode);
+      break;
     }
     case 'vpn:list': return listWindowsVpnProfiles();
     case 'vpn:connect':
@@ -987,6 +971,15 @@ app.on('before-quit', event => {
       } catch (error) { console.error('Não foi possível concluir a limpeza ao sair:', error.message); }
       quitting = true; closing = true; flush(); app.quit();
     })();
+    return;
+  }
+  if (!privacyShutdownComplete && !privacyShutdownStarted) {
+    event.preventDefault();
+    privacyShutdownStarted = true;
+    void privacyServices.stopAll().finally(() => {
+      privacyShutdownComplete = true;
+      quitting = true; closing = true; flush(); app.quit();
+    });
     return;
   }
   quitting = true; closing = true; flush();

@@ -1,7 +1,7 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.11",
+  "version": "0.7.12",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
@@ -10,9 +10,10 @@
     "dev": "node scripts/dev.cjs",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
-    "dist": "npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
-    "dist:installer": "npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
-    "dist:portable": "npm run build && electron-builder --win portable",
+    "prepare:privacy-runtime": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-privacy-runtime.ps1",
+    "dist": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
+    "dist:installer": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
+    "dist:portable": "npm run prepare:privacy-runtime && npm run build && electron-builder --win portable",
     "check": "node --check electron/main.cjs && node --check electron/preload.cjs && tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:smoke": "node scripts/run-smoke.cjs"
@@ -48,6 +49,15 @@
       "electron/**/*",
       "build/icon.png",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/privacy-runtime",
+        "to": "privacy-runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "target": [

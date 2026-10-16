@@ -1,6 +1,6 @@
 # Cypher
 
-Navegador desktop para Windows com interface dark própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.4**, com navegação real em Chromium através do Electron.
+Navegador desktop para Windows com interface dark própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.12**, com navegação real em Chromium através do Electron.
 
 ## Executar
 
@@ -15,7 +15,7 @@ npm start
 
 Para desenvolver com atualização da interface: `npm run dev`.
 
-Para gerar as duas opções para Windows: `npm run dist`. O instalador autoral `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O Setup é um aplicativo próprio do Cypher, com interface e fluxo desenhados para o navegador, escolha de pasta, atalhos, progresso de instalação, tela de conclusão e desinstalador visual correspondente. Atualizações silenciosas usam o mesmo mecanismo, mantêm os atalhos escolhidos e reabrem o navegador quando terminam. O perfil de navegação é preservado ao atualizar e também ao desinstalar, a menos que a pessoa escolha removê-lo. O pacote local ainda não tem assinatura digital.
+Para gerar as duas opções para Windows: `npm run dist`. O processo baixa e valida os runtimes nativos do Tor e do i2pd antes de empacotar. O instalador autoral `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O Setup é um aplicativo próprio do Cypher, com interface e fluxo desenhados para o navegador, escolha de pasta, atalhos, progresso de instalação, tela de conclusão e desinstalador visual correspondente. Atualizações silenciosas usam o mesmo mecanismo, mantêm os atalhos escolhidos e reabrem o navegador quando terminam. O perfil de navegação é preservado ao atualizar e também ao desinstalar, a menos que a pessoa escolha removê-lo. O pacote local ainda não tem assinatura digital.
 
 ## Atualizações automáticas
 
@@ -28,7 +28,7 @@ O canal está configurado para `sCypher-me/cypher-browser`. Até a primeira Rele
 - Motor Chromium real em `WebContentsView`, com isolamento de contexto, sandbox e acesso ao Node.js desativado nas páginas.
 - Abas laterais ou horizontais, largura configurável, modo compacto, ordenação por arraste, fixação, fechamento e reabertura de abas.
 - Endereços e pesquisa com DuckDuckGo, Google ou Bing; voltar, avançar, recarregar, parar e links em nova aba.
-- Rota de conexão por aba: Normal (proxy do sistema), Tor (SOCKS5 local) ou I2P (proxy HTTP local). As portas padrão podem ser alteradas nas configurações; Tor e I2P precisam estar instalados e em execução à parte.
+- Rota de conexão: Normal (proxy do sistema), Tor e I2P. O instalador inclui os runtimes oficiais do Tor e do i2pd; os botões iniciam o serviço selecionado, aplicam a rota às abas e impedem que as duas redes fiquem ativas ao mesmo tempo. Tor usa SOCKS5 na porta 9050; i2pd usa o proxy HTTP na porta 4444. Os dados dos roteadores ficam no perfil local do usuário. I2P é voltado a sites `.i2p`; navegar na web pública depende de um outproxy externo configurado no roteador.
 - VPN nativa no Windows: lista perfis pessoais e compartilhados, abre o diálogo nativo para conectar, acompanha o estado e permite desconectar. A configuração e as credenciais ficam no Windows; é necessário configurar um perfil e contratar/fornecer um servidor VPN. O roteamento segue as regras (túnel dividido ou completo) desse perfil.
 - Abas privadas com sessão em memória, sem histórico local ou restauração; dados da sessão são limpos ao fechar a última aba privada. Downloads privados permanecem no disco, como em outros navegadores.
 - Favoritos, histórico local, restauração de abas normais e preferências persistentes.
@@ -96,6 +96,6 @@ A versão portátil desta etapa está em `release/free-home-final/Cypher-0.3.0-W
 
 Use o seletor ao lado da barra de endereço para mudar a rota da aba atual. Ao alterar uma página externa, o Cypher a abre em uma nova aba na rota escolhida e mantém a aba anterior intacta. A escolha feita em Configurações é o padrão de novas abas. Links abertos a partir de uma página herdam sua rota.
 
-Tor usa o proxy SOCKS5 local, na porta 9050 por padrão (9150 é comum no Tor Browser). I2P usa o proxy HTTP local, na porta 4444 por padrão. O Cypher não instala nem inicia esses serviços: o status nas configurações verifica se a porta local responde. Uma rota Tor/I2P indisponível falha sem passar para a conexão normal. WebRTC desativa UDP fora do proxy nessas rotas. Abas Tor/I2P usam sessões em memória, não entram no histórico e não são restauradas após fechar o aplicativo; downloads e favoritos escolhidos pelo usuário continuam sendo ações explícitas.
+Tor usa o runtime incluído e o proxy SOCKS5 local, na porta 9050 por padrão. I2P usa i2pd incluído e o proxy HTTP local, na porta 4444 por padrão. Ao selecionar uma rede, o Cypher inicia o serviço se necessário e mantém a conexão bloqueada até o proxy responder; uma falha não troca para a rede normal. Os runtimes são baixados de suas fontes oficiais e verificados por SHA-256 durante o build. WebRTC desativa UDP fora do proxy nessas rotas. Abas Tor/I2P usam sessões em memória, não entram no histórico e não são restauradas após fechar o aplicativo; os serviços iniciados pelo Cypher também são encerrados ao sair.
 
 I2P é destinado principalmente a serviços da rede I2P. A navegação para sites da web pública depende de um outproxy configurado no roteador. Consulte as informações oficiais sobre o [proxy SOCKS do Tor](https://support.torproject.org/), a [FAQ do I2P](https://geti2p.net/en/faq) e as [sessões e configurações de proxy do Electron](https://www.electronjs.org/docs/latest/api/session).

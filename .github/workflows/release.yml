@@ -29,6 +29,8 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
+      - name: Baixar e verificar Tor e i2pd nativos
+        run: npm run prepare:privacy-runtime
       - name: Validar versão e configurar canal público
         shell: pwsh
         run: |
