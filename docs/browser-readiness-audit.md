@@ -12,14 +12,14 @@
 | Rotas especiais | Tor e I2P incluídos como proxies locais; Proton VPN é integrado pelo navegador e depende do serviço/conta do provedor. |
 | Extensões | Pastas locais e pacotes assinados da Chrome Web Store, com compatibilidade parcial das APIs Chromium/Electron. Pacotes `.cypherext` agora têm formato e importação próprios. |
 | Perfil e dados | Perfil local. Sincronização disponível por WebDAV configurado pelo usuário; não há nuvem Cypher. |
-| Distribuição | Atualizações por GitHub Releases com hash SHA-512; a documentação informa que o instalador ainda não tem assinatura digital. |
+| Distribuição | Atualizações por GitHub Releases com hash SHA-512. O atualizador agora aceita e valida manifestos Ed25519 quando a chave pública oficial está fixada no aplicativo; as chaves ainda precisam ser configuradas no GitHub Actions para ativar essa proteção nas releases. A auditoria de dependências está agendada semanalmente e bloqueia releases com alertas altos ou críticos. O instalador ainda não tem assinatura Authenticode. |
 
 ## Principais lacunas para competir com navegadores atuais
 
 ### Prioridade 0 — confiança e segurança de lançamento
 
-- Assinar digitalmente o instalador e os binários; deixar a origem da atualização verificável além do hash do arquivo.
-- Formalizar o ciclo de atualizações de Chromium/Electron, com verificações automatizadas de segurança, política de suporte e recuperação se uma versão falhar.
+- Assinar digitalmente o instalador e os binários com Authenticode; deixar a origem da atualização verificável além do hash do arquivo. A validação Ed25519 do manifesto foi implementada, mas só fica ativa após configurar as chaves descritas em [update-signing.md](update-signing.md).
+- Formalizar o ciclo de atualizações de Chromium/Electron, com verificações automatizadas de segurança, política de suporte e recuperação se uma versão falhar. A verificação semanal de dependências e o bloqueio de releases com alertas altos/críticos foram adicionados; falta definir e automatizar a cadência de atualização do Chromium/Electron.
 - Testar vazamentos de DNS/WebRTC e isolamento das rotas Tor/I2P. O proxy Tor do Cypher não oferece, por si só, a resistência a fingerprinting do Tor Browser; evitar prometer equivalência até implementar e auditar proteções de padronização e isolamento.
 - Testar compatibilidade e acessibilidade em fluxos reais: login, reprodução protegida, chamadas, permissões, leitor de tela e navegação só por teclado.
 

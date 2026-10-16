@@ -29,15 +29,24 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
+      - name: Bloquear publicação com vulnerabilidades altas conhecidas
+        run: npm audit --audit-level=high
       - name: Baixar e verificar Tor e i2pd nativos
         run: npm run prepare:privacy-runtime
       - name: Validar versão e configurar canal público
+        env:
+          CYPHER_UPDATE_SIGNING_PUBLIC_KEY: ${{ vars.CYPHER_UPDATE_SIGNING_PUBLIC_KEY }}
+          CYPHER_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.CYPHER_UPDATE_SIGNING_PRIVATE_KEY }}
         shell: pwsh
         run: |
           $package = Get-Content package.json -Raw | ConvertFrom-Json
           $expectedTag = "v$($package.version)"
           if ($env:RELEASE_TAG -ne $expectedTag) { throw "A tag precisa ser $expectedTag para corresponder ao package.json." }
-          @{ repository = $env:GITHUB_REPOSITORY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
+          $hasPublicKey = -not [string]::IsNullOrWhiteSpace($env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY)
+          $hasPrivateKey = -not [string]::IsNullOrWhiteSpace($env:CYPHER_UPDATE_SIGNING_PRIVATE_KEY)
+          if ($hasPublicKey -ne $hasPrivateKey) { throw "Configure juntos CYPHER_UPDATE_SIGNING_PUBLIC_KEY (Actions variable) e CYPHER_UPDATE_SIGNING_PRIVATE_KEY (Actions secret)." }
+          if (-not $hasPublicKey) { Write-Warning "Chaves de assinatura ausentes. O manifesto será publicado no modo legado, protegido por HTTPS e SHA-512, sem autenticação criptográfica do publicador." }
+          @{ repository = $env:GITHUB_REPOSITORY; updateSigningPublicKey = $env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
       - name: Compilar a interface do Cypher
         run: npm run build
       - name: Gerar aplicativo Windows e versão portátil
@@ -70,6 +79,11 @@ jobs:
             releaseNotes = "Cypher $version — versão mais recente do navegador."
           }
           $manifest | ConvertTo-Json -Compress | Set-Content artifacts/latest.json -Encoding utf8
+      - name: Assinar manifesto de atualização
+        env:
+          CYPHER_UPDATE_SIGNING_PUBLIC_KEY: ${{ vars.CYPHER_UPDATE_SIGNING_PUBLIC_KEY }}
+          CYPHER_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.CYPHER_UPDATE_SIGNING_PRIVATE_KEY }}
+        run: node scripts/sign-update-manifest.cjs artifacts/latest.json
       - name: Publicar instalador, versão portátil e manifesto na Release
         env:
           GH_TOKEN: ${{ github.token }}

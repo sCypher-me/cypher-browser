@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const https = require('node:https');
 const { spawn } = require('node:child_process');
-const { createHash } = require('node:crypto');
+const { createHash, verify: verifySignature, createPublicKey } = require('node:crypto');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
@@ -14,8 +14,12 @@ function readConfig() {
   try {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'update-config.json'), 'utf8'));
     const repository = typeof config.repository === 'string' ? config.repository.trim() : '';
-    return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ? repository : '';
-  } catch { return ''; }
+    const updateSigningPublicKey = typeof config.updateSigningPublicKey === 'string' ? config.updateSigningPublicKey.trim() : '';
+    return {
+      repository: /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ? repository : '',
+      updateSigningPublicKey,
+    };
+  } catch { return { repository: '', updateSigningPublicKey: '' }; }
 }
 
 function validVersion(value) { return typeof value === 'string' && /^\d+\.\d+\.\d+$/.test(value); }
@@ -23,6 +27,23 @@ function compareVersions(left, right) {
   const a = left.split('.').map(Number), b = right.split('.').map(Number);
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
   return 0;
+}
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+function validateSigningKey(value) {
+  if (!value) return '';
+  try {
+    const key = createPublicKey(value);
+    if (key.asymmetricKeyType !== 'ed25519') throw new Error('A chave de atualização precisa usar Ed25519.');
+    return key;
+  } catch (error) {
+    throw new Error(`A chave pública de atualização do Cypher é inválida: ${error.message}`);
+  }
 }
 function powerShellString(value) { return `'${String(value).replaceAll("'", "''")}'`; }
 
@@ -95,7 +116,15 @@ function downloadFile(value, destination, expectedSize, onProgress, redirects = 
 
 function createUpdater({ app, publish, scheduleQuit }) {
   const currentVersion = app.getVersion();
-  const repository = readConfig();
+  const updateConfig = readConfig();
+  const repository = updateConfig.repository;
+  let updateSigningPublicKey = null;
+  try { updateSigningPublicKey = validateSigningKey(updateConfig.updateSigningPublicKey); }
+  catch (error) {
+    // Keep the updater available for recovery through a newer application build,
+    // while refusing all remote manifests until its pinned key is repaired.
+    updateSigningPublicKey = { invalid: true, message: error.message };
+  }
   const startupArg = process.argv.find(value => value.startsWith('--cypher-update-complete='));
   const completedVersion = startupArg?.slice('--cypher-update-complete='.length) || (process.argv.includes('--updated') ? currentVersion : '');
   let availableManifest = null;
@@ -125,6 +154,21 @@ function createUpdater({ app, publish, scheduleQuit }) {
       return bytes.length === 64 && bytes.toString('base64') === value;
     };
     if (!manifest || manifest.schemaVersion !== 1 || !validVersion(manifest.version) || manifest.tag !== `v${manifest.version}` || manifest.assetName !== `Cypher-${manifest.version}-Windows.exe` || !validSha512(manifest.sha512) || manifest.installerAssetName !== `Cypher-${manifest.version}-Setup.exe` || !validSha512(manifest.installerSha512)) throw new Error('O manifesto de atualização não passou na validação.');
+    if (updateSigningPublicKey?.invalid) throw new Error(updateSigningPublicKey.message);
+    if (updateSigningPublicKey) {
+      if (manifest.signatureAlgorithm !== 'Ed25519' || typeof manifest.signature !== 'string' || !/^[A-Za-z0-9+/]{86}==$/.test(manifest.signature)) {
+        throw new Error('O manifesto não tem uma assinatura Ed25519 válida. A instalação foi bloqueada.');
+      }
+      const signature = Buffer.from(manifest.signature, 'base64');
+      if (signature.length !== 64 || signature.toString('base64') !== manifest.signature) throw new Error('A assinatura do manifesto de atualização está malformada.');
+      const { signature: _signature, ...signedManifest } = manifest;
+      let validSignature = false;
+      try { validSignature = verifySignature(null, Buffer.from(canonicalJson(signedManifest), 'utf8'), updateSigningPublicKey, signature); }
+      catch { validSignature = false; }
+      if (!validSignature) throw new Error('A assinatura do manifesto não confere com a chave oficial do Cypher. A instalação foi bloqueada.');
+    } else if (manifest.signature || manifest.signatureAlgorithm) {
+      throw new Error('Este Cypher recebeu um manifesto assinado, mas não tem a chave pública correspondente. Atualize o navegador por um instalador oficial.');
+    }
     manifest.releaseNotes = typeof manifest.releaseNotes === 'string' ? manifest.releaseNotes.slice(0, 3000) : '';
     return manifest;
   }
