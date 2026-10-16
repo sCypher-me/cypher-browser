@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Olá, Cypher",
+  "version": "1.0.0",
+  "description": "Uma extensão de exemplo com popup local.",
+  "action": {
+    "default_title": "Olá, Cypher",
+    "default_popup": "popup.html"
+  }
+}

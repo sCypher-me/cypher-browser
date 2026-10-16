@@ -97,6 +97,14 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(await view.webContents.executeJavaScript('typeof require'), 'undefined');
     assert.equal(await view.webContents.executeJavaScript('typeof window.cypher'), 'undefined');
     assert.ok(view.getBounds().x > 200);
+    await invoke('media:window:toggle');
+    await until(() => BrowserWindow.getAllWindows().length === 2, 'floating miniplayer');
+    const miniPlayer = BrowserWindow.getAllWindows().find(window => window !== win);
+    await until(() => miniPlayer.webContents.getURL().endsWith('#mini-player') && !miniPlayer.webContents.isLoading(), 'miniplayer renderer');
+    assert.equal(miniPlayer.isAlwaysOnTop(),true,'miniplayer floats above the browser');
+    assert.equal(view.isVisible(),true,'opening the player leaves the current page visible');
+    await invoke('media:window:toggle');
+    await until(() => !miniPlayer.isVisible(),'miniplayer closes without hiding the page');
     await invoke('bookmark:toggle');
     assert.equal((await invoke('state')).bookmarks.length,1);
     await invoke('navigate',base + '/page-b');

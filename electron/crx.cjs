@@ -101,7 +101,8 @@ async function unpackCrx(buffer, expectedId, destination) {
     const output = path.resolve(root, rawName);
     if (!output.startsWith(root + path.sep) && output !== root) throw new Error('O pacote tenta gravar fora da pasta da extensão.');
     if (entry.type === 'Directory') { await fs.mkdir(output, { recursive:true }); continue; }
-    if (!Number.isFinite(entry.vars.uncompressedSize) || entry.vars.uncompressedSize < 0 || entry.vars.uncompressedSize > MAX_UNPACKED_BYTES) throw new Error('A extensão contém um arquivo grande demais.');
+    const declaredSize = entry.uncompressedSize ?? entry.vars?.uncompressedSize;
+    if (!Number.isFinite(declaredSize) || declaredSize < 0 || declaredSize > MAX_UNPACKED_BYTES) throw new Error('A extensão contém um arquivo grande demais.');
     await fs.mkdir(path.dirname(output), { recursive:true });
     let fileBytes = 0;
     const limiter = new Transform({ transform(chunk, _encoding, callback) {

@@ -22,7 +22,7 @@ export interface Tab { id: string; title: string; url: string; private: boolean;
 export interface NowPlaying { tabId: string; tabTitle: string; pageUrl: string; title: string; artist: string; album: string; artwork: string; currentTime: number; duration: number; playing: boolean }
 export interface Link { id: string; title: string; url: string; date: number }
 export interface Download { id: string; name: string; url: string; total: number; received: number; state: string; date: number; path: string; private: boolean }
-export interface BrowserExtension { id: string; name: string; version: string; enabled: boolean; source?: 'chrome-web-store' | 'local'; error?: string }
+export interface BrowserExtension { id: string; name: string; version: string; enabled: boolean; source?: 'chrome-web-store' | 'cypher-package' | 'local'; packageId?: string; error?: string }
 export interface SitePermission { id: string; origin: string; permission: string; allowed: boolean; updated: number }
 export interface Mod { id: string; name: string; author: string; description: string; settings: Settings; custom?: boolean }
 export interface FocusTimerData { endsAt: number | null; remaining: number; duration: number }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage, screen } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -6,6 +6,7 @@ const { randomUUID } = require('node:crypto');
 const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
+const { extractCypherPackage } = require('./cypher-package.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -16,7 +17,7 @@ app.setName('Cypher');
 app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
 protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }, { scheme: 'cypher-wallpaper', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
-let win, store, storePath, activeId, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
+let win, playerWindow, rendererUrl = '', store, storePath, activeId, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
 let hardwareAccelerationAtLaunch = true, mediaTimer = null;
 const protonExtensionId = 'jplgfhpmjnbigmhklmmbgecoobifkmpa';
 let protonExtensionReady = false, protonPopupWindow = null, protonProxyValue = null;
@@ -28,12 +29,27 @@ try {
   if (bootstrap.settings?.hardwareAcceleration === false) { app.disableHardwareAcceleration(); hardwareAccelerationAtLaunch = false; }
 } catch {}
 const pendingExternalUrls = process.argv.filter(value => /^https?:\/\//i.test(value)).slice(0,10);
+const isCypherPackageFile = value => {
+  if (typeof value !== 'string' || !value.toLowerCase().endsWith('.cypherext')) return false;
+  try { return fs.statSync(value).isFile(); } catch { return false; }
+};
+const pendingCypherPackages = process.argv.slice(1).filter(isCypherPackageFile).slice(0,10);
 const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
 else app.on('second-instance', (_event, commandLine) => {
   const urls = commandLine.filter(value => /^https?:\/\//i.test(value)).slice(0,10);
-  if (win && !win.isDestroyed()) { win.show(); win.focus(); for (const url of urls) { try { addTab(url, false, 'normal'); } catch {} } }
-  else pendingExternalUrls.push(...urls);
+  const packages = commandLine.filter(isCypherPackageFile).slice(0,10);
+  if (win && !win.isDestroyed()) {
+    win.show(); win.focus();
+    for (const url of urls) { try { addTab(url, false, 'normal'); } catch {} }
+    for (const packageFile of packages) void installExternalCypherPackage(packageFile);
+  } else { pendingExternalUrls.push(...urls); pendingCypherPackages.push(...packages); }
+});
+app.on('open-file', (event, packageFile) => {
+  if (!isCypherPackageFile(packageFile)) return;
+  event.preventDefault();
+  if (win && !win.isDestroyed() && store) { win.show(); win.focus(); void installExternalCypherPackage(packageFile); }
+  else pendingCypherPackages.push(packageFile);
 });
 let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
 const tabs = [], closedTabs = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
@@ -90,7 +106,11 @@ function loadStore() {
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
   if (Array.isArray(saved.extensions)) store.extensions = saved.extensions.slice(0,100).flatMap(extension => {
     if (!extension || typeof extension.id !== 'string' || typeof extension.path !== 'string' || extension.path.length > 4096) return [];
-    return [{ id: extension.id.slice(0,128), path: path.resolve(extension.path), name: String(extension.name || 'Extensão').slice(0,128), version: String(extension.version || '').slice(0,40), enabled: extension.enabled !== false, source: extension.source === 'chrome-web-store' ? 'chrome-web-store' : 'local', error: '' }];
+    const source = ['chrome-web-store','cypher-package'].includes(extension.source) ? extension.source : 'local';
+    const packageId = source === 'cypher-package' && typeof extension.packageId === 'string' && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(extension.packageId) ? extension.packageId : '';
+    const extensionPath = path.resolve(extension.path);
+    if (source === 'cypher-package' && (!packageId || extensionPath.toLowerCase() !== path.resolve(app.getPath('userData'),'cypher-extension-packages',packageId).toLowerCase())) return [];
+    return [{ id: extension.id.slice(0,128), path: extensionPath, name: String(extension.name || 'Extensão').slice(0,128), version: String(extension.version || '').slice(0,40), enabled: extension.enabled !== false, source, packageId, error: '' }];
   });
   if (Array.isArray(saved.sitePermissions)) store.sitePermissions = saved.sitePermissions.slice(0,2000).flatMap(rule => {
     if (!rule || typeof rule.origin !== 'string' || !sitePermissionTypes.has(rule.permission) || typeof rule.allowed !== 'boolean') return [];
@@ -265,7 +285,7 @@ async function syncProfile() {
 }
 function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
-    history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, error }) => ({ id, name, version, enabled, source, error })),
+    history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, packageId, error }) => ({ id, name, version, enabled, source, packageId, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
     trackerProtection: trackerList,
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
@@ -273,8 +293,43 @@ function snapshot() {
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying() };
 }
-function emit() { if (win && !win.isDestroyed()) win.webContents.send('cypher:state', snapshot()); }
+function emit() {
+  const state = snapshot();
+  if (win && !win.isDestroyed()) win.webContents.send('cypher:state', state);
+  if (playerWindow && !playerWindow.isDestroyed()) playerWindow.webContents.send('cypher:state', state);
+}
 function active() { return tabs.find(tab => tab.id === activeId); }
+function positionMediaPlayerWindow() {
+  if (!win || win.isDestroyed() || !playerWindow || playerWindow.isDestroyed()) return;
+  const parent = win.getBounds(), workArea = screen.getDisplayMatching(parent).workArea;
+  const width = 372, height = 160;
+  const x = Math.max(workArea.x, Math.min(parent.x + parent.width - width - 14, workArea.x + workArea.width - width));
+  const y = Math.max(workArea.y, Math.min(parent.y + 58, workArea.y + workArea.height - height));
+  playerWindow.setBounds({ x, y, width, height }, false);
+}
+function createMediaPlayerWindow() {
+  if (!win || win.isDestroyed() || !rendererUrl) return;
+  if (playerWindow && !playerWindow.isDestroyed()) { positionMediaPlayerWindow(); playerWindow.showInactive(); return; }
+  playerWindow = new BrowserWindow({ parent:win, width:372, height:160, frame:false, transparent:true, backgroundColor:'#00000000', resizable:false, movable:false, skipTaskbar:true, show:false, hasShadow:false,
+    webPreferences:{ preload:path.join(__dirname,'preload.cjs'), nodeIntegration:false, contextIsolation:true, sandbox:true, webSecurity:true, allowRunningInsecureContent:false } });
+  playerWindow.setAlwaysOnTop(true, 'floating');
+  playerWindow.webContents.on('will-navigate', event => event.preventDefault());
+  playerWindow.webContents.setWindowOpenHandler(() => ({ action:'deny' }));
+  playerWindow.on('close', event => { if (!quitting) { event.preventDefault(); playerWindow?.hide(); } });
+  playerWindow.on('closed', () => { playerWindow = undefined; });
+  playerWindow.once('ready-to-show', () => { positionMediaPlayerWindow(); if (playerWindow && !playerWindow.isDestroyed()) playerWindow.showInactive(); });
+  void playerWindow.loadURL(`${rendererUrl}#mini-player`).catch(error => console.error('Não foi possível abrir o miniplayer:', error.message));
+}
+function toggleMediaPlayerWindow() {
+  if (playerWindow && !playerWindow.isDestroyed() && playerWindow.isVisible()) playerWindow.hide();
+  else createMediaPlayerWindow();
+}
+function showPlayingTab(tabId) {
+  const target = tabs.find(entry => entry.id === tabId && entry.mediaInfo);
+  if (target) selectTab(target.id);
+  if (win && !win.isDestroyed()) { win.show(); win.focus(); }
+  if (playerWindow && !playerWindow.isDestroyed()) playerWindow.hide();
+}
 function getNowPlaying() {
   let tab = tabs.find(entry => entry.id === nowPlayingTabId && entry.mediaPlaying && entry.mediaInfo);
   if (!tab) tab = [...tabs].reverse().find(entry => entry.mediaPlaying && entry.mediaInfo) || tabs.find(entry => entry.id === nowPlayingTabId && entry.mediaInfo) || [...tabs].reverse().find(entry => entry.mediaInfo);
@@ -712,7 +767,8 @@ async function installExtension(directory, options = {}) {
     throw new Error('O identificador instalado não corresponde à assinatura e ao link da Chrome Web Store.');
   }
   const name = /^__MSG_.*__$/.test(manifest.name) ? manifest.short_name || 'Extensão' : manifest.name;
-  store.extensions.unshift({ id: loaded.id, path: extensionPath, name: String(loaded.name || name).slice(0,128), version: String(loaded.version || manifest.version).slice(0,40), enabled: true, source:options.source === 'chrome-web-store' ? 'chrome-web-store' : 'local', error: '' });
+  const extensionSource = ['chrome-web-store','cypher-package'].includes(options.source) ? options.source : 'local';
+  store.extensions.unshift({ id: loaded.id, path: extensionPath, name: String(options.displayName || loaded.name || name).slice(0,128), version: String(options.displayVersion || loaded.version || manifest.version).slice(0,40), enabled: true, source:extensionSource, packageId:extensionSource === 'cypher-package' ? options.packageId : '', error: '' });
   persist(); emit();
   return snapshot().extensions;
 }
@@ -776,6 +832,43 @@ async function installChromeStoreExtension(value) {
   } catch (error) {
     if (!store.extensions.some(extension => extension.id === extensionId)) await fs.promises.rm(extensionPath, { recursive:true, force:true }).catch(() => {});
     throw error;
+  }
+}
+function cypherExtensionRoot() { return path.resolve(app.getPath('userData'), 'cypher-extension-packages'); }
+function compareVersions(left, right) {
+  const a = String(left).split(/[+-]/,1)[0].split('.').map(Number), b = String(right).split(/[+-]/,1)[0].split('.').map(Number);
+  for (let index = 0; index < 3; index++) { const difference = (a[index] || 0) - (b[index] || 0); if (difference) return difference; }
+  return 0;
+}
+async function installCypherExtensionPackage(packageFile) {
+  if (!isCypherPackageFile(packageFile)) throw new Error('Escolha um arquivo .cypherext do Cypher.');
+  const root = cypherExtensionRoot();
+  await fs.promises.mkdir(root, { recursive:true });
+  const stagePath = path.resolve(root, `.stage-${randomUUID()}`);
+  let destination = '';
+  try {
+    const extracted = await extractCypherPackage(packageFile, stagePath);
+    const { metadata } = extracted;
+    if (metadata.minCypherVersion && compareVersions(app.getVersion(), metadata.minCypherVersion) < 0) throw new Error(`Esta extensão requer Cypher ${metadata.minCypherVersion} ou superior.`);
+    if (store.extensions.some(extension => extension.packageId === metadata.id)) throw new Error(`Já existe uma extensão Cypher instalada com o ID “${metadata.id}”.`);
+    if (store.extensions.length >= 100) throw new Error('O limite é de 100 extensões instaladas.');
+    destination = path.resolve(root, metadata.id);
+    if (!destination.startsWith(root + path.sep)) throw new Error('O ID do pacote não pode ser usado como pasta de instalação.');
+    if (fs.existsSync(destination)) throw new Error('Já existe uma pasta para este pacote. Remova a pasta antiga antes de instalá-lo novamente.');
+    await fs.promises.rename(stagePath, destination);
+    const result = await installExtension(destination, { source:'cypher-package', packageId:metadata.id, displayName:metadata.name, displayVersion:metadata.version });
+    if (result.cancelled) { await fs.promises.rm(destination, { recursive:true, force:true }); return snapshot().extensions; }
+    return result;
+  } catch (error) {
+    await fs.promises.rm(stagePath, { recursive:true, force:true }).catch(() => {});
+    if (destination && !store.extensions.some(extension => extension.path === destination)) await fs.promises.rm(destination, { recursive:true, force:true }).catch(() => {});
+    throw error;
+  }
+}
+async function installExternalCypherPackage(packageFile) {
+  try { await installCypherExtensionPackage(packageFile); }
+  catch (error) {
+    if (win && !win.isDestroyed()) await dialog.showMessageBox(win, { type:'error', title:'Não foi possível instalar a extensão', message:'O pacote Cypher não pôde ser instalado.', detail:String(error?.message || error).slice(0,1000), buttons:['OK'] });
   }
 }
 function installStoreClickHandler(tab) {
@@ -1025,6 +1118,11 @@ async function command(action, payload) {
       if (result.canceled || !result.filePaths[0]) break;
       return installExtension(result.filePaths[0]);
     }
+    case 'extension:install-cypher': {
+      const result = await dialog.showOpenDialog(win, { title:'Instalar pacote de extensão Cypher', properties:['openFile'], filters:[{ name:'Pacote de extensão Cypher', extensions:['cypherext'] }] });
+      if (result.canceled || !result.filePaths[0]) break;
+      return installCypherExtensionPackage(result.filePaths[0]);
+    }
     case 'extension:install-webstore': return installChromeStoreExtension(payload);
     case 'extension:toggle': {
       const extension = store.extensions.find(entry => entry.id === payload?.id);
@@ -1051,6 +1149,9 @@ async function command(action, payload) {
       if (extension.source === 'chrome-web-store') {
         const root = path.resolve(app.getPath('userData'), 'extensions'), target = path.resolve(extension.path);
         if (target.startsWith(root + path.sep)) await fs.promises.rm(target, { recursive:true, force:true });
+      } else if (extension.source === 'cypher-package' && extension.packageId && /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(extension.packageId)) {
+        const root = cypherExtensionRoot(), target = path.resolve(extension.path), expected = path.resolve(root, extension.packageId);
+        if (target.toLowerCase() === expected.toLowerCase() && target.startsWith(root + path.sep)) await fs.promises.rm(target, { recursive:true, force:true });
       }
       persist(); emit(); break;
     }
@@ -1065,6 +1166,13 @@ async function command(action, payload) {
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
     case 'tab:mute': { const target = tabs.find(t => t.id === payload); if (target) { target.muted = !target.muted; target.view?.webContents.setAudioMuted(target.muted); emit(); } break; }
+    case 'media:window:toggle': toggleMediaPlayerWindow(); break;
+    case 'media:window:close': if (playerWindow && !playerWindow.isDestroyed()) playerWindow.hide(); break;
+    case 'media:window:show-tab': showPlayingTab(payload); break;
+    case 'media:background:set':
+      if (typeof payload?.enabled !== 'boolean') throw new Error('Estado da música de fundo inválido.');
+      if (payload.enabled && !store.settings.backgroundMusicData) throw new Error('Escolha uma faixa em Configurações → Aparência antes de reproduzir.');
+      store.settings.backgroundMusicEnabled = payload.enabled; persist(); emit(); break;
     case 'media:select': {
       const target = tabs.find(entry => entry.id === payload && entry.mediaInfo);
       if (target) { nowPlayingTabId = target.id; emit(); }
@@ -1389,14 +1497,24 @@ app.whenReady().then(async () => {
     webPreferences: { preload: path.join(__dirname,'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   const devURL = process.env.CYPHER_DEV_URL;
   const trustedURL = devURL || 'cypher-ui://app/index.html';
+  rendererUrl = trustedURL + (devURL ? '/' : '');
   ipcMain.handle('cypher:command', (event, action, payload) => {
-    if (event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== trustedURL + (devURL ? '/' : '')) throw new Error('Origem não autorizada.');
-    return command(action, payload);
+    if (event.sender === win.webContents) {
+      if (event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== rendererUrl) throw new Error('Origem não autorizada.');
+      return command(action, payload);
+    }
+    if (playerWindow && !playerWindow.isDestroyed() && event.sender === playerWindow.webContents) {
+      const playerActions = new Set(['state','media:background:set','media:control','media:select','media:window:close','media:window:show-tab']);
+      if (event.senderFrame !== playerWindow.webContents.mainFrame || event.senderFrame.url !== `${rendererUrl}#mini-player` || !playerActions.has(action)) throw new Error('Ação indisponível no miniplayer.');
+      return command(action, payload);
+    }
+    throw new Error('Origem não autorizada.');
   });
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.on('resize', layout);
   win.on('maximize', emit); win.on('unmaximize', emit);
+  win.on('move', positionMediaPlayerWindow); win.on('resize', positionMediaPlayerWindow);
   win.on('close', event => {
     if (!quitting && !allowWindowClose && store.settings.confirmCloseWithMultipleTabs && tabs.length > 1) {
       event.preventDefault();
@@ -1423,8 +1541,9 @@ app.whenReady().then(async () => {
   }
   for (const url of pendingExternalUrls.splice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
   if (homeFirstId) selectTab(homeFirstId);
-  await win.loadURL(trustedURL);
+  await win.loadURL(rendererUrl);
   win.show();
+  for (const packageFile of pendingCypherPackages.splice(0,10)) void installExternalCypherPackage(packageFile);
   profileSyncReady = true;
   if (store.profileSync.endpoint) setTimeout(() => void syncProfile().catch(error => console.warn('Sincronização inicial do perfil:', error.message)), 1800);
   profileSyncInterval = setInterval(() => { if (store?.profileSync?.endpoint) void syncProfile().catch(error => console.warn('Sincronização periódica do perfil:', error.message)); }, 5 * 60 * 1000);

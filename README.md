@@ -1,6 +1,6 @@
 # Cypher
 
-Navegador desktop para Windows com interface dark própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.12**, com navegação real em Chromium através do Electron.
+Navegador desktop para Windows com interface própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.17**, com navegação real em Chromium através do Electron.
 
 ## Executar
 
@@ -41,6 +41,9 @@ O canal está configurado para `sCypher-me/cypher-browser`. Até a primeira Rele
 - Idiomas preferidos enviados aos sites, verificação ortográfica do Chromium e opção de tradução sob demanda pelo Google Tradutor. A tradução só compartilha o endereço com o serviço quando você aciona a opção no menu da página.
 - Aceleração gráfica configurável (aplicada após reiniciar), quatro políticas WebRTC e atalhos para configurações de proxy/rede do Windows. O DNS sobre HTTPS permanece configurado no sistema operacional.
 - Gerenciador de extensões Chromium: carregar pasta descompactada local, ativar/desativar, reinstalar após falhas e remover a referência sem apagar os arquivos originais. O Electron não aceita `.crx` nem oferece todas as APIs do Chrome; extensões não carregam nas sessões privada, Tor ou I2P.
+- Pacotes proprietários `.cypherext`: arquivos ZIP com metadados Cypher e extensão Chromium, instalação pela página Extensões, confirmação de permissões e validação contra travessia de diretórios, links simbólicos e arquivos excessivos. Formato e exemplo em [docs/cypher-extension-format.md](docs/cypher-extension-format.md) e `examples/hello-cypher-extension/`.
+- Miniplayer em janela flutuante independente, com arte reconhecida pela aba que reproduz, controles em qualquer aba e fundo translúcido colorido pela capa; a página continua visível enquanto o painel está aberto.
+- Controles de janela com ícones SVG próprios do Cypher e barras laterais mais compactas.
 - Personalização de destaque, superfícies, fundo, fontes, cantos, animações e layout.
 - Home de composição livre: arraste e redimensione widgets, que se ajustam para evitar sobreposição e recuperam o tamanho preferido quando o espaço fica livre.
 - Conteúdo e aparência configuráveis por widget. Boas-vindas aceitam `{{date}}`, `{{time}}` e `{{city}}`; busca aceita motor próprio; atalhos têm listas independentes; relógio, favoritos, notas e temporizador têm opções específicas.
@@ -58,7 +61,7 @@ O formato `schemaVersion: 1` aceita nome, autor, descrição e preferências vis
 
 ## Próximas etapas
 
-O objetivo é um navegador completo, mas ainda faltam gerenciador de senhas, autofill, sincronização, importação de perfis, múltiplas janelas, marketplace de mods, sons personalizados e mods funcionais. O suporte a extensões é parcial: o Electron não fornece equivalência total às extensões e serviços do Chrome. Conteúdo com DRM e alguns fluxos de autenticação precisam de trabalho específico e validação antes de serem prometidos.
+O objetivo é um navegador completo. O Cypher ainda precisa de gerenciador de senhas e passkeys, autofill, importação de dados de outros navegadores, grupos e espaços de abas, instalação de PWAs, leitor e tradução integrados, restauração de sessões avançada e fluxo dedicado para DRM. A sincronização disponível é por servidor WebDAV do próprio usuário; ainda não existe nuvem Cypher. O formato `.cypherext` empacota extensões Chromium, mas ainda não oferece uma API proprietária própria. O Electron não fornece equivalência total às APIs e serviços do Chrome; cada atualização do motor, extensão e fluxo de autenticação precisa de validação. Consulte a [auditoria de prontidão](docs/browser-readiness-audit.md) para a avaliação completa e uma ordem sugerida de trabalho.
 
 O perfil local fica em `%APPDATA%/Cypher/`. Nunca é enviado para um servidor do Cypher; os sites e o mecanismo de busca recebem as requisições de navegação normalmente. Uma aba privada não torna a navegação anônima para sites ou provedores de internet.
 

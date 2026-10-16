@@ -1,0 +1,10 @@
+{
+  "format": "cypher-extension",
+  "formatVersion": 1,
+  "id": "com.cypher.examples.hello",
+  "name": "Olá, Cypher",
+  "version": "1.0.0",
+  "author": "Cypher",
+  "description": "Uma extensão de exemplo com popup local.",
+  "minCypherVersion": "0.7.17"
+}

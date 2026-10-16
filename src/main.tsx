@@ -1,10 +1,11 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import MediaPlayerWindow from './MediaPlayerWindow';
 import './styles.css';
 import './refinement.css';
 import './connection.css';
 import './navigation.css';
 import './settings-center.css';
 import './appearance-theme.css';
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{window.location.hash === '#mini-player' ? <MediaPlayerWindow /> : <App />}</React.StrictMode>);
