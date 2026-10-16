@@ -8,6 +8,7 @@ const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./d
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
+const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
 const execFileAsync = promisify(execFile);
 const privacyServices = createPrivacyServices({ app });
@@ -17,6 +18,9 @@ nativeTheme.themeSource = 'dark';
 protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }]);
 let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
 let hardwareAccelerationAtLaunch = true;
+let trackerEngine = null;
+let trackerList = { available: false, name: 'EasyPrivacy', source: 'https://easylist.to/easylist/easyprivacy.txt', lastModified: '', networkRuleCount: 0, blockedRequests: 0 };
+let trackerCountTimer = null;
 try {
   const bootstrap = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'cypher.json'), 'utf8'));
   if (bootstrap.settings?.hardwareAcceleration === false) { app.disableHardwareAcceleration(); hardwareAccelerationAtLaunch = false; }
@@ -52,6 +56,11 @@ function loadStore() {
   }
   store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
     homeData: { notes, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } };
+  if (saved.trackerProtectionConfigured !== true) {
+    store.settings.blockTrackers = true;
+    store.trackerProtectionConfigured = true;
+    persist();
+  }
   store.settings.backgroundMusicEnabled = false;
   const savedFocus = saved.homeData?.focus;
   if (savedFocus && [savedFocus.duration,savedFocus.remaining].every(Number.isFinite)) {
@@ -102,6 +111,7 @@ function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, error }) => ({ id, name, version, enabled, source, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], maximized: win?.isMaximized() || false,
+    trackerProtection: trackerList,
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData };
@@ -135,6 +145,41 @@ function selectTab(id) {
   if (!tabs.some(tab => tab.id === id)) return;
   activeId = id;
   layout(); emit();
+}
+function loadTrackerEngine() {
+  const resourcesPath = path.join(__dirname, 'resources');
+  try {
+    const metadata = JSON.parse(fs.readFileSync(path.join(resourcesPath, 'easyprivacy.json'), 'utf8'));
+    const binary = fs.readFileSync(path.join(resourcesPath, 'easyprivacy.bin'));
+    trackerEngine = FiltersEngine.deserialize(binary);
+    trackerList = { ...trackerList, ...metadata, available: true, blockedRequests: 0 };
+    console.info(`Proteção EasyPrivacy ativa: ${trackerList.networkRuleCount.toLocaleString('pt-BR')} regras de rede.`);
+  } catch (error) {
+    trackerEngine = null;
+    trackerList = { ...trackerList, available: false, error: `A lista EasyPrivacy não foi carregada: ${error.message}` };
+    console.warn(trackerList.error);
+  }
+}
+function matchTrackerRequest(details) {
+  if (!trackerEngine) return false;
+  try {
+    const sourceUrl = (details.resourceType === 'mainFrame' ? [details.url] : [details.frame?.top?.url, details.webContents?.mainFrame?.url, details.initiatorOrigin, details.initiator, details.referrer])
+      .find(value => typeof value === 'string' && /^https?:\/\//i.test(value)) || '';
+    const result = trackerEngine.match(Request.fromRawDetails({
+      url: details.url,
+      type: details.resourceType || 'other',
+      sourceUrl,
+    }));
+    return result.match === true;
+  } catch (error) {
+    console.warn('Falha ao avaliar regra de rastreamento:', error.message);
+    return false;
+  }
+}
+function noteTrackerBlocked() {
+  trackerList.blockedRequests++;
+  if (trackerCountTimer) return;
+  trackerCountTimer = setTimeout(() => { trackerCountTimer = null; emit(); }, 500);
 }
 function connectionPort(mode) { return mode === 'tor' ? store.settings.torSocksPort : mode === 'i2p' ? store.settings.i2pHttpPort : 0; }
 function sessionPartition(tab) {
@@ -247,7 +292,6 @@ function setupSession(ses) {
     ses.setSpellCheckerLanguages(store.settings.spellCheckLanguages.length ? store.settings.spellCheckLanguages : [store.settings.preferredLanguages[0] || 'pt-BR']);
   } catch (error) { console.warn('Não foi possível configurar a verificação ortográfica:', error.message); }
   const advertisingHosts = new Set(['doubleclick.net','googlesyndication.com','googleadservices.com','adservice.google.com','adroll.com','taboola.com','outbrain.com']);
-  const trackingHosts = new Set(['google-analytics.com','googletagmanager.com','clarity.ms','hotjar.com','segment.io','scorecardresearch.com','facebook.net','analytics.twitter.com']);
   const isThirdParty = details => {
     try {
       const initiator = details.initiatorOrigin || details.initiator;
@@ -260,7 +304,12 @@ function setupSession(ses) {
     let blocked = false;
     try {
       const hostname = new URL(details.url).hostname.toLowerCase();
-      blocked = (store.settings.blockAds && matchesHost(hostname, advertisingHosts)) || (store.settings.blockTrackers && matchesHost(hostname, trackingHosts));
+      const webContentsId = details.webContentsId ?? details.webContents?.id;
+      const tab = tabs.find(entry => entry.view?.webContents.id === webContentsId);
+      const normalNavigation = tab?.connectionMode === 'normal';
+      const trackerBlocked = normalNavigation && store.settings.blockTrackers && matchTrackerRequest(details);
+      if (trackerBlocked) noteTrackerBlocked();
+      blocked = (store.settings.blockAds && matchesHost(hostname, advertisingHosts)) || trackerBlocked;
     } catch {}
     callback(blocked ? { cancel: true } : {});
   });
@@ -909,6 +958,7 @@ function installMenu() {
 app.whenReady().then(async () => {
   if (!hasInstanceLock) return;
   protocol.registerSource('cypher-ui', { routes: [{ match: { host: 'app' }, source: { type: 'directory', root: path.resolve(__dirname, '../dist'), index: 'index.html', headers: { 'X-Content-Type-Options': 'nosniff' } } }] });
+  loadTrackerEngine();
   loadStore();
   await loadStoredExtensions();
   updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });

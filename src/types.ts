@@ -28,7 +28,8 @@ export interface FocusTimerData { endsAt: number | null; remaining: number; dura
 export interface HomeTask { id: string; title: string; done: boolean }
 export interface HomeData { notes: Record<string,string>; focus: FocusTimerData; focusById?: Record<string,FocusTimerData>; tasksById?: Record<string,HomeTask[]> }
 export interface UpdateStatus { state: 'unconfigured' | 'unsupported' | 'idle' | 'checking' | 'up-to-date' | 'available' | 'dismissed' | 'downloading' | 'restarting' | 'complete' | 'error'; currentVersion: string; version: string; progress: number; message: string; releaseNotes: string; repository: string }
-export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus }
+export interface TrackerProtectionStatus { available: boolean; name: string; source: string; lastModified: string; fetchedAt?: string; networkRuleCount: number; blockedRequests: number; error?: string }
+export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus }
 declare global {
   interface Window { cypher: { invoke: (action: string, payload?: unknown) => Promise<any>; onState: (callback: (state: BrowserState) => void) => () => void; onShortcut: (callback: (action: string) => void) => () => void } }
 }

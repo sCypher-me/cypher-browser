@@ -140,7 +140,11 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
           '',
         ].join('\n');
         await fs.promises.writeFile(configPath, config, 'utf8');
-        args = [`--conf=${configPath}`, `--datadir=${dataDirectory}`, '--daemon=false'];
+        // i2pd declares --daemon as a boolean switch. Passing --daemon=false
+        // is parsed as an invalid argument on Windows and prevents startup.
+        // The default (daemon disabled) keeps the router in the foreground so
+        // Electron can supervise its lifecycle.
+        args = [`--conf=${configPath}`, `--datadir=${dataDirectory}`];
         const certificates = path.join(cwd, 'contrib', 'certificates');
         if (fs.existsSync(certificates)) args.push(`--certsdir=${certificates}`);
       }

@@ -1,16 +1,17 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.12",
+  "version": "0.7.13",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "node scripts/dev.cjs",
-    "build": "tsc --noEmit && vite build",
+    "dev": "npm run prepare:tracker-list && node scripts/dev.cjs",
+    "build": "npm run prepare:tracker-list && tsc --noEmit && vite build",
     "start": "electron .",
     "prepare:privacy-runtime": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-privacy-runtime.ps1",
+    "prepare:tracker-list": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-tracker-list.ps1",
     "dist": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
     "dist:installer": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
     "dist:portable": "npm run prepare:privacy-runtime && npm run build && electron-builder --win portable",
@@ -19,6 +20,7 @@
     "test:smoke": "node scripts/run-smoke.cjs"
   },
   "dependencies": {
+    "@ghostery/adblocker": "2.18.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "react": "19.3.0",

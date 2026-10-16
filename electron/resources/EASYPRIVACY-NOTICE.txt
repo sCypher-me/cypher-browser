@@ -1,0 +1,7 @@
+O Cypher incorpora regras da lista EasyPrivacy, mantida pelos autores do EasyList.
+Fonte: https://easylist.to/easylist/easyprivacy.txt
+Projeto e licença: https://easylist.to/pages/licence.html
+Licença da lista: GPL-3.0-or-later ou CC-BY-SA-3.0-or-later.
+
+O mecanismo de regras usado pelo Cypher é @ghostery/adblocker, distribuído sob
+Mozilla Public License 2.0. Consulte node_modules/@ghostery/adblocker/LICENSE.

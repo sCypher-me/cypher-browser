@@ -5,7 +5,7 @@ import {
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
   Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound, Volume2,
 } from 'lucide-react';
-import type { Settings, UpdateStatus } from './types';
+import type { Settings, TrackerProtectionStatus, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
 import WindowsVpnSettings from './WindowsVpnSettings';
 
@@ -13,6 +13,7 @@ type Category = 'appearance' | 'tabs' | 'home' | 'search' | 'languages' | 'priva
 type Props = {
   settings: Settings;
   update: UpdateStatus;
+  trackerProtection: TrackerProtectionStatus;
   hardwareAccelerationPending: boolean;
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
@@ -59,7 +60,8 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'privacy-data', title: 'Dados de navegação', detail: 'Limpar cookies, cache e histórico', category: 'privacy' },
   { id: 'privacy-clear-exit', title: 'Limpeza ao sair', detail: 'Apagar dados dos sites ou histórico ao fechar o Cypher', category: 'privacy' },
   { id: 'privacy-private', title: 'Navegação privada', detail: 'Abrir abas que não entram no histórico', category: 'privacy' },
-  { id: 'privacy-ad-block', title: 'Bloquear anúncios e rastreadores', detail: 'Bloquear domínios conhecidos de publicidade e análise externa', category: 'privacy' },
+  { id: 'privacy-ad-block', title: 'Bloquear anúncios conhecidos', detail: 'Impedir solicitações a uma lista local de domínios de publicidade', category: 'privacy' },
+  { id: 'privacy-tracker-block', title: 'Bloquear rastreadores com EasyPrivacy', detail: 'Bloqueio de requisições de análise e rastreamento na navegação normal', category: 'privacy' },
   { id: 'privacy-third-party-cookies', title: 'Cookies de terceiros', detail: 'Bloquear cookies em solicitações entre domínios diferentes', category: 'privacy' },
   { id: 'privacy-site-permissions', title: 'Permissões de sites', detail: 'Câmera, microfone, localização, notificações e área de transferência', category: 'privacy' },
   { id: 'startup-mode', title: 'Ao iniciar', detail: 'Abrir a página inicial, restaurar a sessão ou páginas específicas', category: 'startup' },
@@ -78,8 +80,8 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'profile-local', title: 'Perfil local', detail: 'Foto e dados salvos neste dispositivo', category: 'profile' },
 ];
 
-function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: () => void }) {
-  return <button type="button" className={`sc-switch ${checked ? 'is-on' : ''}`} role="switch" aria-checked={checked} aria-label={label} onClick={onChange}><span /></button>;
+function Switch({ checked, label, onChange, disabled = false }: { checked: boolean; label: string; onChange: () => void; disabled?: boolean }) {
+  return <button type="button" className={`sc-switch ${checked ? 'is-on' : ''}`} role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={onChange}><span /></button>;
 }
 
 function Row({ id, title, detail, children }: { id?: string; title: string; detail?: string; children: ReactNode }) {
@@ -104,7 +106,7 @@ const languageOptions = [
   { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
 ];
 
-export default function SettingsCenter({ settings: s, update, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
+export default function SettingsCenter({ settings: s, update, trackerProtection, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
   const [category, setCategory] = useState<Category>('appearance');
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
@@ -255,7 +257,11 @@ export default function SettingsCenter({ settings: s, update, hardwareAccelerati
           {category === 'privacy' && <>
             <Panel eyebrow="PRIVACIDADE" title="Controles da sessão" detail="Ajuste o que o navegador informa e gerencie os dados guardados." icon={ShieldCheck}>
               <Row id="privacy-ad-block" title="Bloquear anúncios conhecidos" detail="Impede solicitações a uma lista local e limitada de domínios de publicidade"><Switch label="Bloquear domínios de anúncios conhecidos" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
-              <Row title="Bloquear rastreadores conhecidos" detail="Bloqueia alguns domínios externos de análise e rastreamento; não detecta todos os rastreadores"><Switch label="Bloquear domínios de rastreamento conhecidos" checked={s.blockTrackers} onChange={() => onSettings({ blockTrackers: !s.blockTrackers })}/></Row>
+              <Row id="privacy-tracker-block" title="Bloquear rastreadores" detail={trackerProtection.available
+                ? `${trackerProtection.name} · ${trackerProtection.networkRuleCount.toLocaleString('pt-BR')} regras de rede · ${trackerProtection.blockedRequests.toLocaleString('pt-BR')} pedidos bloqueados nesta sessão${trackerProtection.lastModified ? ` · Lista de ${trackerProtection.lastModified}` : ''}`
+                : (trackerProtection.error || 'Lista de proteção indisponível. Feche e abra o Cypher após instalar a atualização.') }>
+                <Switch label="Bloqueio de rastreadores" checked={s.blockTrackers} disabled={!trackerProtection.available} onChange={() => onSettings({ blockTrackers: !s.blockTrackers })}/>
+              </Row>
               <Row id="privacy-third-party-cookies" title="Bloquear cookies de terceiros" detail="Remove cookies enviados ou recebidos em solicitações cujo host difere do site iniciador"><Switch label="Bloquear cookies entre domínios" checked={s.blockThirdPartyCookies} onChange={() => onSettings({ blockThirdPartyCookies: !s.blockThirdPartyCookies })}/></Row>
               <Row id="privacy-do-not-track" title="Enviar sinal Não rastrear" detail="Inclui o cabeçalho DNT: 1 nas solicitações aos sites. Cada site decide se respeita o sinal."><Switch label="Enviar sinal Não rastrear" checked={s.sendDoNotTrack} onChange={() => onSettings({ sendDoNotTrack: !s.sendDoNotTrack })}/></Row>
               <Row id="privacy-data" title="Cookies e dados dos sites" detail="Limpa cookies e cache; você pode sair das contas abertas"><button className="sc-button sc-button-subtle" onClick={() => void command('data:clear')}>Limpar dados <ArrowRight size={14}/></button></Row>

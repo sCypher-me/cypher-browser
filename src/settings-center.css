@@ -58,6 +58,7 @@
 .sc-switch span { width:11px;height:11px;position:absolute;left:3px;top:3px;border-radius:50%;background:#8b9688;transition:transform .2s,background .2s; }
 .sc-switch.is-on { border-color:color-mix(in srgb,var(--accent) 55%,transparent);background:color-mix(in srgb,var(--accent) 22%,var(--surface)); }
 .sc-switch.is-on span { transform:translateX(15px);background:var(--accent);box-shadow:0 0 8px color-mix(in srgb,var(--accent) 30%,transparent); }
+.sc-switch:disabled { cursor:not-allowed;opacity:.55; }
 .sc-color-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;padding:14px 0 4px; }
 .sc-color-choice { min-width:0;display:flex;align-items:center;gap:9px;padding:9px;border:1px solid var(--sc-line);border-radius:8px;background:#ffffff02;cursor:pointer; }
 .sc-color-swatch { width:29px;height:29px;position:relative;flex:none;overflow:hidden;border:1px solid #ffffff2a;border-radius:7px;background:var(--base); }

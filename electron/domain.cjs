@@ -9,7 +9,7 @@ const defaults = {
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
   restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false,
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
-  blockAds: false, blockTrackers: false, blockThirdPartyCookies: false,
+  blockAds: false, blockTrackers: true, blockThirdPartyCookies: false,
   preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true,
   hardwareAcceleration: true, webrtcPolicy: 'default',
   showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true,
