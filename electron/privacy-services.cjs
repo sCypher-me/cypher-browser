@@ -85,7 +85,9 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
         return { started: true };
       }
 
-      if (mode === 'tor' && await check(mode, port)) return { started: false, external: true };
+      if (mode === 'tor' && await check(mode, port)) {
+        throw new Error(`A porta ${port} já está ocupada por outro proxy Tor. Feche o serviço externo ou escolha outra porta; o Cypher precisa iniciar seu próprio cliente para aplicar o isolamento de circuitos.`);
+      }
       if (mode === 'i2p' && await canConnect(port, false)) {
         throw new Error(`A porta ${port} já está ocupada por outro programa. Feche o serviço que a está usando ou escolha outra porta nas configurações.`);
       }
@@ -104,7 +106,7 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
         await fs.promises.mkdir(dataDirectory, { recursive: true });
         args = [
           '--ClientOnly', '1',
-          '--SocksPort', `127.0.0.1:${port}`,
+          '--SocksPort', `127.0.0.1:${port} IsolateDestAddr IsolateDestPort IsolateSOCKSAuth`,
           '--SocksPolicy', 'accept 127.0.0.1',
           '--DataDirectory', dataDirectory,
           '--CookieAuthentication', '0',

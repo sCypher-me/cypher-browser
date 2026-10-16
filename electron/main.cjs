@@ -14,6 +14,8 @@ const execFileAsync = promisify(execFile);
 const privacyServices = createPrivacyServices({ app });
 
 app.setName('Cypher');
+// Prevent speculative hostname lookups from bypassing anonymous proxies.
+app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
 protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }]);
 let win, store, storePath, activeId, saveTimer, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
@@ -126,9 +128,20 @@ function layout() {
   const y = Math.min(Math.max(0, Math.round(viewport.y)), height);
   const bounds = { x, y, width: Math.max(0, Math.min(Math.round(viewport.width), width - x)), height: Math.max(0, Math.min(Math.round(viewport.height), height - y)) };
   for (const tab of tabs) if (tab.view) {
-    tab.view.setBounds(bounds);
+    tab.view.setBounds(tab.connectionMode === 'normal' ? bounds : letterboxBounds(bounds));
     tab.view.setVisible(tab.id === activeId && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
   }
+}
+function letterboxBounds(bounds) {
+  const width = Math.floor(bounds.width / 200) * 200;
+  const height = Math.floor(bounds.height / 100) * 100;
+  if (width < 200 || height < 100) return bounds;
+  return {
+    x: bounds.x + Math.floor((bounds.width - width) / 2),
+    y: bounds.y + Math.floor((bounds.height - height) / 2),
+    width,
+    height,
+  };
 }
 function update(tab) {
   const wc = tab.view?.webContents;
@@ -283,7 +296,7 @@ function closeTab(id) {
   if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.close({ waitForBeforeUnload: true });
   else removeTab(tab);
 }
-function setupSession(ses) {
+function setupSession(ses, mode = 'normal') {
   if (configuredSessions.has(ses)) return;
   configuredSessions.add(ses);
   const grants = new Set();
@@ -306,8 +319,9 @@ function setupSession(ses) {
       const hostname = new URL(details.url).hostname.toLowerCase();
       const webContentsId = details.webContentsId ?? details.webContents?.id;
       const tab = tabs.find(entry => entry.view?.webContents.id === webContentsId);
-      const normalNavigation = tab?.connectionMode === 'normal';
-      const trackerBlocked = normalNavigation && store.settings.blockTrackers && matchTrackerRequest(details);
+      const requestMode = tab?.connectionMode || mode;
+      const anonymousRoute = requestMode === 'tor' || requestMode === 'i2p';
+      const trackerBlocked = (anonymousRoute || store.settings.blockTrackers) && matchTrackerRequest(details);
       if (trackerBlocked) noteTrackerBlocked();
       blocked = (store.settings.blockAds && matchesHost(hostname, advertisingHosts)) || trackerBlocked;
     } catch {}
@@ -316,25 +330,28 @@ function setupSession(ses) {
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
     if (store.settings.sendDoNotTrack) requestHeaders.DNT = '1';
-    if (store.settings.preferredLanguages.length) requestHeaders['Accept-Language'] = store.settings.preferredLanguages.map((language, index) => `${language}${index ? `;q=${Math.max(0.1,1-index*0.1).toFixed(1)}` : ''}`).join(',');
-    if (store.settings.blockThirdPartyCookies && isThirdParty(details)) for (const key of Object.keys(requestHeaders)) if (key.toLowerCase() === 'cookie') delete requestHeaders[key];
+    if (mode !== 'normal') requestHeaders['Accept-Language'] = 'en-US,en;q=0.5';
+    else if (store.settings.preferredLanguages.length) requestHeaders['Accept-Language'] = store.settings.preferredLanguages.map((language, index) => `${language}${index ? `;q=${Math.max(0.1,1-index*0.1).toFixed(1)}` : ''}`).join(',');
+    if ((mode !== 'normal' || store.settings.blockThirdPartyCookies) && isThirdParty(details)) for (const key of Object.keys(requestHeaders)) if (key.toLowerCase() === 'cookie') delete requestHeaders[key];
     callback({ requestHeaders });
   });
   ses.webRequest.onHeadersReceived((details, callback) => {
     if (!details.responseHeaders) return callback({});
     const responseHeaders = { ...(details.responseHeaders || {}) };
-    if (store.settings.blockThirdPartyCookies && isThirdParty(details)) for (const key of Object.keys(responseHeaders)) if (['set-cookie','set-cookie2'].includes(key.toLowerCase())) delete responseHeaders[key];
+    if ((mode !== 'normal' || store.settings.blockThirdPartyCookies) && isThirdParty(details)) for (const key of Object.keys(responseHeaders)) if (['set-cookie','set-cookie2'].includes(key.toLowerCase())) delete responseHeaders[key];
     callback({ responseHeaders });
   });
   ses.setPermissionCheckHandler((wc, permission, origin) => {
     const tab = tabs.find(entry => entry.view?.webContents === wc);
     if (!tab || !sitePermissionTypes.has(permission)) return false;
+    if (tab.connectionMode !== 'normal') return false;
     const rule = !tab.private && store.sitePermissions.find(entry => entry.origin === origin && entry.permission === permission);
     return rule ? rule.allowed : grants.has(`${origin}:${permission}`);
   });
   ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
     if (!sitePermissionTypes.has(permission) || !tabs.some(t => t.view?.webContents === wc)) return callback(false);
     const tab = tabs.find(entry => entry.view?.webContents === wc);
+    if (tab.connectionMode !== 'normal') return callback(false);
     let origin;
     try { origin = new URL(details.requestingUrl || wc.getURL()).origin; } catch { return callback(false); }
     if (!/^https?:/.test(origin)) return callback(false);
@@ -436,7 +453,7 @@ function extensionIdFromStoreUrl(value) {
 async function downloadChromeStoreCrx(extensionId) {
   const routeTab = { connectionMode:active()?.connectionMode || store.settings.connectionMode, private:false };
   const ses = session.fromPartition(sessionPartition(routeTab));
-  setupSession(ses); await prepareProxy(routeTab, ses);
+  setupSession(ses, routeTab.connectionMode); await prepareProxy(routeTab, ses);
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 45000);
   let address = `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=${encodeURIComponent(process.versions.chrome)}&acceptformat=crx3&x=${encodeURIComponent(`id=${extensionId}&installsource=ondemand&uc`)}`;
   try {
@@ -503,12 +520,19 @@ async function loadStoredExtensions() {
 }
 function attachView(tab) {
   const ses = session.fromPartition(sessionPartition(tab));
-  setupSession(ses);
+  setupSession(ses, tab.connectionMode);
   void prepareProxy(tab, ses).catch(error => { tab.error = `Não foi possível configurar ${tab.connectionMode}: ${error.message}`; layout(); emit(); });
   const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   tab.view = view;
   win.contentView.addChildView(view);
   const wc = view.webContents;
+  if (tab.connectionMode !== 'normal') {
+    const chromeMajor = String(process.versions.chrome || '').split('.')[0];
+    const normalizedUserAgent = wc.getUserAgent()
+      .replace(/\s+(?:Electron|Cypher)\/[^\s]+/gi, '')
+      .replace(/Chrome\/[\d.]+/i, `Chrome/${chromeMajor}.0.0.0`);
+    wc.setUserAgent(normalizedUserAgent);
+  }
   wc.setZoomFactor(store.settings.defaultZoom);
   wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? store.settings.webrtcPolicy : 'disable_non_proxied_udp');
   wc.setWindowOpenHandler(({ url }) => {
@@ -555,7 +579,7 @@ function attachView(tab) {
   });
   wc.on('context-menu', (_event, params) => {
     const template = [];
-    if (store.settings.translationEnabled && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
+    if (store.settings.translationEnabled && tab.connectionMode === 'normal' && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
     if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, { label: 'Copiar endereço do link', click: () => clipboard.writeText(params.linkURL) }, { type: 'separator' });
     if (params.isEditable) template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' });
     else if (params.selectionText) template.push({ role: 'copy' }, { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
@@ -570,6 +594,13 @@ function attachView(tab) {
 }
 function navigate(tab, input) {
   const url = resolveAddress(input, store.settings.searchEngine, store.settings.customSearchUrl);
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (hostname.endsWith('.onion') && tab.connectionMode !== 'tor') {
+    tab.url = url; tab.loading = false; tab.error = 'Endereços .onion só podem ser abertos com a rede Tor ativa.'; layout(); emit(); return;
+  }
+  if (hostname.endsWith('.i2p') && tab.connectionMode !== 'i2p') {
+    tab.url = url; tab.loading = false; tab.error = 'Endereços .i2p só podem ser abertos com a rede I2P ativa.'; layout(); emit(); return;
+  }
   tab.url = url; tab.error = null;
   if (url.startsWith('cypher://')) {
     tab.loading = false; tab.title = ({ newtab: 'Nova aba', settings: 'Configurações', security: 'Segurança', profile: 'Perfil', extensions: 'Extensões', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', mods: 'Mods' })[url.slice(9)];

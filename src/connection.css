@@ -30,6 +30,14 @@
 .connection-option-copy strong { font-size:12px;font-weight:550;color:#e0e7dc; }
 .connection-option-copy small { margin-top:4px;font-size:9px;color:#97a28f; }
 .connection-option-copy>span { grid-column:1/-1;margin-top:14px;font-size:10px;line-height:1.65;color:#929e8d; }
+.connection-protection { margin-top:14px;padding:14px 15px;border:1px solid #a78bfa24;border-radius:10px;background:linear-gradient(120deg,#a78bfa0a,transparent 72%); }
+.connection-protection-i2p { border-color:#e6bd8524;background:linear-gradient(120deg,#e6bd850a,transparent 72%); }
+.connection-protection-title { display:flex;align-items:center;gap:9px;color:#c4b3ff; }
+.connection-protection-i2p .connection-protection-title { color:#e6bd85; }
+.connection-protection-title strong { font-size:11px;font-weight:600; }
+.connection-protection-title span { margin-left:auto;font-size:7px;letter-spacing:1px;color:#97a28f; }
+.connection-protection ul { display:grid;gap:7px;margin:12px 0;padding-left:22px;color:#b4bdad;font-size:9px;line-height:1.55; }
+.connection-protection p { margin:0;padding-top:10px;border-top:1px solid #ffffff0d;color:#a4aa9f;font-size:9px;line-height:1.65; }
 .connection-health { grid-column:1/-1;display:flex;align-items:center;gap:7px;margin-top:14px;font-size:9px;color:#8e998b; }
 .connection-health>i { width:6px;height:6px;border-radius:50%;background:#737e70; }
 .connection-health.available>i { background:#94c970;box-shadow:0 0 8px #94c97055; }

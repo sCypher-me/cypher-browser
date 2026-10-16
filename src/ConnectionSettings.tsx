@@ -16,6 +16,23 @@ const modes: { id: ConnectionMode; name: string; subtitle: string; detail: strin
 
 export default function ConnectionSettings({ settings, onSettings, onConnection }: Props) {
   const [health, setHealth] = useState<Partial<Record<ConnectionMode, Health>>>({});
+  const protection = settings.connectionMode === 'tor' ? {
+    title: 'Proteções do perfil Tor',
+    details: [
+      'Circuitos Tor criptografados, normalmente com três relés; fluxos separados por destino e porta. HTTPS protege também a conexão entre o relé de saída e o site.',
+      'Bloqueio de rastreadores e cookies de terceiros, WebRTC sem UDP e permissões sensíveis negadas.',
+      'Sessão em memória, sem histórico, com letterboxing e User-Agent padronizado para reduzir alguns sinais de fingerprinting.',
+    ],
+    caveat: 'Seu provedor ainda pode perceber que você está usando Tor, embora não veja os sites visitados pela rota. O Cypher usa Chromium e não reproduz todas as defesas de fingerprinting do Tor Browser, como as proteções completas de canvas, fontes, WebGL e JavaScript.',
+  } : settings.connectionMode === 'i2p' ? {
+    title: 'Proteções do perfil I2P',
+    details: [
+      'Navegação encaminhada pelo proxy local do i2pd; destinos .i2p permanecem dentro da rede I2P.',
+      'Bloqueio de rastreadores e cookies de terceiros, WebRTC sem UDP e permissões sensíveis negadas.',
+      'Sessão em memória, sem histórico, com letterboxing e User-Agent padronizado para reduzir alguns sinais de fingerprinting.',
+    ],
+    caveat: 'I2P usa túneis próprios, não o circuito de três relés do Tor. A web pública depende de um outproxy e não recebe as mesmas garantias de sites .i2p.',
+  } : null;
   useEffect(() => {
     let mounted = true;
     const refresh = async () => {
@@ -44,10 +61,15 @@ export default function ConnectionSettings({ settings, onSettings, onConnection 
         </button>;
       })}
     </div>
+    {protection && <div className={`connection-protection connection-protection-${settings.connectionMode}`}>
+      <div className="connection-protection-title"><Shield size={17}/><strong>{protection.title}</strong><span>ATIVA AUTOMATICAMENTE</span></div>
+      <ul>{protection.details.map(detail => <li key={detail}>{detail}</li>)}</ul>
+      <p>{protection.caveat}</p>
+    </div>}
     <div className="connection-ports">
       <label><span><strong>Porta SOCKS do Tor</strong><small>Usual: 9050 · Tor Browser: 9150</small></span><input type="number" min="1" max="65535" aria-label="Porta SOCKS do Tor" value={settings.torSocksPort} onChange={event => { const value = Number(event.target.value); if (value >= 1 && value <= 65535) onSettings({ torSocksPort: value }); }}/></label>
       <label><span><strong>Proxy HTTP do I2P</strong><small>Porta local usual: 4444</small></span><input type="number" min="1" max="65535" aria-label="Porta HTTP do I2P" value={settings.i2pHttpPort} onChange={event => { const value = Number(event.target.value); if (value >= 1 && value <= 65535) onSettings({ i2pHttpPort: value }); }}/></label>
     </div>
-    <div className="connection-note"><AlertCircle size={15}/><p>Tor e I2P só são ativados após o Cypher confirmar o proxy local; falhas não passam para a conexão normal. A mudança se aplica a todas as abas abertas e pesquisas. Esta versão ainda exige que os serviços Tor/I2P estejam instalados e iniciados no computador. Abas dessas redes não entram no histórico nem são restauradas ao fechar.</p></div>
+    <div className="connection-note"><AlertCircle size={15}/><p>O Cypher inicia os serviços Tor/I2P empacotados e só carrega páginas depois de confirmar o proxy. Se a rota falhar, não há retorno automático à conexão normal. Abas dessas redes não entram no histórico nem são restauradas ao fechar.</p></div>
   </section>;
 }
