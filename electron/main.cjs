@@ -287,9 +287,19 @@ function refreshMediaInfo(tab, started = false) {
     const elements = [...document.querySelectorAll('audio,video')];
     const media = elements.find(item => !item.paused && !item.ended && item.readyState >= 2) || elements.find(item => !item.paused && !item.ended) || elements.find(item => item.currentSrc);
     const metadata = navigator.mediaSession?.metadata;
-    const artwork = metadata?.artwork?.find(item => typeof item.src === 'string' && item.src.startsWith('data:image/'))?.src || '';
+    const safeImageUrl = value => {
+      if (typeof value !== 'string' || !value) return '';
+      if (value.startsWith('data:image/')) return value.length <= 250000 ? value : '';
+      try { const url = new URL(value, location.href); return url.protocol === 'https:' ? url.href : ''; } catch { return ''; }
+    };
+    const artworkOptions = [...(metadata?.artwork || [])].map(item => ({ src: safeImageUrl(item.src), sizes: item.sizes || '' })).filter(item => item.src);
+    artworkOptions.sort((a, b) => {
+      const size = value => Math.max(0, ...String(value).split(/\\s+/).map(part => Number.parseInt(part.split('x')[0], 10) || 0));
+      return size(b.sizes) - size(a.sizes);
+    });
+    const artworkUrl = artworkOptions[0]?.src || safeImageUrl((media?.tagName === 'VIDEO' ? media.poster : '') || document.querySelector('meta[property="og:image"]')?.content || document.querySelector('meta[name="twitter:image"]')?.content || document.querySelector('link[itemprop="thumbnailUrl"]')?.href || '');
     return { title: metadata?.title || media?.getAttribute('title') || document.title || location.hostname,
-      artist: metadata?.artist || '', album: metadata?.album || '', artwork,
+      artist: metadata?.artist || '', album: metadata?.album || '', artworkUrl,
       currentTime: Number.isFinite(media?.currentTime) ? media.currentTime : 0,
       duration: Number.isFinite(media?.duration) ? media.duration : 0,
       playing: !!media && !media.paused && !media.ended };
@@ -299,14 +309,35 @@ function refreshMediaInfo(tab, started = false) {
     const actuallyPlaying = !!info?.playing || (started && wc.isCurrentlyAudible());
     tab.mediaPlaying = actuallyPlaying;
     if (actuallyPlaying) nowPlayingTabId = tab.id;
+    const artworkUrl = typeof info?.artworkUrl === 'string' ? info.artworkUrl : '';
+    const previousArtworkSource = tab.mediaArtworkSource || '';
+    const directArtwork = artworkUrl.startsWith('data:image/') && artworkUrl.length <= 250000 ? artworkUrl : '';
+    const artwork = directArtwork || (artworkUrl && artworkUrl === previousArtworkSource ? tab.mediaInfo?.artwork || '' : '');
+    tab.mediaArtworkSource = artworkUrl;
     tab.mediaInfo = {
       title: String(info?.title || wc.getTitle() || new URL(tab.url).hostname).slice(0, 240),
       artist: String(info?.artist || '').slice(0, 160), album: String(info?.album || '').slice(0, 160),
-      artwork: typeof info?.artwork === 'string' ? info.artwork.slice(0, 250000) : '',
+      artwork,
       currentTime: Number.isFinite(info?.currentTime) ? Math.max(0, info.currentTime) : 0,
       duration: Number.isFinite(info?.duration) ? Math.max(0, info.duration) : 0,
     };
     emit();
+    if (artworkUrl && !directArtwork && artworkUrl !== previousArtworkSource) {
+      const artworkScript = `(async () => {
+        try {
+          const response = await fetch(${JSON.stringify(artworkUrl)}, { credentials: 'omit', cache: 'force-cache' });
+          if (!response.ok || !response.headers.get('content-type')?.toLowerCase().startsWith('image/')) return '';
+          const blob = await response.blob();
+          if (blob.size > 180000) return '';
+          return await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : ''); reader.onerror = () => resolve(''); reader.readAsDataURL(blob); });
+        } catch { return ''; }
+      })()`;
+      wc.executeJavaScript(artworkScript, true).then(data => {
+        if (!tabs.includes(tab) || wc.isDestroyed() || tab.mediaArtworkSource !== artworkUrl || typeof data !== 'string' || !data.startsWith('data:image/') || data.length > 250000) return;
+        tab.mediaInfo = { ...tab.mediaInfo, artwork: data };
+        emit();
+      }).catch(() => {});
+    }
   }).catch(() => {});
 }
 function shortcut(action) { win.webContents.send('cypher:shortcut', action); }
@@ -829,7 +860,7 @@ function attachView(tab) {
   });
   wc.on('will-navigate', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
-  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
+  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
   wc.on('page-title-updated', (_event, title) => { tab.title = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {

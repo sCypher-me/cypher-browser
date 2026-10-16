@@ -50,7 +50,7 @@ export default function App() {
   const playerPlaying = backgroundSelected ? s.backgroundMusicEnabled : !!pageMedia?.playing;
   const playerDuration = backgroundSelected ? musicRef.current?.duration || 0 : pageMedia?.duration || 0;
   const playerPosition = backgroundSelected ? backgroundPosition : pageMedia?.currentTime || 0;
-  const overlay = menu || !!tabMenu || addressFocus;
+  const overlay = menu || !!tabMenu || addressFocus || mediaOpen;
   function notify(message: string) { setToast(message); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4500); }
   async function act(action: string, payload?: unknown) {
     try { return await window.cypher.invoke(action, payload); }
