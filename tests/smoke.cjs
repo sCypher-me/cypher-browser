@@ -19,7 +19,12 @@ server.listen(0,'127.0.0.1', async () => {
     let win;
     await until(() => { win = BrowserWindow.getAllWindows()[0]; return win && !win.webContents.isLoading() && win.webContents.getURL().includes('index.html'); }, 'renderer');
     await until(() => win.webContents.executeJavaScript('!!document.querySelector(".home-page")'), 'home UI');
-    const invoke = (action,payload) => win.webContents.executeJavaScript(`window.cypher.invoke(${JSON.stringify(action)},${JSON.stringify(payload) || 'undefined'})`);
+    const invoke = async (action,payload) => {
+      const encoded = await win.webContents.executeJavaScript(`window.cypher.invoke(${JSON.stringify(action)},${JSON.stringify(payload) || 'undefined'}).then(value => JSON.stringify({ value })).catch(error => JSON.stringify({ error:String(error?.stack || error?.message || error) }))`);
+      const result = JSON.parse(encoded);
+      if (result.error) throw new Error(`Ação IPC "${action}" falhou: ${result.error}`);
+      return result.value;
+    };
     let state = await invoke('state');
     assert.equal(state.settings.tabPosition,'side');
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
