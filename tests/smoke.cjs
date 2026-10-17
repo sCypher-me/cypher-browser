@@ -163,7 +163,7 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(fs.readFileSync(download.path,'utf8'),'Cypher download works');
     await assert.rejects(() => invoke('navigate','javascript:alert(1)'));
     await invoke('tab:new',{ url:'cypher://settings' });
-    await until(() => win.webContents.executeJavaScript('!!document.querySelector(".settings-grid")'), 'settings UI');
+    await until(() => win.webContents.executeJavaScript('!!document.querySelector(".settings-center")'), 'settings UI');
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-settings.png'), (await win.webContents.capturePage()).toPNG());
     await invoke('tab:new',{ url:'cypher://mods' });
