@@ -21,7 +21,7 @@
     "test:smoke": "node scripts/run-smoke.cjs"
   },
   "dependencies": {
-    "@ghostery/adblocker": "2.18.2",
+    "@ghostery/adblocker": "2.20.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
     "react": "19.3.0",
