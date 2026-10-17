@@ -5,7 +5,7 @@ const defaults = {
   background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital', wallpaperImageData: '', wallpaperVideoPath: '', wallpaperVideoName: '',
   buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher',
   backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false,
-  motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
+  motion: true, compact: false, interfaceTextScale: 1.2, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
   restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false,
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
@@ -70,6 +70,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   }
   if (Number.isFinite(input.radius)) output.radius = Math.max(0, Math.min(24, input.radius));
   if (Number.isFinite(input.sidebarWidth)) output.sidebarWidth = Math.max(210, Math.min(360, input.sidebarWidth));
+  if (Number.isFinite(input.interfaceTextScale)) output.interfaceTextScale = Math.round(Math.max(1, Math.min(1.4, input.interfaceTextScale)) * 100) / 100;
   if (Number.isFinite(input.defaultZoom)) output.defaultZoom = Math.max(0.75, Math.min(1.5, input.defaultZoom));
   for (const key of ['torSocksPort','i2pHttpPort']) if (Number.isInteger(input[key])) output[key] = Math.max(1,Math.min(65535,input[key]));
   output.downloadDirectory = typeof input.downloadDirectory === 'string' && input.downloadDirectory.length <= 4096 ? input.downloadDirectory : (base.downloadDirectory || '');

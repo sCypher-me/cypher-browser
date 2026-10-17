@@ -147,6 +147,7 @@ namespace Cypher.Setup
         public bool Updated;
         public bool DeferLaunch;
         public int WaitForProcessId;
+        public string UpdateNotesBase64 = "";
         public string Target;
         public bool Desktop = true;
         public bool StartMenu = true;
@@ -161,6 +162,11 @@ namespace Cypher.Setup
                 if (string.Equals(arg, "--quiet", StringComparison.OrdinalIgnoreCase)) result.SilentQuiet = true;
                 if (string.Equals(arg, "--force-run", StringComparison.OrdinalIgnoreCase)) result.ForceRun = true;
                 if (string.Equals(arg, "--updated", StringComparison.OrdinalIgnoreCase)) result.Updated = true;
+                if (arg.StartsWith("--cypher-update-notes=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string notes = arg.Substring("--cypher-update-notes=".Length);
+                    if (notes.Length <= 5000 && notes.All(character => char.IsLetterOrDigit(character) || character == '-' || character == '_')) result.UpdateNotesBase64 = notes;
+                }
                 if (string.Equals(arg, "--defer-launch", StringComparison.OrdinalIgnoreCase)) result.DeferLaunch = true;
                 if (arg.StartsWith("--wait-for-process=", StringComparison.OrdinalIgnoreCase)) int.TryParse(arg.Substring(19), out result.WaitForProcessId);
                 if (string.Equals(arg, "--wait-for-process", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) int.TryParse(args[++i], out result.WaitForProcessId);
@@ -320,7 +326,7 @@ namespace Cypher.Setup
             progress(100, "Cypher está pronto para abrir");
             if (options.Silent && !options.DeferLaunch && (options.ForceRun || options.Updated))
             {
-                try { StartCypherWithRetry(target, options.Updated); }
+                try { StartCypherWithRetry(target, options.Updated, options.UpdateNotesBase64); }
                 catch (Exception ex)
                 {
                     throw new IOException("A atualização foi instalada, mas o Cypher não conseguiu abrir automaticamente. Abra-o pelo atalho do navegador. Detalhes: " + ex.Message, ex);
@@ -345,12 +351,12 @@ namespace Cypher.Setup
             throw new IOException("Não foi possível " + operation + " porque um arquivo ainda está em uso. Feche todas as janelas do Cypher e tente novamente. Detalhes: " + (lastError == null ? "erro de acesso aos arquivos" : lastError.Message), lastError);
         }
 
-        private static void StartCypherWithRetry(string target, bool updated)
+        private static void StartCypherWithRetry(string target, bool updated, string updateNotesBase64)
         {
             Exception lastError = null;
             for (int attempt = 0; attempt < 8; attempt++)
             {
-                try { StartCypher(target, updated); return; }
+                try { StartCypher(target, updated, updateNotesBase64); return; }
                 catch (IOException ex) { lastError = ex; }
                 catch (System.ComponentModel.Win32Exception ex) { lastError = ex; }
                 if (attempt < 7) Thread.Sleep(750);
@@ -386,7 +392,7 @@ namespace Cypher.Setup
                 UseShellExecute = true,
                 Verb = "runas",
                 WorkingDirectory = Path.GetTempPath(),
-                Arguments = "/S " + (options.ForceRun ? "--force-run " : "") + (options.Updated ? "--updated " : "") + (options.WaitForProcessId > 0 ? "--wait-for-process=" + options.WaitForProcessId + " " : "") + (options.Desktop ? "" : "--no-desktop ") + (options.StartMenu ? "" : "--no-start-menu ") + (!options.Silent ? "--defer-launch " : "") + "--target " + Quote(target)
+                Arguments = "/S " + (options.ForceRun ? "--force-run " : "") + (options.Updated ? "--updated " : "") + (options.UpdateNotesBase64.Length > 0 ? "--cypher-update-notes=" + options.UpdateNotesBase64 + " " : "") + (options.WaitForProcessId > 0 ? "--wait-for-process=" + options.WaitForProcessId + " " : "") + (options.Desktop ? "" : "--no-desktop ") + (options.StartMenu ? "" : "--no-start-menu ") + (!options.Silent ? "--defer-launch " : "") + "--target " + Quote(target)
             };
             try
             {
@@ -542,13 +548,15 @@ namespace Cypher.Setup
             catch (Exception ex) { throw new IOException("Não foi possível criar o atalho do Cypher: " + path, ex); }
         }
 
-        public static void LaunchInstalledCypher(string target, bool updated) { StartCypher(target, updated); }
+        public static void LaunchInstalledCypher(string target, bool updated, string updateNotesBase64 = "") { StartCypher(target, updated, updateNotesBase64); }
 
-        private static void StartCypher(string target, bool updated)
+        private static void StartCypher(string target, bool updated, string updateNotesBase64)
         {
             string app = Path.Combine(target, "Cypher.exe");
             if (!File.Exists(app)) throw new FileNotFoundException("Os arquivos do Cypher não foram encontrados.", app);
-            Process.Start(new ProcessStartInfo(app) { WorkingDirectory = target, Arguments = updated ? "--updated" : "", UseShellExecute = true });
+            string arguments = updated ? "--updated" : "";
+            if (updated && !string.IsNullOrEmpty(updateNotesBase64)) arguments += " --cypher-update-notes=" + updateNotesBase64;
+            Process.Start(new ProcessStartInfo(app) { WorkingDirectory = target, Arguments = arguments, UseShellExecute = true });
         }
 
         internal static void TryDelete(string path) { try { if (Directory.Exists(path)) Directory.Delete(path, true); else if (File.Exists(path)) File.Delete(path); } catch { } }
@@ -720,7 +728,7 @@ namespace Cypher.Setup
                 LaunchWhenDone = launchBox.Checked;
                 try
                 {
-                    if (launchBox.Checked) SetupEngine.LaunchInstalledCypher(options.Target, options.Updated);
+                    if (launchBox.Checked) SetupEngine.LaunchInstalledCypher(options.Target, options.Updated, options.UpdateNotesBase64);
                     Close();
                 }
                 catch (Exception ex) { MessageBox.Show(this, ex.Message, "Cypher instalado", MessageBoxButtons.OK, MessageBoxIcon.Information); }

@@ -3,7 +3,7 @@ export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
   home: HomeConfig;
   tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
-  radius: number; font: 'system' | 'mono'; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
+  radius: number; font: 'system' | 'mono'; interfaceTextScale: number; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
   buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';
   soundEffectsEnabled: boolean; soundTheme: 'cypher' | 'soft' | 'arcade';
   backgroundMusicData: string; backgroundMusicName: string; backgroundMusicEnabled: boolean; motion: boolean;

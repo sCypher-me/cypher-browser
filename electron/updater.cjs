@@ -127,6 +127,11 @@ function createUpdater({ app, publish, scheduleQuit }) {
   }
   const startupArg = process.argv.find(value => value.startsWith('--cypher-update-complete='));
   const completedVersion = startupArg?.slice('--cypher-update-complete='.length) || (process.argv.includes('--updated') ? currentVersion : '');
+  const startupNotesArg = process.argv.find(value => value.startsWith('--cypher-update-notes='))?.slice('--cypher-update-notes='.length) || '';
+  let completedReleaseNotes = '';
+  if (/^[A-Za-z0-9_-]{1,5000}$/.test(startupNotesArg)) {
+    try { completedReleaseNotes = Buffer.from(startupNotesArg, 'base64url').toString('utf8').slice(0, 3000); } catch {}
+  }
   let availableManifest = null;
   let dismissedVersion = '';
   let checking = null;
@@ -134,7 +139,7 @@ function createUpdater({ app, publish, scheduleQuit }) {
   let interval;
   const state = {
     state: completedVersion ? 'complete' : repository ? 'idle' : 'unconfigured',
-    currentVersion, version: completedVersion || '', progress: 0, message: '', releaseNotes: '', repository,
+    currentVersion, version: completedVersion || '', progress: 0, message: '', releaseNotes: completedVersion ? completedReleaseNotes : '', repository,
   };
 
   function setState(patch) { Object.assign(state, patch); publish({ ...state }); }
@@ -211,6 +216,7 @@ function createUpdater({ app, publish, scheduleQuit }) {
       const downloaded = path.join(updateDirectory, assetName);
       const repositoryRoot = `https://github.com/${repository}/releases/download/${manifest.tag}/`;
       const assetUrl = new URL(encodeURIComponent(assetName), repositoryRoot).href;
+      const updateNotesArgument = Buffer.from(manifest.releaseNotes || '', 'utf8').toString('base64url');
       try {
         setState({ state: 'downloading', version: manifest.version, progress: 0, message: 'Baixando e verificando a atualização…' });
         const result = await downloadFile(assetUrl, downloaded, assetSha512, (total, received) => {
@@ -221,7 +227,7 @@ function createUpdater({ app, publish, scheduleQuit }) {
         if (support.mode === 'installer') {
           // Do not inherit Electron's working directory: it can point inside the
           // installation being renamed by Setup, keeping that directory locked.
-          const child = spawn(downloaded, ['/S', '--updated', '--force-run', `--wait-for-process=${process.pid}`], { cwd: updateDirectory, detached: true, stdio: 'ignore', windowsHide: true });
+          const child = spawn(downloaded, ['/S', '--updated', '--force-run', `--wait-for-process=${process.pid}`, ...(updateNotesArgument ? [`--cypher-update-notes=${updateNotesArgument}`] : [])], { cwd: updateDirectory, detached: true, stdio: 'ignore', windowsHide: true });
           await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
           child.unref();
           setState({ state: 'restarting', version: manifest.version, progress: 100, message: 'O Cypher está instalando a atualização e reiniciará em seguida…' });
@@ -242,6 +248,7 @@ function createUpdater({ app, publish, scheduleQuit }) {
           `$marker = ${powerShellString(marker)}`,
           `$parentId = ${process.pid}`,
           `$version = ${powerShellString(manifest.version)}`,
+          `$releaseNotes = ${powerShellString(updateNotesArgument)}`,
           'Wait-Process -Id $parentId -ErrorAction SilentlyContinue',
           'try {',
           '  Copy-Item -LiteralPath $source -Destination $staged -Force',
@@ -249,7 +256,7 @@ function createUpdater({ app, publish, scheduleQuit }) {
           '  Move-Item -LiteralPath $target -Destination $backup -Force',
           '  Move-Item -LiteralPath $staged -Destination $target -Force',
           '  @{ target=$target; backup=$backup; version=$version } | ConvertTo-Json -Compress | Set-Content -LiteralPath $marker -Encoding UTF8',
-          '  Start-Process -FilePath $target -ArgumentList @("--cypher-update-complete=$version")',
+          '  Start-Process -FilePath $target -ArgumentList @("--cypher-update-complete=$version", "--cypher-update-notes=$releaseNotes")',
           '  for ($i=0; $i -lt 90; $i++) { Start-Sleep -Seconds 1; if (-not (Test-Path -LiteralPath $marker)) { Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $source -Force -ErrorAction SilentlyContinue; exit 0 } }',
           '  if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }',
           '  if (Test-Path -LiteralPath $backup) { Move-Item -LiteralPath $backup -Destination $target -Force }',

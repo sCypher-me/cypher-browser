@@ -8,8 +8,9 @@ import {
 import type { ProfileSyncStatus, SavedPassword, Settings, Tab, TrackerProtectionStatus, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
 import ProfileSyncPanel from './ProfileSyncPanel';
+import { type InternalPage, type SettingsSection } from './navigation';
 
-type Category = 'appearance' | 'tabs' | 'home' | 'search' | 'languages' | 'privacy' | 'connections' | 'downloads' | 'accessibility' | 'startup' | 'system' | 'updates' | 'shortcuts' | 'mods' | 'profile';
+type Category = SettingsSection;
 type Props = {
   settings: Settings;
   update: UpdateStatus;
@@ -18,9 +19,11 @@ type Props = {
   tabs: Tab[];
   activeTabId: string;
   hardwareAccelerationPending: boolean;
+  initialCategory: SettingsSection;
+  focusSettingId?: string;
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
-  navigate: (page: string) => void;
+  navigate: (page: InternalPage, options?: { category?: SettingsSection; focusId?: string }) => void;
 };
 
 const categories: { id: Category; label: string; group: string; icon: typeof Palette }[] = [
@@ -72,6 +75,7 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'languages-spellcheck', title: 'Verificação ortográfica', detail: 'Ativar o corretor e escolher os idiomas', category: 'languages' },
   { id: 'languages-translate', title: 'Tradução de páginas', detail: 'Abrir a página atual no Google Tradutor quando solicitado', category: 'languages' },
   { id: 'accessibility-zoom', title: 'Zoom padrão das páginas', detail: 'Aumentar ou reduzir a escala inicial dos sites', category: 'accessibility' },
+  { id: 'accessibility-text-scale', title: 'Tamanho do texto da interface', detail: 'Deixe controles e configurações mais fáceis de ler', category: 'accessibility' },
   { id: 'system-startup', title: 'Iniciar com o Windows', detail: 'Abrir o Cypher ao entrar no computador', category: 'system' },
   { id: 'system-default-browser', title: 'Navegador padrão', detail: 'Escolher o Cypher nas configurações de aplicativos padrão do Windows', category: 'system' },
   { id: 'system-hardware', title: 'Aceleração gráfica', detail: 'Usar a GPU para renderizar páginas e a interface', category: 'system' },
@@ -109,8 +113,8 @@ const languageOptions = [
   { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
 ];
 
-export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, tabs, activeTabId, onSettings, command, navigate }: Props) {
-  const [category, setCategory] = useState<Category>('appearance');
+export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, tabs, activeTabId, initialCategory, focusSettingId, onSettings, command, navigate }: Props) {
+  const [category, setCategory] = useState<Category>(initialCategory);
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
   const [startupPagesDraft, setStartupPagesDraft] = useState(s.startupPages.join('\n'));
@@ -132,6 +136,12 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
   const activeCategory = categories.find(item => item.id === category)!;
   useEffect(() => setCustomSearchDraft(s.customSearchUrl), [s.customSearchUrl]);
   useEffect(() => setStartupPagesDraft(s.startupPages.join('\n')), [s.startupPages]);
+  useEffect(() => {
+    setCategory(initialCategory);
+    if (!focusSettingId) return;
+    const timer = window.setTimeout(() => document.getElementById(focusSettingId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+    return () => window.clearTimeout(timer);
+  }, [initialCategory, focusSettingId]);
   useEffect(() => {
     if (category !== 'privacy') return;
     void command('password:list').then((entries: SavedPassword[]) => setSavedPasswords(Array.isArray(entries) ? entries : [])).catch(() => setSavedPasswords([]));
@@ -170,7 +180,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
     <div className="sc-layout">
       <aside className="sc-nav" aria-label="Categorias de configurações">
-        {groups.map(group => <div className="sc-nav-group" key={group}><span className="sc-eyebrow">{group}</span>{categories.filter(item => item.group === group && item.id !== 'home').map(item => {
+        {groups.map(group => <div className="sc-nav-group" key={group}><span className="sc-eyebrow">{group}</span>{categories.filter(item => item.group === group).map(item => {
           const Icon = item.icon;
           return <button type="button" key={item.id} className={`sc-nav-item ${category === item.id && !query ? 'selected' : ''}`} aria-current={category === item.id && !query ? 'page' : undefined} onClick={() => { setCategory(item.id); setQuery(''); }}><Icon size={15}/><span>{item.label}</span>{category === item.id && !query && <ChevronRight size={14}/>}</button>;
         })}</div>)}
@@ -290,7 +300,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
               <Row id="privacy-private" title="Nova aba privada" detail="A navegação privada não entra no histórico e usa uma sessão temporária"><button className="sc-button sc-button-subtle" onClick={() => void command('tab:new', { private: true })}>Abrir aba privada <LockKeyhole size={14}/></button></Row>
               <Row id="privacy-clear-exit" title="Limpar dados dos sites ao sair" detail="Remove cookies e cache de sessões normal, Tor e I2P ao encerrar o navegador"><Switch label="Limpar dados dos sites ao sair" checked={s.clearDataOnExit} onChange={() => onSettings({ clearDataOnExit: !s.clearDataOnExit })}/></Row>
               <Row id="privacy-history-exit" title="Limpar histórico ao sair" detail="Remove o histórico local quando o Cypher for fechado"><Switch label="Limpar histórico ao sair" checked={s.clearHistoryOnExit} onChange={() => onSettings({ clearHistoryOnExit: !s.clearHistoryOnExit })}/></Row>
-              <Row id="privacy-site-permissions" title="Permissões de sites" detail="Gerencie câmera, microfone, localização, tela cheia e notificações"><button className="sc-button sc-button-subtle" onClick={() => navigate('security')}>Abrir permissões <ChevronRight size={14}/></button></Row>
+              <Row id="privacy-site-permissions" title="Permissões de sites" detail="Gerencie câmera, microfone, localização, tela cheia e notificações"><button className="sc-button sc-button-subtle" onClick={() => navigate('security', { focusId: 'site-permissions' })}>Abrir permissões <ChevronRight size={14}/></button></Row>
             </Panel>
             <Panel id="privacy-passwords" eyebrow="COFRE LOCAL" title="Senhas e preenchimento automático" detail="Guarde logins criptografados pelo Windows e preencha apenas no mesmo site. As senhas nunca entram na sincronização do perfil." icon={LockKeyhole}>
               <Row title="Preencher logins salvos ao visitar" detail="Ative para preencher campos vazios em sites com credenciais salvas. Nunca envia o formulário."><Switch label="Preenchimento automático de senhas" checked={s.passwordAutofillEnabled} onChange={() => onSettings({ passwordAutofillEnabled: !s.passwordAutofillEnabled })}/></Row>
@@ -321,7 +331,8 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             <div className="sc-privacy-note"><ShieldCheck size={16}/><span>Sites não recebem permissão silenciosa para ler a área de transferência. O Cypher não envia relatórios de uso ou falhas e não exibe promoções.</span></div>
           </>}
 
-          {category === 'accessibility' && <Panel id="accessibility-zoom" eyebrow="LEITURA E MOVIMENTO" title="Acessibilidade" detail="Defina um zoom confortável para os sites e reduza movimento na interface." icon={Accessibility}>
+          {category === 'accessibility' && <Panel id="accessibility-zoom" eyebrow="LEITURA E MOVIMENTO" title="Acessibilidade" detail="Aumente o texto do Cypher, ajuste o zoom dos sites e reduza movimento na interface." icon={Accessibility}>
+            <Row id="accessibility-text-scale" title="Tamanho do texto da interface" detail={`Ajusta menus, configurações e controles · ${Math.round(s.interfaceTextScale * 100)}%`}><input className="sc-range" aria-label="Tamanho do texto da interface" type="range" min="1" max="1.4" step="0.05" value={s.interfaceTextScale} onChange={event => onSettings({ interfaceTextScale: +event.target.value })}/><span className="sc-value">{Math.round(s.interfaceTextScale * 100)}%</span></Row>
             <Row title="Zoom inicial das páginas" detail={`Aplicado quando uma nova página abre · ${Math.round(s.defaultZoom * 100)}%`}><input className="sc-range" aria-label="Zoom inicial das páginas" type="range" min="0.75" max="1.5" step="0.05" value={s.defaultZoom} onChange={event => onSettings({ defaultZoom: +event.target.value })}/><span className="sc-value">{Math.round(s.defaultZoom * 100)}%</span></Row>
             <Row id="accessibility-motion" title="Reduzir animações" detail="Desativa movimentos e transições da interface"><Switch label="Reduzir animações" checked={!s.motion} onChange={() => onSettings({ motion: !s.motion })}/></Row>
             <div className="sc-info-strip"><Accessibility size={16}/><span>O zoom também pode ser ajustado por aba no menu do Cypher.</span></div>

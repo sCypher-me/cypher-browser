@@ -67,6 +67,13 @@ jobs:
           $installerHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA512).Hash
           $hashBytes = [Convert]::FromHexString($hash)
           $installerHashBytes = [Convert]::FromHexString($installerHash)
+          $changeLog = Get-Content CHANGELOG.md -Raw
+          $versionHeading = [regex]::Escape($version)
+          $changeLogMatch = [regex]::Match($changeLog, "(?ms)^## \[$versionHeading\]\s*(.*?)(?=^## \[|\z)")
+          if (-not $changeLogMatch.Success) { $changeLogMatch = [regex]::Match($changeLog, '(?ms)^## \[Unreleased\]\s*(.*?)(?=^## \[|\z)') }
+          $releaseNotes = if ($changeLogMatch.Success) { $changeLogMatch.Groups[1].Value.Trim() } else { '' }
+          if ([string]::IsNullOrWhiteSpace($releaseNotes)) { $releaseNotes = "Cypher $version — versão mais recente do navegador." }
+          if ($releaseNotes.Length -gt 3000) { throw 'O changelog da versão excede 3.000 caracteres.' }
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $manifest = [ordered]@{
             schemaVersion = 1
@@ -76,7 +83,7 @@ jobs:
             sha512 = [Convert]::ToBase64String($hashBytes)
             installerAssetName = $installerAssetName
             installerSha512 = [Convert]::ToBase64String($installerHashBytes)
-            releaseNotes = "Cypher $version — versão mais recente do navegador."
+            releaseNotes = $releaseNotes
           }
           $manifest | ConvertTo-Json -Compress | Set-Content artifacts/latest.json -Encoding utf8
       - name: Assinar manifesto de atualização
