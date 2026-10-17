@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.7.22] - 2026-10-17
+- Os painéis de anúncios, rastreadores e pop-ups agora ficam sobrepostos à página sem alterar o espaço do layout.
+
 ## [0.7.21] - 2026-10-17
 - O bloqueador nativo de pop-ups impede novas janelas inesperadas, mostra solicitações pendentes na barra de endereço e permite decidir por site.
 - Após reiniciar com a atualização, o Cypher apresenta as mudanças em um onboarding passo a passo, com opção de pular ou começar a navegar.
