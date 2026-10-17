@@ -76,7 +76,8 @@ server.listen(0,'127.0.0.1', async () => {
     const note = (await invoke('state')).settings.home.widgets.find(w => w.type === 'notes');
     assert.equal(note.y,expectedNoteY,'position edit persists');
     assert.equal(note.height,originalNoteHeight,'widget size persists');
-    assert.equal((await invoke('state')).settings.home.title,'Meu espaço.','custom title persists');
+    const welcome = (await invoke('state')).settings.home.widgets.find(w => w.type === 'welcome');
+    assert.equal(welcome.welcomeTitle,'Meu espaço.','custom welcome title persists');
     await win.webContents.executeJavaScript('(() => { const field = document.querySelector(".notes-widget textarea"); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(field,"My private note"); field.dispatchEvent(new Event("input", { bubbles: true })); })()');
     await until(async () => (await invoke('state')).homeData.notes[note.id] === 'My private note','notes autosave');
     await click('.focus-controls>.button');
