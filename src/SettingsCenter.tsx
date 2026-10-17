@@ -5,7 +5,7 @@ import {
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
   Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound, Volume2,
 } from 'lucide-react';
-import type { ProfileSyncStatus, Settings, TrackerProtectionStatus, UpdateStatus } from './types';
+import type { ProfileSyncStatus, SavedPassword, Settings, Tab, TrackerProtectionStatus, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
 import ProfileSyncPanel from './ProfileSyncPanel';
 
@@ -15,6 +15,8 @@ type Props = {
   update: UpdateStatus;
   trackerProtection: TrackerProtectionStatus;
   profileSync?: ProfileSyncStatus;
+  tabs: Tab[];
+  activeTabId: string;
   hardwareAccelerationPending: boolean;
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
@@ -25,14 +27,14 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
   { id: 'appearance', label: 'Aparência', group: 'PERSONALIZAÇÃO', icon: Palette },
   { id: 'tabs', label: 'Abas e navegação', group: 'PERSONALIZAÇÃO', icon: LayoutPanelLeft },
   { id: 'home', label: 'Página inicial', group: 'PERSONALIZAÇÃO', icon: House },
+  { id: 'startup', label: 'Ao iniciar', group: 'PERSONALIZAÇÃO', icon: PanelTop },
   { id: 'search', label: 'Pesquisa', group: 'NAVEGAÇÃO', icon: Search },
   { id: 'languages', label: 'Idiomas e entrada', group: 'NAVEGAÇÃO', icon: Globe2 },
-  { id: 'connections', label: 'Conexões', group: 'NAVEGAÇÃO', icon: Globe2 },
   { id: 'downloads', label: 'Downloads', group: 'NAVEGAÇÃO', icon: Download },
+  { id: 'connections', label: 'Conexões', group: 'NAVEGAÇÃO', icon: Globe2 },
   { id: 'privacy', label: 'Privacidade e segurança', group: 'PROTEÇÃO', icon: ShieldCheck },
   { id: 'accessibility', label: 'Acessibilidade', group: 'PROTEÇÃO', icon: Accessibility },
   { id: 'system', label: 'Sistema', group: 'SISTEMA', icon: MonitorCog },
-  { id: 'startup', label: 'Ao iniciar', group: 'SISTEMA', icon: PanelTop },
   { id: 'updates', label: 'Atualização', group: 'SISTEMA', icon: RefreshCw },
   { id: 'shortcuts', label: 'Atalhos', group: 'SISTEMA', icon: Keyboard },
   { id: 'mods', label: 'Mods', group: 'SISTEMA', icon: Puzzle },
@@ -60,10 +62,11 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'privacy-data', title: 'Dados de navegação', detail: 'Limpar cookies, cache e histórico', category: 'privacy' },
   { id: 'privacy-clear-exit', title: 'Limpeza ao sair', detail: 'Apagar dados dos sites ou histórico ao fechar o Cypher', category: 'privacy' },
   { id: 'privacy-private', title: 'Navegação privada', detail: 'Abrir abas que não entram no histórico', category: 'privacy' },
-  { id: 'privacy-ad-block', title: 'Bloquear anúncios conhecidos', detail: 'Impedir solicitações a uma lista local de domínios de publicidade', category: 'privacy' },
+  { id: 'privacy-ad-block', title: 'Bloquear anúncios', detail: 'Filtros EasyList e domínios de publicidade conhecidos', category: 'privacy' },
   { id: 'privacy-tracker-block', title: 'Bloquear rastreadores com EasyPrivacy', detail: 'Bloqueio de requisições de análise e rastreamento na navegação normal', category: 'privacy' },
   { id: 'privacy-third-party-cookies', title: 'Cookies de terceiros', detail: 'Bloquear cookies em solicitações entre domínios diferentes', category: 'privacy' },
   { id: 'privacy-site-permissions', title: 'Permissões de sites', detail: 'Câmera, microfone, localização, notificações e área de transferência', category: 'privacy' },
+  { id: 'privacy-passwords', title: 'Senhas e preenchimento automático', detail: 'Cofre criptografado neste dispositivo e preenchimento em sites salvos', category: 'privacy' },
   { id: 'startup-mode', title: 'Ao iniciar', detail: 'Abrir a página inicial, restaurar a sessão ou páginas específicas', category: 'startup' },
   { id: 'languages-preferred', title: 'Idiomas preferidos', detail: 'Ordem dos idiomas enviados aos sites', category: 'languages' },
   { id: 'languages-spellcheck', title: 'Verificação ortográfica', detail: 'Ativar o corretor e escolher os idiomas', category: 'languages' },
@@ -106,12 +109,18 @@ const languageOptions = [
   { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
 ];
 
-export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, onSettings, command, navigate }: Props) {
+export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, tabs, activeTabId, onSettings, command, navigate }: Props) {
   const [category, setCategory] = useState<Category>('appearance');
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
   const [startupPagesDraft, setStartupPagesDraft] = useState(s.startupPages.join('\n'));
   const [preferredLanguageChoice, setPreferredLanguageChoice] = useState('');
+  const [savedPasswords, setSavedPasswords] = useState<SavedPassword[]>([]);
+  const [passwordOrigin, setPasswordOrigin] = useState('');
+  const [passwordUsername, setPasswordUsername] = useState('');
+  const [passwordValue, setPasswordValue] = useState('');
+  const [passwordTargetTab, setPasswordTargetTab] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const groups = [...new Set(categories.map(item => item.group))];
   const matches = useMemo(() => {
@@ -123,6 +132,18 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
   const activeCategory = categories.find(item => item.id === category)!;
   useEffect(() => setCustomSearchDraft(s.customSearchUrl), [s.customSearchUrl]);
   useEffect(() => setStartupPagesDraft(s.startupPages.join('\n')), [s.startupPages]);
+  useEffect(() => {
+    if (category !== 'privacy') return;
+    void command('password:list').then((entries: SavedPassword[]) => setSavedPasswords(Array.isArray(entries) ? entries : [])).catch(() => setSavedPasswords([]));
+    const current = tabs.find(tab => tab.id === activeTabId && /^https?:\/\//i.test(tab.url)) || [...tabs].reverse().find(tab => !tab.private && tab.connectionMode === 'normal' && /^https?:\/\//i.test(tab.url));
+    if (current) { try { setPasswordOrigin(new URL(current.url).origin); } catch {} }
+  }, [category]);
+  useEffect(() => {
+    const current = tabs.find(tab => tab.id === activeTabId && !tab.private && tab.connectionMode === 'normal' && /^https?:\/\//i.test(tab.url));
+    const first = current || tabs.find(tab => !tab.private && tab.connectionMode === 'normal' && /^https?:\/\//i.test(tab.url));
+    if (first) setPasswordTargetTab(first.id);
+    else setPasswordTargetTab('');
+  }, [tabs, activeTabId]);
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); searchRef.current?.focus(); }
@@ -255,12 +276,13 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
           {category === 'privacy' && <>
             <Panel eyebrow="PRIVACIDADE" title="Controles da sessão" detail="Ajuste o que o navegador informa e gerencie os dados guardados." icon={ShieldCheck}>
-              <Row id="privacy-ad-block" title="Bloquear anúncios conhecidos" detail="Impede solicitações a uma lista local e limitada de domínios de publicidade"><Switch label="Bloquear domínios de anúncios conhecidos" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
+              <Row id="privacy-ad-block" title="Bloquear anúncios" detail="Filtros de rede EasyList e domínios de publicidade conhecidos"><Switch label="Bloquear anúncios" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
               <Row id="privacy-tracker-block" title="Bloquear rastreadores" detail={trackerProtection.available
-                ? `${trackerProtection.name} · ${trackerProtection.networkRuleCount.toLocaleString('pt-BR')} regras de rede · ${trackerProtection.blockedRequests.toLocaleString('pt-BR')} pedidos bloqueados nesta sessão${trackerProtection.lastModified ? ` · Lista de ${trackerProtection.lastModified}` : ''}`
+                ? `${trackerProtection.networkRuleCount.toLocaleString('pt-BR')} regras EasyPrivacy · ${trackerProtection.blockedRequests.toLocaleString('pt-BR')} solicitações bloqueadas nesta sessão${trackerProtection.lastModified ? ` · Lista de ${trackerProtection.lastModified}` : ''}`
                 : (trackerProtection.error || 'Lista de proteção indisponível. Feche e abra o Cypher após instalar a atualização.') }>
                 <Switch label="Bloqueio de rastreadores" checked={s.blockTrackers} disabled={!trackerProtection.available} onChange={() => onSettings({ blockTrackers: !s.blockTrackers })}/>
               </Row>
+              {!trackerProtection.adsAvailable && <div className="sc-info-strip sc-warning-strip"><ShieldCheck size={16}/><span>Esta versão não veio com a lista EasyList de anúncios. Uma compilação atualizada precisa incluí-la para ativar os filtros completos; enquanto isso, os domínios locais continuam bloqueados.</span></div>}
               <Row id="privacy-third-party-cookies" title="Bloquear cookies de terceiros" detail="Remove cookies enviados ou recebidos em solicitações cujo host difere do site iniciador"><Switch label="Bloquear cookies entre domínios" checked={s.blockThirdPartyCookies} onChange={() => onSettings({ blockThirdPartyCookies: !s.blockThirdPartyCookies })}/></Row>
               <Row id="privacy-do-not-track" title="Enviar sinal Não rastrear" detail="Inclui o cabeçalho DNT: 1 nas solicitações aos sites. Cada site decide se respeita o sinal."><Switch label="Enviar sinal Não rastrear" checked={s.sendDoNotTrack} onChange={() => onSettings({ sendDoNotTrack: !s.sendDoNotTrack })}/></Row>
               <Row id="privacy-data" title="Cookies e dados dos sites" detail="Limpa cookies e cache; você pode sair das contas abertas"><button className="sc-button sc-button-subtle" onClick={() => void command('data:clear')}>Limpar dados <ArrowRight size={14}/></button></Row>
@@ -269,6 +291,32 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
               <Row id="privacy-clear-exit" title="Limpar dados dos sites ao sair" detail="Remove cookies e cache de sessões normal, Tor e I2P ao encerrar o navegador"><Switch label="Limpar dados dos sites ao sair" checked={s.clearDataOnExit} onChange={() => onSettings({ clearDataOnExit: !s.clearDataOnExit })}/></Row>
               <Row id="privacy-history-exit" title="Limpar histórico ao sair" detail="Remove o histórico local quando o Cypher for fechado"><Switch label="Limpar histórico ao sair" checked={s.clearHistoryOnExit} onChange={() => onSettings({ clearHistoryOnExit: !s.clearHistoryOnExit })}/></Row>
               <Row id="privacy-site-permissions" title="Permissões de sites" detail="Gerencie câmera, microfone, localização, tela cheia e notificações"><button className="sc-button sc-button-subtle" onClick={() => navigate('security')}>Abrir permissões <ChevronRight size={14}/></button></Row>
+            </Panel>
+            <Panel id="privacy-passwords" eyebrow="COFRE LOCAL" title="Senhas e preenchimento automático" detail="Guarde logins criptografados pelo Windows e preencha apenas no mesmo site. As senhas nunca entram na sincronização do perfil." icon={LockKeyhole}>
+              <Row title="Preencher logins salvos ao visitar" detail="Ative para preencher campos vazios em sites com credenciais salvas. Nunca envia o formulário."><Switch label="Preenchimento automático de senhas" checked={s.passwordAutofillEnabled} onChange={() => onSettings({ passwordAutofillEnabled: !s.passwordAutofillEnabled })}/></Row>
+              <form className="sc-password-form" onSubmit={async event => {
+                event.preventDefault();
+                if (!passwordOrigin || !passwordUsername.trim() || !passwordValue) return;
+                setPasswordBusy(true);
+                const result = await command('password:save', { origin: passwordOrigin, username: passwordUsername.trim(), password: passwordValue });
+                if (result) {
+                  setPasswordValue(''); setPasswordUsername('');
+                  const entries = await command('password:list');
+                  setSavedPasswords(Array.isArray(entries) ? entries : []);
+                }
+                setPasswordBusy(false);
+              }}>
+                <label>Endereço do site<input className="sc-text-input" type="url" required value={passwordOrigin} onChange={event => setPasswordOrigin(event.target.value)} placeholder="https://exemplo.com"/></label>
+                <label>Usuário ou e-mail<input className="sc-text-input" autoComplete="username" required value={passwordUsername} onChange={event => setPasswordUsername(event.target.value)} placeholder="nome@exemplo.com"/></label>
+                <label>Senha<input className="sc-text-input" type="password" autoComplete="new-password" required value={passwordValue} onChange={event => setPasswordValue(event.target.value)} placeholder="Armazenada com criptografia do sistema"/></label>
+                <button className="sc-button sc-button-primary" disabled={passwordBusy}>{passwordBusy ? 'Salvando…' : 'Salvar senha neste dispositivo'} <LockKeyhole size={14}/></button>
+              </form>
+              <div className="sc-password-list-heading"><strong>Logins guardados</strong><span>{savedPasswords.length}</span></div>
+              {savedPasswords.length ? <div className="sc-password-list">{savedPasswords.map(entry => {
+                const matchingTabs = tabs.filter(tab => !tab.private && tab.connectionMode === 'normal' && (() => { try { return new URL(tab.url).origin === entry.origin; } catch { return false; } })());
+                return <div className="sc-password-entry" key={entry.id}><span className="sc-password-site"><strong>{entry.origin}</strong><small>{entry.username}</small></span><div className="sc-password-actions">{matchingTabs.length > 0 && <button className="sc-button sc-button-subtle" type="button" onClick={() => void command('password:fill', { id: entry.id, tabId: matchingTabs.find(tab => tab.id === passwordTargetTab)?.id || matchingTabs[0].id })}>Preencher na aba aberta</button>}<button className="sc-button sc-button-subtle" type="button" onClick={async () => { await command('password:delete', entry.id); setSavedPasswords(await command('password:list')); }}>Remover</button></div></div>;
+              })}</div> : <div className="sc-password-empty">Nenhuma senha salva. Você pode cadastrar um login acima.</div>}
+              <div className="sc-info-strip"><ShieldCheck size={16}/><span>O preenchimento só roda em abas normais e no domínio exato salvo. Abas privadas, Tor e I2P ficam excluídas. Senhas nunca são exibidas na lista ou enviadas para a nuvem.</span></div>
             </Panel>
             <div className="sc-privacy-note"><ShieldCheck size={16}/><span>Sites não recebem permissão silenciosa para ler a área de transferência. O Cypher não envia relatórios de uso ou falhas e não exibe promoções.</span></div>
           </>}
@@ -287,7 +335,8 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
           {category === 'system' && <>
             <Panel id="system-startup" eyebrow="CYPHER NO COMPUTADOR" title="Sistema e integração" detail="Controle como o aplicativo se integra ao Windows e ao hardware." icon={MonitorCog}>
-              <Row id="system-default-browser" title="Navegador padrão" detail="O Windows solicita que você escolha o aplicativo responsável por HTTP e HTTPS"><button className="sc-button sc-button-primary" onClick={() => void command('system:default-browser')}>Escolher no Windows <ExternalLink size={14}/></button></Row>
+              <Row id="system-default-browser" title="Navegador padrão" detail="Registre HTTP e HTTPS para o Cypher e escolha-o na tela de aplicativos padrão do Windows."><button className="sc-button sc-button-primary" onClick={() => void command('system:default-browser')}>Definir Cypher como padrão <ExternalLink size={14}/></button></Row>
+              <div className="sc-info-strip"><MonitorCog size={16}/><span>O Windows exige confirmação do usuário. Na lista de navegadores padrão, selecione Cypher e confirme os protocolos HTTP e HTTPS.</span></div>
             <Row title="Iniciar com o Windows" detail="Abre o Cypher quando você entrar no computador"><Switch label="Iniciar com o Windows" checked={s.startWithWindows} onChange={() => onSettings({ startWithWindows: !s.startWithWindows })}/></Row>
             <Row id="system-close-confirm" title="Confirmar ao fechar várias abas" detail="Evita fechar a janela sem querer quando duas ou mais abas estão abertas"><Switch label="Confirmar ao fechar várias abas" checked={s.confirmCloseWithMultipleTabs} onChange={() => onSettings({ confirmCloseWithMultipleTabs: !s.confirmCloseWithMultipleTabs })}/></Row>
             <Row title="Opções de inicialização" detail={s.startupMode === 'restore' ? 'A sessão anterior será restaurada.' : s.startupMode === 'specific' ? `${s.startupPages.length} página(s) definida(s).` : 'O Cypher abrirá a Home.'}><button className="sc-button sc-button-subtle" onClick={() => setCategory('startup')}>Configurar <ChevronRight size={14}/></button></Row>

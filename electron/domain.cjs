@@ -9,7 +9,8 @@ const defaults = {
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
   restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false,
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
-  blockAds: false, blockTrackers: true, blockThirdPartyCookies: false,
+  blockAds: true, blockTrackers: true, blockThirdPartyCookies: false,
+  passwordAutofillEnabled: false, trackingExceptions: [],
   preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true,
   hardwareAcceleration: true, webrtcPolicy: 'default',
   showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true,
@@ -51,7 +52,8 @@ function sanitizeSettings(input = {}, base = defaults) {
   for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  if (Array.isArray(input.trackingExceptions)) output.trackingExceptions = [...new Set(input.trackingExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
   if (input.startupMode === 'home' || input.startupMode === 'restore' || input.startupMode === 'specific') {
     output.startupMode = input.startupMode;
     output.restoreSession = input.startupMode === 'restore';
@@ -101,6 +103,8 @@ function validateMod(input) {
   settings.blockAds = defaults.blockAds;
   settings.blockTrackers = defaults.blockTrackers;
   settings.blockThirdPartyCookies = defaults.blockThirdPartyCookies;
+  settings.passwordAutofillEnabled = defaults.passwordAutofillEnabled;
+  settings.trackingExceptions = defaults.trackingExceptions;
   settings.preferredLanguages = defaults.preferredLanguages;
   settings.spellCheckEnabled = defaults.spellCheckEnabled;
   settings.spellCheckLanguages = defaults.spellCheckLanguages;

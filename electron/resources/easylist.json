@@ -1,0 +1,10 @@
+{
+  "name": "EasyList",
+  "source": "https://easylist.to/easylist/easylist.txt",
+  "license": "GPL-3.0-or-later OR CC-BY-SA-3.0-or-later",
+  "attribution": "EasyList authors (https://easylist.to/)",
+  "lastModified": "17 Oct 2026 02:19 UTC",
+  "fetchedAt": "2026-10-17T02:41:51.182Z",
+  "networkRuleCount": 55368,
+  "sourceSha256": "8043213662384f9108a764e172883cedb5793dbff828ed51fb2490425877a2bd"
+}

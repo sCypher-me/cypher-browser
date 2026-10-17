@@ -22,7 +22,8 @@ let hardwareAccelerationAtLaunch = true, mediaTimer = null;
 const protonExtensionId = 'jplgfhpmjnbigmhklmmbgecoobifkmpa';
 let protonExtensionReady = false, protonPopupWindow = null, protonProxyValue = null;
 let trackerEngine = null;
-let trackerList = { available: false, name: 'EasyPrivacy', source: 'https://easylist.to/easylist/easyprivacy.txt', lastModified: '', networkRuleCount: 0, blockedRequests: 0 };
+let adEngine = null;
+let trackerList = { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0 };
 let trackerCountTimer = null;
 try {
   const bootstrap = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'cypher.json'), 'utf8'));
@@ -72,7 +73,7 @@ function loadStore() {
   if (saved.homeData?.notes && typeof saved.homeData.notes === 'object') for (const [id,value] of Object.entries(saved.homeData.notes)) {
     if (typeof value === 'string' && id !== '__proto__') notes[id] = value.slice(0,20000);
   }
-  store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
+  store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], passwords: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
     profileSync: { endpoint: String(saved.profileSync?.endpoint || '').slice(0,2048), username: String(saved.profileSync?.username || '').slice(0,256), passwordEncrypted: String(saved.profileSync?.passwordEncrypted || '').slice(0,8192), deviceId: /^[a-f\d-]{36}$/i.test(saved.profileSync?.deviceId || '') ? saved.profileSync.deviceId : randomUUID(), localUpdatedAt: Number.isFinite(saved.profileSync?.localUpdatedAt) ? saved.profileSync.localUpdatedAt : 0, lastSync: Number.isFinite(saved.profileSync?.lastSync) ? saved.profileSync.lastSync : 0 },
     homeData: { notes, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } };
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
@@ -104,6 +105,12 @@ function loadStore() {
   }
   for (const id of taskWidgets) if (!store.homeData.tasksById[id]) store.homeData.tasksById[id] = [];
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
+  if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,500).flatMap(entry => {
+    if (!entry || typeof entry.id !== 'string' || typeof entry.username !== 'string' || typeof entry.passwordEncrypted !== 'string') return [];
+    const origin = normalizePasswordOrigin(entry.origin);
+    if (!origin || entry.passwordEncrypted.length > 8192 || !/^[A-Za-z\d+/]+={0,2}$/.test(entry.passwordEncrypted)) return [];
+    return [{ id: entry.id.slice(0,80), origin, username: entry.username.slice(0,256), passwordEncrypted: entry.passwordEncrypted, updated: Number.isFinite(entry.updated) ? entry.updated : Date.now() }];
+  });
   if (Array.isArray(saved.extensions)) store.extensions = saved.extensions.slice(0,100).flatMap(extension => {
     if (!extension || typeof extension.id !== 'string' || typeof extension.path !== 'string' || extension.path.length > 4096) return [];
     const source = ['chrome-web-store','cypher-package'].includes(extension.source) ? extension.source : 'local';
@@ -146,6 +153,65 @@ function flush() {
     fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal').map(t => ({ url: t.url, pinned: t.pinned })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
+}
+function normalizePasswordOrigin(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (!['http:','https:'].includes(url.protocol) || url.username || url.password || (url.protocol === 'http:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname))) return '';
+    return url.origin;
+  } catch { return ''; }
+}
+function passwordVaultSnapshot() {
+  return store.passwords.map(({ id, origin, username, updated }) => ({ id, origin, username, updated }));
+}
+function encryptPassword(value) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('O cofre exige a criptografia segura do sistema operacional.');
+  if (typeof value !== 'string' || !value || value.length > 4096) throw new Error('Informe uma senha válida com até 4096 caracteres.');
+  return safeStorage.encryptString(value).toString('base64');
+}
+function decryptPassword(entry) {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error('A criptografia segura do sistema não está disponível neste dispositivo.');
+  try { return safeStorage.decryptString(Buffer.from(entry.passwordEncrypted, 'base64')); }
+  catch { throw new Error('Não foi possível abrir esta senha protegida pelo Windows.'); }
+}
+async function fillSavedPassword(tab, entry) {
+  if (!tab || tab.private || tab.connectionMode !== 'normal' || !tab.view || tab.view.webContents.isDestroyed()) throw new Error('O preenchimento só está disponível em abas normais, fora de janelas privadas, Tor e I2P.');
+  if (normalizePasswordOrigin(tab.url) !== entry.origin) throw new Error('A senha só pode ser preenchida no mesmo domínio em que foi salva.');
+  const username = entry.username, password = decryptPassword(entry), wc = tab.view.webContents;
+  const fillOnPage = (savedUsername, savedPassword) => {
+    const passwordField = [...document.querySelectorAll('input[type="password"]')].find(field => !field.disabled && !field.readOnly && !field.value);
+    if (!passwordField) return false;
+    const form = passwordField.form;
+    if (form) { try { if (new URL(form.action || location.href, location.href).origin !== location.origin) return false; } catch { return false; } }
+    const fields = [...(form || document).querySelectorAll('input')].filter(field => !field.disabled && !field.readOnly && !field.value && ['text','email','tel','url'].includes((field.type || '').toLowerCase()));
+    const usernameField = fields.find(field => /user|login|email|identifier|account/i.test(`${field.name} ${field.id} ${field.autocomplete}`)) || fields.filter(field => field.compareDocumentPosition(passwordField) & Node.DOCUMENT_POSITION_FOLLOWING).pop();
+    const setValue = (field, value) => {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), 'value')?.set;
+      setter ? setter.call(field, value) : field.value = value;
+      field.dispatchEvent(new Event('input', { bubbles:true }));
+      field.dispatchEvent(new Event('change', { bubbles:true }));
+    };
+    if (savedUsername && usernameField) setValue(usernameField, savedUsername);
+    setValue(passwordField, savedPassword);
+    return true;
+  };
+  return wc.executeJavaScript(`(${fillOnPage.toString()})(${JSON.stringify(username)},${JSON.stringify(password)})`, true);
+}
+function maybeAutofillPassword(tab) {
+  if (!store?.settings.passwordAutofillEnabled || tab?.private || tab?.connectionMode !== 'normal' || !tab?.view) return;
+  const origin = normalizePasswordOrigin(tab.url);
+  if (!origin) return;
+  const matches = store.passwords.filter(entry => entry.origin === origin);
+  if (matches.length === 1) {
+    let filled = false;
+    const fill = async () => {
+      if (filled || !tabs.includes(tab) || !tab.url || normalizePasswordOrigin(tab.url) !== origin) return;
+      try { filled = await fillSavedPassword(tab, matches[0]); }
+      catch (error) { filled = true; console.warn('Não foi possível preencher a senha salva:', error.message); }
+    };
+    void fill();
+    for (const delay of [350,900,1800]) setTimeout(() => void fill(), delay);
+  }
 }
 function profileSyncSnapshot() {
   const profile = store?.profileSync;
@@ -436,36 +502,35 @@ function selectTab(id) {
 }
 function loadTrackerEngine() {
   const resourcesPath = path.join(__dirname, 'resources');
+  let privacyError = '', adError = '';
   try {
     const metadata = JSON.parse(fs.readFileSync(path.join(resourcesPath, 'easyprivacy.json'), 'utf8'));
-    const binary = fs.readFileSync(path.join(resourcesPath, 'easyprivacy.bin'));
-    trackerEngine = FiltersEngine.deserialize(binary);
-    trackerList = { ...trackerList, ...metadata, available: true, blockedRequests: 0 };
-    console.info(`Proteção EasyPrivacy ativa: ${trackerList.networkRuleCount.toLocaleString('pt-BR')} regras de rede.`);
-  } catch (error) {
-    trackerEngine = null;
-    trackerList = { ...trackerList, available: false, error: `A lista EasyPrivacy não foi carregada: ${error.message}` };
-    console.warn(trackerList.error);
-  }
+    trackerEngine = FiltersEngine.deserialize(fs.readFileSync(path.join(resourcesPath, 'easyprivacy.bin')));
+    trackerList = { ...trackerList, lastModified: metadata.lastModified || '', fetchedAt: metadata.fetchedAt, networkRuleCount: metadata.networkRuleCount || 0, available: true };
+  } catch (error) { trackerEngine = null; privacyError = error.message; }
+  try {
+    const metadata = JSON.parse(fs.readFileSync(path.join(resourcesPath, 'easylist.json'), 'utf8'));
+    adEngine = FiltersEngine.deserialize(fs.readFileSync(path.join(resourcesPath, 'easylist.bin')));
+    trackerList = { ...trackerList, adRuleCount: metadata.networkRuleCount || 0, adsAvailable: true };
+  } catch (error) { adEngine = null; adError = error.message; }
+  trackerList.error = [privacyError && `EasyPrivacy: ${privacyError}`, adError && `EasyList: ${adError}`].filter(Boolean).join(' · ');
+  console.info(`Proteção de rede ativa: ${trackerList.adRuleCount.toLocaleString('pt-BR')} regras de anúncios e ${trackerList.networkRuleCount.toLocaleString('pt-BR')} regras de rastreamento.`);
 }
-function matchTrackerRequest(details) {
-  if (!trackerEngine) return false;
+function matchFilterRequest(engine, details) {
+  if (!engine) return false;
   try {
     const sourceUrl = (details.resourceType === 'mainFrame' ? [details.url] : [details.frame?.top?.url, details.webContents?.mainFrame?.url, details.initiatorOrigin, details.initiator, details.referrer])
       .find(value => typeof value === 'string' && /^https?:\/\//i.test(value)) || '';
-    const result = trackerEngine.match(Request.fromRawDetails({
-      url: details.url,
-      type: details.resourceType || 'other',
-      sourceUrl,
-    }));
-    return result.match === true;
-  } catch (error) {
-    console.warn('Falha ao avaliar regra de rastreamento:', error.message);
-    return false;
-  }
+    const result = engine.match(Request.fromRawDetails({ url:details.url, type:details.resourceType || 'other', sourceUrl }));
+    return result.match === true && !result.exception;
+  } catch (error) { console.warn('Falha ao avaliar regra de bloqueio:', error.message); return false; }
 }
-function noteTrackerBlocked() {
+function matchTrackerRequest(details) {
+  return matchFilterRequest(trackerEngine, details);
+}
+function noteProtectionBlocked(isAd = false) {
   trackerList.blockedRequests++;
+  if (isAd) trackerList.blockedAds++;
   if (trackerCountTimer) return;
   trackerCountTimer = setTimeout(() => { trackerCountTimer = null; emit(); }, 500);
 }
@@ -650,9 +715,13 @@ function setupSession(ses, mode = 'normal') {
       const tab = tabs.find(entry => entry.view?.webContents.id === webContentsId);
       const requestMode = tab?.connectionMode || mode;
       const anonymousRoute = requestMode === 'tor' || requestMode === 'i2p';
-      const trackerBlocked = (anonymousRoute || store.settings.blockTrackers) && matchTrackerRequest(details);
-      if (trackerBlocked) noteTrackerBlocked();
-      blocked = (store.settings.blockAds && matchesHost(hostname, advertisingHosts)) || trackerBlocked;
+      const sourceUrl = details.resourceType === 'mainFrame' ? details.url : (details.frame?.top?.url || details.webContents?.mainFrame?.url || details.initiatorOrigin || details.initiator || details.referrer || '');
+      let exemptForSite = false;
+      try { exemptForSite = store.settings.trackingExceptions.includes(new URL(sourceUrl).hostname.toLowerCase()); } catch {}
+      const trackerBlocked = !exemptForSite && (anonymousRoute || store.settings.blockTrackers) && matchTrackerRequest(details);
+      const adsBlocked = !exemptForSite && store.settings.blockAds && (matchFilterRequest(adEngine, details) || matchesHost(hostname, advertisingHosts));
+      blocked = adsBlocked || trackerBlocked;
+      if (blocked) noteProtectionBlocked(adsBlocked);
     } catch {}
     callback(blocked ? { cancel: true } : {});
   });
@@ -964,9 +1033,10 @@ function attachView(tab) {
     }
     layout(); update(tab);
   });
-  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); installStoreClickHandler(tab); } });
+  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); installStoreClickHandler(tab); maybeAutofillPassword(tab); } });
   wc.on('did-finish-load', () => {
     installStoreClickHandler(tab);
+    maybeAutofillPassword(tab);
     if (tab.mediaPlaying) refreshMediaInfo(tab, true);
     if (!tab.private && tab.connectionMode === 'normal') { const entry = store.history.find(h => h.url === tab.url); if (entry) { entry.title = wc.getTitle(); persist(); } }
     update(tab);
@@ -1113,6 +1183,34 @@ async function command(action, payload) {
   const tab = active(), wc = tab?.view?.webContents;
   switch (action) {
     case 'state': return snapshot();
+    case 'password:list': return passwordVaultSnapshot();
+    case 'password:save': {
+      const origin = normalizePasswordOrigin(payload?.origin);
+      const username = typeof payload?.username === 'string' ? payload.username.trim().slice(0,256) : '';
+      if (!origin) throw new Error('O cofre aceita endereços HTTPS. HTTP só é aceito para localhost.');
+      if (!username) throw new Error('Informe o nome de usuário ou e-mail.');
+      const passwordEncrypted = encryptPassword(payload?.password);
+      const existing = store.passwords.find(entry => entry.origin === origin && entry.username === username);
+      if (existing) { existing.passwordEncrypted = passwordEncrypted; existing.updated = Date.now(); }
+      else store.passwords.unshift({ id:randomUUID(), origin, username, passwordEncrypted, updated:Date.now() });
+      store.passwords = store.passwords.slice(0,500);
+      persist(); emit();
+      if (store.settings.passwordAutofillEnabled) for (const candidate of tabs) maybeAutofillPassword(candidate);
+      return true;
+    }
+    case 'password:delete': {
+      if (typeof payload !== 'string') break;
+      store.passwords = store.passwords.filter(entry => entry.id !== payload);
+      persist(); emit(); return passwordVaultSnapshot();
+    }
+    case 'password:fill': {
+      const entry = store.passwords.find(item => item.id === payload?.id);
+      const target = tabs.find(item => item.id === payload?.tabId);
+      if (!entry || !target) throw new Error('O login ou a aba selecionada não está mais disponível.');
+      const filled = await fillSavedPassword(target, entry);
+      if (!filled) throw new Error('Não encontramos um formulário de login vazio e seguro nesta página.');
+      return true;
+    }
     case 'extension:install': {
       const result = await dialog.showOpenDialog(win, { title: 'Selecionar extensão descompactada', properties: ['openDirectory'] });
       if (result.canceled || !result.filePaths[0]) break;
@@ -1235,8 +1333,16 @@ async function command(action, payload) {
     }
     case 'system:default-browser': {
       if (process.platform !== 'win32') throw new Error('A seleção do navegador padrão é feita nas configurações do sistema operacional.');
+      const args = app.isPackaged ? [] : [app.getAppPath()];
+      let registered = false;
+      try {
+        const registeredHttp = app.setAsDefaultProtocolClient('http', process.execPath, args);
+        const registeredHttps = app.setAsDefaultProtocolClient('https', process.execPath, args);
+        registered = registeredHttp && registeredHttps;
+        if (!registered) console.warn('O Windows não aceitou registrar os protocolos HTTP e HTTPS para o Cypher.');
+      } catch (error) { console.warn('Não foi possível registrar os protocolos do navegador:', error.message); }
       await shell.openExternal('ms-settings:defaultapps');
-      return { opened: true };
+      return { opened: true, registered };
     }
     case 'system:proxy': {
       if (process.platform !== 'win32') throw new Error('As configurações de proxy são controladas pelo sistema operacional.');
@@ -1416,7 +1522,7 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;

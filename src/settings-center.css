@@ -223,3 +223,48 @@
   .sc-nav-item { min-height:25px;font-size:8px; }
   .sc-nav-footer { margin-top:7px;padding:7px 6px 2px;font-size:7px; }
 }
+
+/* Cypher control deck: a compact rail, angular module cards, and no inner nav scroller. */
+.settings-center { --sc-line:color-mix(in srgb,var(--accent) 10%,transparent); }
+.sc-header { position:relative;border-bottom-color:color-mix(in srgb,var(--accent) 13%,transparent); }
+.sc-header:after { content:"";position:absolute;left:0;bottom:-1px;width:clamp(90px,16%,180px);height:1px;background:linear-gradient(90deg,var(--accent),transparent); }
+.sc-layout { grid-template-columns:minmax(196px,222px) minmax(0,1fr);gap:20px; }
+.sc-nav { overflow:visible;max-height:none;padding:10px 8px 8px;border-radius:4px 13px 4px 13px;background:linear-gradient(150deg,color-mix(in srgb,var(--accent) 3%,var(--surface)),color-mix(in srgb,var(--surface) 82%,var(--base))); }
+.sc-nav { counter-reset:setting-group; }
+.sc-nav-group { counter-increment:setting-group; }
+.sc-nav-group>.sc-eyebrow:before { content:counter(setting-group,decimal-leading-zero) " /";color:var(--accent);opacity:.75; }
+.sc-nav-item { min-height:31px;border:1px solid transparent;border-radius:3px 8px 3px 8px;font-size:9px; }
+.sc-nav-item.selected { border-color:color-mix(in srgb,var(--accent) 15%,transparent);box-shadow:inset 2px 0 var(--accent),inset 0 1px #ffffff04;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 10%,transparent),color-mix(in srgb,var(--accent) 2%,transparent)); }
+.sc-panel { position:relative;overflow:hidden;border-radius:4px 14px 4px 14px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 2.5%,var(--surface)),color-mix(in srgb,var(--surface) 88%,var(--base))); }
+.sc-panel:before { content:"";position:absolute;inset:0 auto 0 0;width:1px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 44%,transparent),transparent 62%);pointer-events:none; }
+.sc-panel-icon { border-radius:4px 10px 4px 10px; }
+.sc-section-heading { position:relative;padding:0 0 12px 12px;border-bottom:1px solid var(--sc-line); }
+.sc-section-heading:before { content:"";position:absolute;left:0;top:2px;bottom:12px;width:2px;background:var(--accent);box-shadow:0 0 14px color-mix(in srgb,var(--accent) 35%,transparent); }
+.sc-section-heading h2 { letter-spacing:-.4px; }
+.sc-search { border-radius:4px 11px 4px 11px; }
+.sc-button { border-radius:4px 9px 4px 9px; }
+.sc-choice-card,.sc-theme,.sc-color-choice { border-radius:4px 10px 4px 10px; }
+.sc-info-strip.sc-warning-strip { border-color:#e7b45b38;background:#e7b45b08;color:#d3b576; }
+.sc-password-form { display:grid;grid-template-columns:minmax(150px,1.1fr) minmax(140px,1fr) minmax(130px,1fr) auto;align-items:end;gap:9px;padding:15px 2px 13px;border-bottom:1px solid var(--sc-line); }
+.sc-password-form>label { min-width:0;display:grid;gap:6px;color:#9aa696;font-size:8px; }
+.sc-password-form .sc-text-input { width:100%;height:33px; }
+.sc-password-form>.sc-button { min-height:33px; }
+.sc-password-list-heading { display:flex;align-items:center;gap:9px;padding:13px 2px 5px;color:#d5ded1;font-size:9px; }
+.sc-password-list-heading span { min-width:20px;height:18px;display:grid;place-items:center;border:1px solid var(--sc-line);border-radius:4px;color:var(--accent);font-size:8px; }
+.sc-password-list { display:grid; }
+.sc-password-entry { min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 2px;border-bottom:1px solid var(--sc-line); }
+.sc-password-site { min-width:0;display:grid;gap:4px; }
+.sc-password-site strong { overflow:hidden;color:#cbd7c5;font-size:9px;font-weight:500;text-overflow:ellipsis;white-space:nowrap; }
+.sc-password-site small { color:#899587;font-size:8px; }
+.sc-password-actions { display:flex;gap:6px; }
+.sc-password-empty { padding:13px 2px;color:#899587;font-size:9px; }
+@media(max-width:1120px) {
+  .sc-layout { grid-template-columns:1fr; }
+  .sc-nav { display:flex;flex-wrap:wrap;gap:8px;overflow:visible; }
+  .sc-nav-group,.sc-nav-group+.sc-nav-group { display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0;padding:0;border:0; }
+  .sc-nav-group>.sc-eyebrow { width:100%;margin:2px 6px 4px; }
+}
+@media(max-width:760px) {
+  .sc-password-form { grid-template-columns:1fr;align-items:stretch; }
+  .sc-password-entry { align-items:flex-start;flex-direction:column; }
+}
