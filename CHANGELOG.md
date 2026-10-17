@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.7.23] - 2026-10-17
+- Os popovers de proteção agora se abrem alinhados abaixo dos respectivos botões na barra de endereço.
+
 ## [0.7.22] - 2026-10-17
 - Os painéis de anúncios, rastreadores e pop-ups agora ficam sobrepostos à página sem alterar o espaço do layout.
 
