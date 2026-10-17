@@ -114,7 +114,7 @@ server.listen(0,'127.0.0.1', async () => {
     const miniPlayer = BrowserWindow.getAllWindows().find(window => window !== win);
     await until(() => miniPlayer.webContents.getURL().endsWith('#mini-player') && !miniPlayer.webContents.isLoading(), 'miniplayer renderer');
     assert.equal(miniPlayer.isAlwaysOnTop(),true,'miniplayer floats above the browser');
-    assert.equal(view.isVisible(),true,'opening the player leaves the current page visible');
+    assert.equal(view.getVisible(),true,'opening the player leaves the current page visible');
     await invoke('media:window:toggle');
     await until(() => !miniPlayer.isVisible(),'miniplayer closes without hiding the page');
     await invoke('bookmark:toggle');
