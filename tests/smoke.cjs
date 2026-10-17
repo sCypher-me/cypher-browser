@@ -80,10 +80,12 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(welcome.welcomeTitle,'Meu espaço.','custom welcome title persists');
     await win.webContents.executeJavaScript('(() => { const field = document.querySelector(".notes-widget textarea"); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(field,"My private note"); field.dispatchEvent(new Event("input", { bubbles: true })); })()');
     await until(async () => (await invoke('state')).homeData.notes[note.id] === 'My private note','notes autosave');
+    const focusWidget = (await invoke('state')).settings.home.widgets.find(w => w.type === 'focus');
+    assert.ok(focusWidget,'focus widget was saved');
     await click('.focus-controls>.button');
-    await until(async () => (await invoke('state')).homeData.focus.endsAt > Date.now(),'focus starts');
-    await invoke('home:focus',{ action:'pause' });
-    assert.equal((await invoke('state')).homeData.focus.endsAt,null);
+    await until(async () => (await invoke('state')).homeData.focusById?.[focusWidget.id]?.endsAt > Date.now(),'focus starts');
+    await invoke('home:focus',{ action:'pause',widgetId:focusWidget.id });
+    assert.equal((await invoke('state')).homeData.focusById[focusWidget.id].endsAt,null);
     await click('.home-edit-trigger');
     await click('button[data-home-panel="widgets"]');
     await click('button[aria-label="Adicionar Relógio"]');
