@@ -18,6 +18,12 @@ server.listen(0,'127.0.0.1', async () => {
     await app.whenReady();
     let win;
     await until(() => { win = BrowserWindow.getAllWindows()[0]; return win && !win.webContents.isLoading() && win.webContents.getURL().includes('index.html'); }, 'renderer');
+    const executeJavaScript = win.webContents.executeJavaScript.bind(win.webContents);
+    win.webContents.executeJavaScript = (code, ...args) => executeJavaScript(code, ...args).catch(error => {
+      console.error('Smoke renderer script failed:', String(code).slice(0,1200), error?.message || error);
+      throw error;
+    });
+    win.webContents.on('console-message', (...details) => console.error('Smoke renderer console:', details.slice(1).map(value => typeof value === 'object' ? JSON.stringify(value) : String(value)).join(' ')));
     await until(() => win.webContents.executeJavaScript('!!document.querySelector(".home-page")'), 'home UI');
     const invoke = async (action,payload) => {
       const encoded = await win.webContents.executeJavaScript(`window.cypher.invoke(${JSON.stringify(action)},${JSON.stringify(payload) || 'undefined'}).then(value => JSON.stringify({ value })).catch(error => JSON.stringify({ error:String(error?.stack || error?.message || error) }))`);
