@@ -14,12 +14,15 @@ async function until(callback,label) { for (let i=0;i<100;i++) { if (await callb
     await until(() => win.webContents.executeJavaScript('!!window.cypher'),'preload');
     const invoke = (action,payload) => win.webContents.executeJavaScript(`window.cypher.invoke(${JSON.stringify(action)},${JSON.stringify(payload) || 'undefined'})`);
     const state = await invoke('state');
-    assert.equal(state.settings.home.title,'Meu espaço.');
     assert.equal(state.settings.home.widgets.length,6);
+    const welcome = state.settings.home.widgets.find(w => w.type === 'welcome');
+    assert.equal(welcome.welcomeTitle,'Meu espaço.');
     const note = state.settings.home.widgets.find(w => w.type === 'notes');
     assert.equal(state.homeData.notes[note.id],'My private note');
-    assert.equal(note.row,4);
-    assert.equal(state.homeData.focus.endsAt,null);
+    assert.ok(note.y > 0);
+    assert.equal(note.height,230);
+    const focus = state.settings.home.widgets.find(w => w.type === 'focus');
+    assert.equal(state.homeData.focusById?.[focus.id]?.endsAt,null);
     assert.ok(!state.tabs.some(tab => tab.private));
     await invoke('tab:new');
     await until(() => win.webContents.executeJavaScript('document.querySelector(".notes-widget textarea")?.value === "My private note"'),'restored note renders');
