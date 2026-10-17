@@ -1,4 +1,4 @@
-const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensions', 'bookmarks', 'history', 'downloads', 'mods']);
+const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensions', 'bookmarks', 'history', 'downloads', 'mods', 'productivity']);
 const { defaultHome, sanitizeHome } = require('./home-layout.mjs');
 const defaults = {
   tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513',
@@ -16,6 +16,7 @@ const defaults = {
   hardwareAcceleration: true, webrtcPolicy: 'default',
   showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true,
   clearDataOnExit: false, clearHistoryOnExit: false, confirmCloseWithMultipleTabs: false,
+  memorySaverEnabled: true, memorySaverMinutes: 20,
   defaultZoom: 1, downloadDirectory: '', startWithWindows: false,
   home: defaultHome,
 };
@@ -53,7 +54,8 @@ function sanitizeSettings(input = {}, base = defaults) {
   for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  if (Number.isFinite(input.memorySaverMinutes)) output.memorySaverMinutes = Math.max(5, Math.min(120, Math.round(input.memorySaverMinutes)));
   if (Array.isArray(input.trackingExceptions)) output.trackingExceptions = [...new Set(input.trackingExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
   if (Array.isArray(input.popupExceptions)) output.popupExceptions = [...new Set(input.popupExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
   if (input.startupMode === 'home' || input.startupMode === 'restore' || input.startupMode === 'specific') {

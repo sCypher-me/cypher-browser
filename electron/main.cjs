@@ -2,7 +2,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, she
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, randomBytes } = require('node:crypto');
 const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
@@ -17,16 +17,24 @@ app.setName('Cypher');
 app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
 protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }, { scheme: 'cypher-wallpaper', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
-let win, playerWindow, rendererUrl = '', store, storePath, activeId, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
+let win, playerWindow, rendererUrl = '', store, storePath, activeId, activeProfileId = 'default', profileRegistry = [{ id:'default', name:'Pessoal' }], profileSwitching = false, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
 let hardwareAccelerationAtLaunch = true, mediaTimer = null;
 const protonExtensionId = 'jplgfhpmjnbigmhklmmbgecoobifkmpa';
 let protonExtensionReady = false, protonPopupWindow = null, protonProxyValue = null;
 let trackerEngine = null;
 let adEngine = null;
-let trackerList = { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0 };
+let trackerList = { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0, blockedTrackers: 0, bySite:{} };
 let trackerCountTimer = null;
 try {
-  const bootstrap = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'cypher.json'), 'utf8'));
+  const userDataPath = app.getPath('userData');
+  let startupProfileId = 'default';
+  try {
+    const registry = JSON.parse(fs.readFileSync(path.join(userDataPath, 'cypher-profiles.json'), 'utf8'));
+    if (/^[a-f\d-]{36}$/i.test(registry.activeProfileId) && Array.isArray(registry.profiles) && registry.profiles.some(item => item?.id === registry.activeProfileId)) startupProfileId = registry.activeProfileId;
+  } catch {}
+  activeProfileId = startupProfileId;
+  const bootstrapPath = startupProfileId === 'default' ? path.join(userDataPath, 'cypher.json') : path.join(userDataPath, 'profiles', startupProfileId, 'cypher.json');
+  const bootstrap = JSON.parse(fs.readFileSync(bootstrapPath, 'utf8'));
   if (bootstrap.settings?.hardwareAcceleration === false) { app.disableHardwareAcceleration(); hardwareAccelerationAtLaunch = false; }
 } catch {}
 const pendingExternalUrls = process.argv.filter(value => /^https?:\/\//i.test(value)).slice(0,10);
@@ -64,8 +72,28 @@ const builtInMods = [
   { id: 'ember', name: 'Ember', author: 'Cypher', description: 'Tons de carvão e um brilho que não se apaga.', settings: { ...defaults, accent: '#ff9b6a', surface: '#1b1412', background: '#100b09', wallpaper: 'grid' } },
   { id: 'arctic', name: 'Arctic Signal', author: 'Cypher', description: 'Azul glacial, linhas precisas e silêncio visual.', settings: { ...defaults, accent: '#78d9ee', surface: '#10191e', background: '#080e12', radius: 6, font: 'mono', wallpaper: 'grid' } },
 ];
-function loadStore() {
-  storePath = path.join(app.getPath('userData'), 'cypher.json');
+function profileDirectory(id = activeProfileId) {
+  return id === 'default' ? app.getPath('userData') : path.join(app.getPath('userData'), 'profiles', id);
+}
+function profileStorePath(id = activeProfileId) { return path.join(profileDirectory(id), 'cypher.json'); }
+function loadProfileRegistry() {
+  const file = path.join(app.getPath('userData'), 'cypher-profiles.json');
+  try {
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (Array.isArray(saved.profiles)) profileRegistry = [{ id:'default', name:'Pessoal' }, ...saved.profiles.filter(item => item && /^[a-f\d-]{36}$/i.test(item.id) && typeof item.name === 'string').slice(0,20).map(item => ({ id:item.id, name:item.name.trim().slice(0,48) || 'Perfil' }))];
+    if (!profileRegistry.some(item => item.id === 'default')) profileRegistry.unshift({ id:'default', name:'Pessoal' });
+    if (profileRegistry.some(item => item.id === saved.activeProfileId)) activeProfileId = saved.activeProfileId;
+  } catch {}
+}
+function persistProfileRegistry() {
+  const file = path.join(app.getPath('userData'), 'cypher-profiles.json');
+  fs.mkdirSync(path.dirname(file), { recursive:true });
+  fs.writeFileSync(file, JSON.stringify({ activeProfileId, profiles:profileRegistry.filter(item => item.id !== 'default') }, null, 2));
+}
+function loadStore(profileId = activeProfileId) {
+  activeProfileId = profileId;
+  storePath = profileStorePath(profileId);
+  fs.mkdirSync(path.dirname(storePath), { recursive:true });
   let saved = {};
   try { saved = JSON.parse(fs.readFileSync(storePath, 'utf8')); } catch (error) {
     if (error.code !== 'ENOENT') { try { fs.copyFileSync(storePath, storePath + '.backup'); } catch {} }
@@ -75,6 +103,9 @@ function loadStore() {
     if (typeof value === 'string' && id !== '__proto__') notes[id] = value.slice(0,20000);
   }
   store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], passwords: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
+    activeWorkspaceId: typeof saved.activeWorkspaceId === 'string' ? saved.activeWorkspaceId.slice(0,80) : 'personal',
+    workspaces: Array.isArray(saved.workspaces) ? saved.workspaces.slice(0,30).flatMap(item => item && typeof item.id === 'string' && typeof item.name === 'string' ? [{ id:item.id.slice(0,80), name:item.name.trim().slice(0,48) || 'Espaço', color:/^#[\da-f]{6}$/i.test(item.color) ? item.color : '#78d9ee', tabs:Array.isArray(item.tabs) ? item.tabs.slice(0,100).flatMap(tab => { try { const url = new URL(tab.url); return ['http:','https:'].includes(url.protocol) ? [{ url:url.href, title:String(tab.title || url.hostname).slice(0,180), pinned:tab.pinned === true, group:typeof tab.group === 'string' ? tab.group.slice(0,50) : '' }] : []; } catch { return []; } }) : [] }] : []) : [],
+    researchItems: Array.isArray(saved.researchItems) ? saved.researchItems.slice(0,1000).flatMap(item => { try { const url = new URL(item.url); return ['http:','https:'].includes(url.protocol) && typeof item.id === 'string' ? [{ id:item.id.slice(0,80), url:url.href, title:String(item.title || url.hostname).slice(0,180), note:String(item.note || '').slice(0,5000), tags:Array.isArray(item.tags) ? item.tags.filter(tag => typeof tag === 'string').slice(0,8).map(tag => tag.slice(0,32)) : [], savedAt:Number.isFinite(item.savedAt) ? item.savedAt : Date.now(), read:item.read === true }] : []; } catch { return []; } }) : [],
     profileSync: { endpoint: String(saved.profileSync?.endpoint || '').slice(0,2048), username: String(saved.profileSync?.username || '').slice(0,256), passwordEncrypted: String(saved.profileSync?.passwordEncrypted || '').slice(0,8192), deviceId: /^[a-f\d-]{36}$/i.test(saved.profileSync?.deviceId || '') ? saved.profileSync.deviceId : randomUUID(), localUpdatedAt: Number.isFinite(saved.profileSync?.localUpdatedAt) ? saved.profileSync.localUpdatedAt : 0, lastSync: Number.isFinite(saved.profileSync?.lastSync) ? saved.profileSync.lastSync : 0 },
     homeData: { notes, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } };
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
@@ -106,6 +137,8 @@ function loadStore() {
   }
   for (const id of taskWidgets) if (!store.homeData.tasksById[id]) store.homeData.tasksById[id] = [];
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
+  if (!store.workspaces.length) store.workspaces = [{ id:'personal', name:'Pessoal', color:'#78d9ee', tabs:store.savedTabs.filter(item => item && typeof item.url === 'string').slice(0,100).map(item => ({ url:item.url, title:item.title || item.url, pinned:item.pinned === true, group:item.group || '' })) }];
+  if (!store.workspaces.some(item => item.id === store.activeWorkspaceId)) store.activeWorkspaceId = store.workspaces[0]?.id || 'personal';
   if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,500).flatMap(entry => {
     if (!entry || typeof entry.id !== 'string' || typeof entry.username !== 'string' || typeof entry.passwordEncrypted !== 'string') return [];
     const origin = normalizePasswordOrigin(entry.origin);
@@ -151,7 +184,11 @@ function flush() {
   if (!storePath) return;
   try {
     fs.mkdirSync(path.dirname(storePath), { recursive: true });
-    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal').map(t => ({ url: t.url, pinned: t.pinned })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
+    for (const workspace of store.workspaces || []) {
+      const liveTabs = tabs.filter(t => !t.private && t.connectionMode === 'normal' && t.workspaceId === workspace.id && /^https?:\/\//i.test(t.url)).slice(0,100);
+      if (liveTabs.length) workspace.tabs = liveTabs.map(t => ({ url:t.url, title:t.title, pinned:t.pinned, group:t.group || '' }));
+    }
+    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal' && /^https?:\/\//i.test(t.url)).map(t => ({ url: t.url, title:t.title, pinned: t.pinned, workspaceId:t.workspaceId, group:t.group || '' })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
 }
@@ -169,6 +206,20 @@ function encryptPassword(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('O cofre exige a criptografia segura do sistema operacional.');
   if (typeof value !== 'string' || !value || value.length > 4096) throw new Error('Informe uma senha válida com até 4096 caracteres.');
   return safeStorage.encryptString(value).toString('base64');
+}
+function generatePassword(length = 24) {
+  const size = Math.max(16, Math.min(64, Number.isFinite(length) ? Math.round(length) : 24));
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*()-_=+[]{}';
+  let result = '';
+  while (result.length < size) {
+    const bytes = randomBytes(Math.ceil((size - result.length) * 1.5));
+    for (const byte of bytes) {
+      if (byte >= 256 - (256 % alphabet.length)) continue;
+      result += alphabet[byte % alphabet.length];
+      if (result.length >= size) break;
+    }
+  }
+  return result;
 }
 function decryptPassword(entry) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('A criptografia segura do sistema não está disponível neste dispositivo.');
@@ -353,7 +404,9 @@ async function syncProfile() {
 function snapshot() {
   return { tabs: tabs.map(({ view, ...tab }) => tab), activeId, settings: store.settings, bookmarks: store.bookmarks,
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, packageId, error }) => ({ id, name, version, enabled, source, packageId, error })),
-    sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
+    sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], workspaces:store.workspaces, activeWorkspaceId:store.activeWorkspaceId,
+    researchItems:store.researchItems, profileId:activeProfileId, profiles:profileRegistry.map(item => ({ ...item, active:item.id === activeProfileId })),
+    profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
     trackerProtection: trackerList,
     popupProtection: { blockedCount: blockedPopupCount, pending: popupRequests.map(request => ({ ...request })) },
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
@@ -367,6 +420,82 @@ function emit() {
   if (playerWindow && !playerWindow.isDestroyed()) playerWindow.webContents.send('cypher:state', state);
 }
 function active() { return tabs.find(tab => tab.id === activeId); }
+function profileSnapshot() { return profileRegistry.map(item => ({ ...item, active:item.id === activeProfileId })); }
+function captureWorkspaceTabs(workspaceId = store.activeWorkspaceId) {
+  const workspace = store.workspaces.find(item => item.id === workspaceId);
+  if (!workspace) return;
+  const liveTabs = tabs.filter(tab => !tab.private && tab.connectionMode === 'normal' && tab.workspaceId === workspaceId && /^https?:\/\//i.test(tab.url)).slice(0,100);
+  if (liveTabs.length) workspace.tabs = liveTabs.map(tab => ({ url:tab.url, title:tab.title, pinned:tab.pinned, group:tab.group || '' }));
+}
+function switchWorkspace(id) {
+  const target = store.workspaces.find(item => item.id === id);
+  if (!target) return false;
+  const alreadyOpen = tabs.some(tab => !tab.private && tab.connectionMode === 'normal' && tab.workspaceId === target.id && /^https?:\/\//i.test(tab.url));
+  if (id === store.activeWorkspaceId && alreadyOpen) return false;
+  if (id !== store.activeWorkspaceId) { captureWorkspaceTabs(); store.activeWorkspaceId = target.id; }
+  let candidates = tabs.filter(tab => !tab.private && tab.connectionMode === 'normal' && tab.workspaceId === target.id);
+  if (!alreadyOpen) {
+    for (const saved of target.tabs.slice(0,100)) {
+      try {
+        const tabId = addTab(saved.url, false, 'normal', false);
+        const tab = tabs.find(item => item.id === tabId);
+        if (tab) { tab.workspaceId = target.id; tab.title = saved.title || tab.title; tab.pinned = !!saved.pinned; tab.group = saved.group || ''; }
+      } catch {}
+    }
+    candidates = tabs.filter(tab => !tab.private && tab.connectionMode === 'normal' && tab.workspaceId === target.id);
+  }
+  if (!candidates.length) candidates = [tabs.find(tab => tab.workspaceId === target.id) || tabs.find(tab => !tab.private && tab.connectionMode === 'normal')].filter(Boolean);
+  if (!candidates.length) addTab('cypher://newtab', false, 'normal', false);
+  else {
+    const previous = active(); if (previous) previous.lastActiveAt = Date.now();
+    activeId = (candidates.find(tab => /^https?:\/\//i.test(tab.url)) || candidates[0]).id;
+    const selected = active(); if (selected) selected.lastActiveAt = Date.now();
+  }
+  layout(); persist(); emit(); return true;
+}
+async function switchProfile(id) {
+  const target = profileRegistry.find(item => item.id === id);
+  if (!target) throw new Error('Este perfil não existe mais.');
+  if (id === activeProfileId) return profileSnapshot();
+  if (store.downloads.some(item => item.state === 'progressing' || item.state === 'paused')) throw new Error('Conclua ou cancele os downloads antes de trocar de perfil.');
+  if (protonProxyValue) await setProtonProxy({ mode:'system' });
+  if (protonPopupWindow && !protonPopupWindow.isDestroyed()) protonPopupWindow.close();
+  flush();
+  profileSyncReady = false; profileSyncBusy = false; clearTimeout(profileSyncTimer);
+  profileSwitching = true;
+  for (const tab of [...tabs]) {
+    tab.suspending = true;
+    if (tab.view) {
+      const view = tab.view; tab.view = null;
+      if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+      if (!view.webContents.isDestroyed()) view.webContents.destroy();
+    }
+  }
+  tabs.splice(0); activeId = ''; nowPlayingTabId = null;
+  for (const privateSession of privateSessions) { void privateSession.clearStorageData(); void privateSession.clearCache(); }
+  privateSessions.clear();
+  activeProfileId = id; persistProfileRegistry(); loadStore(id); privatePartition = `cypher-private-${randomUUID()}`;
+  protonExtensionReady = false; protonProxyValue = null;
+  const homeId = addTab('cypher://newtab', false, store.settings.connectionMode);
+  if (store.settings.startupMode === 'restore') for (const savedTab of store.savedTabs.slice(0,50)) {
+    try { const tabId = addTab(savedTab.url, false, store.settings.connectionMode); const restored = tabs.find(item => item.id === tabId); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
+  }
+  else if (store.settings.startupMode === 'specific') for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
+  profileSwitching = false; profileSyncReady = true;
+  void loadBuiltInProtonVpn().then(() => loadStoredExtensions()).catch(error => console.warn('Não foi possível preparar as extensões do perfil:', error.message));
+  if (homeId) selectTab(homeId);
+  if (store.profileSync.endpoint) setTimeout(() => void syncProfile().catch(error => console.warn('Sincronização após troca de perfil:', error.message)), 1200);
+  emit(); return profileSnapshot();
+}
+function createProfile(name) {
+  const normalized = String(name || '').trim().slice(0,48);
+  if (!normalized) throw new Error('Dê um nome ao perfil.');
+  if (profileRegistry.length >= 21) throw new Error('O Cypher permite até 20 perfis adicionais.');
+  const id = randomUUID();
+  profileRegistry.push({ id, name:normalized });
+  fs.mkdirSync(profileDirectory(id), { recursive:true }); persistProfileRegistry(); emit();
+  return profileSnapshot();
+}
 function positionMediaPlayerWindow() {
   if (!win || win.isDestroyed() || !playerWindow || playerWindow.isDestroyed()) return;
   const parent = win.getBounds(), workArea = screen.getDisplayMatching(parent).workArea;
@@ -472,7 +601,9 @@ function layout() {
   const bounds = { x, y, width: Math.max(0, Math.min(Math.round(viewport.width), width - x)), height: Math.max(0, Math.min(Math.round(viewport.height), height - y)) };
   for (const tab of tabs) if (tab.view) {
     tab.view.setBounds(tab.connectionMode === 'normal' ? bounds : letterboxBounds(bounds));
-    tab.view.setVisible(tab.id === activeId && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
+    const inWorkspace = tab.private || tab.connectionMode !== 'normal' || tab.workspaceId === store.activeWorkspaceId;
+    tab.view.setVisible(tab.id === activeId && inWorkspace && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
+    try { tab.view.webContents.setBackgroundThrottling(store.settings.memorySaverEnabled && tab.id !== activeId); } catch {}
   }
 }
 function letterboxBounds(bounds) {
@@ -498,9 +629,44 @@ function update(tab) {
   emit();
 }
 function selectTab(id) {
-  if (!tabs.some(tab => tab.id === id)) return;
+  const target = tabs.find(tab => tab.id === id);
+  if (!target) return;
+  const previous = active(); if (previous && previous.id !== target.id) previous.lastActiveAt = Date.now();
+  if (!target.private && target.connectionMode === 'normal' && target.workspaceId && store.workspaces.some(item => item.id === target.workspaceId)) store.activeWorkspaceId = target.workspaceId;
+  target.lastActiveAt = Date.now();
   activeId = id;
+  if (target.suspended) restoreSuspendedTab(target);
   layout(); emit();
+}
+function restoreSuspendedTab(tab) {
+  if (!tab?.suspended) return;
+  tab.suspended = false; tab.lastActiveAt = Date.now(); tab.error = null; tab.loading = false;
+  if (/^https?:\/\//i.test(tab.url)) { attachView(tab); navigate(tab, tab.url); }
+  else { layout(); emit(); }
+}
+async function suspendTab(tab) {
+  const view = tab?.view;
+  if (!view || view.webContents.isDestroyed() || !/^https?:\/\//i.test(tab.url) || tab.id === activeId || tab.private || tab.connectionMode !== 'normal' || tab.pinned || tab.loading || tab.audible || tab.mediaPlaying || tab.error || tab.suspended) return false;
+  let safeToDiscard = false;
+  try {
+    safeToDiscard = await view.webContents.executeJavaScript(`(() => {
+      const dirty = [...document.querySelectorAll('input,textarea,select')].some(element => element.value !== element.defaultValue || element.checked !== element.defaultChecked);
+      const editable = [...document.querySelectorAll('[contenteditable="true"]')].some(element => element.innerText.trim().length > 0);
+      const activeMedia = [...document.querySelectorAll('audio,video')].some(element => !element.paused && !element.ended);
+      return !dirty && !editable && !activeMedia;
+    })()`, true);
+  } catch { return false; }
+  if (!safeToDiscard || !tabs.includes(tab) || tab.id === activeId) return false;
+  tab.suspending = true; tab.view = null; tab.suspended = true; tab.loading = false;
+  if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+  if (!view.webContents.isDestroyed()) view.webContents.destroy();
+  emit(); return true;
+}
+function suspendIdleTabs() {
+  if (!store?.settings.memorySaverEnabled) return;
+  const cutoff = Date.now() - store.settings.memorySaverMinutes * 60_000;
+  for (const tab of tabs) if (!tab.lastActiveAt) tab.lastActiveAt = Date.now();
+  for (const tab of tabs) if (tab.lastActiveAt < cutoff) void suspendTab(tab);
 }
 function loadTrackerEngine() {
   const resourcesPath = path.join(__dirname, 'resources');
@@ -530,18 +696,20 @@ function matchFilterRequest(engine, details) {
 function matchTrackerRequest(details) {
   return matchFilterRequest(trackerEngine, details);
 }
-function noteProtectionBlocked(isAd = false) {
+function noteProtectionBlocked(isAd = false, isTracker = false) {
   trackerList.blockedRequests++;
   if (isAd) trackerList.blockedAds++;
+  if (isTracker) trackerList.blockedTrackers++;
   if (trackerCountTimer) return;
   trackerCountTimer = setTimeout(() => { trackerCountTimer = null; emit(); }, 500);
 }
 function connectionPort(mode) { return mode === 'tor' ? store.settings.torSocksPort : mode === 'i2p' ? store.settings.i2pHttpPort : 0; }
+function normalPartition() { return activeProfileId === 'default' ? 'persist:cypher' : `persist:cypher-profile-${activeProfileId}`; }
 function sessionPartition(tab) {
   const mode = tab.connectionMode || 'normal';
   if (tab.private) return `${privatePartition}-${mode}-${connectionPort(mode)}`;
-  if (mode === 'normal') return 'persist:cypher';
-  return `cypher-${mode}-${connectionPort(mode)}`;
+  if (mode === 'normal') return normalPartition();
+  return `cypher-${activeProfileId}-${mode}-${connectionPort(mode)}`;
 }
 function proxyConfig(mode) {
   if (mode === 'normal') return { mode: 'system' };
@@ -563,8 +731,9 @@ function protonExtensionDirectory() {
     : path.resolve(__dirname, '../vendor/proton-vpn-browser-extension/distribution-cypher');
 }
 async function loadBuiltInProtonVpn() {
-  const ses = session.fromPartition('persist:cypher');
+  const ses = session.fromPartition(normalPartition());
   try {
+    if (ses.extensions.get(protonExtensionId)) { protonExtensionReady = true; return true; }
     ses.registerPreloadScript({ type:'frame', filePath:path.join(__dirname, 'proton-preload.cjs') });
     const loaded = await ses.extensions.loadExtension(protonExtensionDirectory(), { allowFileAccess:false });
     if (loaded.id !== protonExtensionId) {
@@ -582,7 +751,7 @@ async function loadBuiltInProtonVpn() {
 function assertProtonBridgeSender(event) {
   let url;
   try { url = new URL(event.senderFrame?.url || ''); } catch { throw new Error('Origem da integração VPN inválida.'); }
-  if (event.sender.session !== session.fromPartition('persist:cypher') || url.protocol !== 'chrome-extension:' || url.hostname !== protonExtensionId) {
+  if (event.sender.session !== session.fromPartition(normalPartition()) || url.protocol !== 'chrome-extension:' || url.hostname !== protonExtensionId) {
     throw new Error('A integração VPN só pode ser chamada pelo painel Proton embutido.');
   }
 }
@@ -592,7 +761,7 @@ function protonVpnStatus() {
   return { bundled:true, available:protonExtensionReady, active:!!proxy && !connecting, connecting, server:proxy?.host || '', version:'1.3.6' };
 }
 async function setProtonProxy(value) {
-  const ses = session.fromPartition('persist:cypher');
+  const ses = session.fromPartition(normalPartition());
   let config;
   if (value?.mode === 'fixed_servers') {
     const proxy = value?.rules?.singleProxy;
@@ -623,7 +792,7 @@ async function openProtonVpn() {
     protonPopupWindow.focus();
     return { opened:true };
   }
-  const ses = session.fromPartition('persist:cypher');
+  const ses = session.fromPartition(normalPartition());
   protonPopupWindow = new BrowserWindow({ width:420, height:640, minWidth:380, minHeight:520, parent:win, show:false, backgroundColor:'#0a0d0c', autoHideMenuBar:true,
     webPreferences:{ session:ses, nodeIntegration:false, contextIsolation:true, sandbox:true, webSecurity:true } });
   protonPopupWindow.setMenuBarVisibility(false);
@@ -663,7 +832,8 @@ function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode =
   const url = resolveAddress(address, store.settings.searchEngine, store.settings.customSearchUrl);
   if (!['normal','tor','i2p'].includes(connectionMode)) connectionMode = store.settings.connectionMode;
   const tab = { id: randomUUID(), title: 'Nova aba', url: 'cypher://newtab', private: !!isPrivate,
-    connectionMode, pinned: false, muted: false, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null };
+    connectionMode, pinned: false, muted: false, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null,
+    workspaceId:!isPrivate && connectionMode === 'normal' ? store.activeWorkspaceId : undefined, group:'', suspended:false, lastActiveAt:Date.now() };
   tabs.push(tab); if (activate || !activeId) activeId = tab.id;
   navigate(tab, url, navigationOptions); emit();
   return tab.id;
@@ -710,12 +880,21 @@ function removePopupRequest(id) {
 function removeTab(tab) {
   const index = tabs.indexOf(tab);
   if (index < 0) return;
+  const wasActive = activeId === tab.id;
   tabs.splice(index, 1);
+  if (!tab.private && tab.connectionMode === 'normal' && tab.workspaceId && !tabs.some(item => !item.private && item.connectionMode === 'normal' && item.workspaceId === tab.workspaceId && /^https?:\/\//i.test(item.url))) {
+    const workspace = store.workspaces.find(item => item.id === tab.workspaceId);
+    if (workspace) workspace.tabs = [];
+  }
   if (nowPlayingTabId === tab.id) nowPlayingTabId = null;
   if (!tab.private) closedTabs.push({ url: tab.url, title: tab.title, connectionMode: tab.connectionMode });
   if (closedTabs.length > 20) closedTabs.shift();
-  if (activeId === tab.id) activeId = tabs[Math.min(index, tabs.length - 1)]?.id;
-  if (!tabs.length && !closing) addTab();
+  if (wasActive) {
+    const visible = tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId);
+    activeId = visible[Math.min(index, visible.length - 1)]?.id || visible[0]?.id || '';
+    if (!activeId && !closing && !profileSwitching) addTab('cypher://newtab', false, 'normal');
+  }
+  if (!tabs.length && !closing && !profileSwitching) addTab();
   if (tab.private && !tabs.some(t => t.private)) {
     const sessions = [...privateSessions];
     privateSessions.clear();
@@ -762,7 +941,18 @@ function setupSession(ses, mode = 'normal') {
       const trackerBlocked = !exemptForSite && (anonymousRoute || store.settings.blockTrackers) && matchTrackerRequest(details);
       const adsBlocked = !exemptForSite && store.settings.blockAds && (matchFilterRequest(adEngine, details) || matchesHost(hostname, advertisingHosts));
       blocked = adsBlocked || trackerBlocked;
-      if (blocked) noteProtectionBlocked(adsBlocked);
+      if (blocked) {
+        noteProtectionBlocked(adsBlocked, trackerBlocked);
+        let site = '';
+        try { site = new URL(sourceUrl).hostname.toLowerCase(); } catch {}
+      if (site && (trackerList.bySite[site] || Object.keys(trackerList.bySite).length < 500)) {
+          const counts = trackerList.bySite[site] || { blockedRequests:0, blockedAds:0, blockedTrackers:0 };
+          counts.blockedRequests++;
+          if (adsBlocked) counts.blockedAds++;
+          if (trackerBlocked) counts.blockedTrackers++;
+          trackerList.bySite[site] = counts;
+        }
+      }
     } catch {}
     callback(blocked ? { cancel: true } : {});
   });
@@ -868,12 +1058,12 @@ async function installExtension(directory, options = {}) {
   if (store.extensions.length >= 100) throw new Error('O limite é de 100 extensões instaladas.');
   if (options.expectedId && store.extensions.some(extension => extension.id === options.expectedId)) throw new Error('Esta extensão já está instalada. Remova a versão existente antes de instalar novamente.');
   if (!(await confirmExtensionInstall(manifest))) return { cancelled:true };
-  const loaded = await session.fromPartition('persist:cypher').extensions.loadExtension(extensionPath, { allowFileAccess: false });
+  const loaded = await session.fromPartition(normalPartition()).extensions.loadExtension(extensionPath, { allowFileAccess: false });
   if (store.extensions.some(extension => extension.id === loaded.id)) {
     throw new Error('Uma extensão com este identificador já está instalada. Remova-a antes de adicionar outra versão.');
   }
   if (options.expectedId && loaded.id !== options.expectedId) {
-    session.fromPartition('persist:cypher').extensions.removeExtension(loaded.id);
+    session.fromPartition(normalPartition()).extensions.removeExtension(loaded.id);
     throw new Error('O identificador instalado não corresponde à assinatura e ao link da Chrome Web Store.');
   }
   const name = /^__MSG_.*__$/.test(manifest.name) ? manifest.short_name || 'Extensão' : manifest.name;
@@ -1021,12 +1211,12 @@ function handleStoreInstallNavigation(tab, event, targetUrl) {
   return true;
 }
 async function loadStoredExtensions() {
-  const ses = session.fromPartition('persist:cypher');
+  const ses = session.fromPartition(normalPartition());
   for (const extension of store.extensions) {
     if (!extension.enabled) continue;
     if (extension.id === protonExtensionId) { extension.error = 'Já incluída no Cypher'; continue; }
     try {
-      const loaded = await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
+      const loaded = ses.extensions.get(extension.id) || await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
       extension.id = loaded.id;
       extension.name = String(loaded.name || extension.name).slice(0,128);
       extension.version = String(loaded.version || extension.version).slice(0,40);
@@ -1073,9 +1263,11 @@ function attachView(tab) {
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
-  wc.on('page-title-updated', (_event, title) => { tab.title = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
+  wc.on('page-title-updated', (_event, title) => { tab.title = title; if (/^https?:\/\//i.test(tab.url)) tab.lastExternalTitle = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
     tab.url = url; tab.error = null;
+    tab.lastActiveAt = Date.now();
+    tab.lastExternalUrl = url; tab.lastExternalTitle = wc.getTitle() || url;
     if (!tab.private && tab.connectionMode === 'normal') {
       store.history.unshift({ id: randomUUID(), url, title: wc.getTitle() || url, date: Date.now() });
       store.history = store.history.slice(0,1000); persist();
@@ -1120,12 +1312,15 @@ function attachView(tab) {
   });
   wc.once('destroyed', () => {
     if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+    if (tab.suspending) { tab.suspending = false; return; }
     if (tab.view === view) removeTab(tab);
   });
   return view;
 }
 function navigate(tab, input, navigationOptions) {
   const url = resolveAddress(input, store.settings.searchEngine, store.settings.customSearchUrl);
+  if (url.startsWith('cypher://') && /^https?:\/\//i.test(tab.url)) { tab.lastExternalUrl = tab.url; tab.lastExternalTitle = tab.title; }
+  else if (/^https?:\/\//i.test(url)) { tab.lastExternalUrl = url; tab.lastExternalTitle = tab.title; }
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname.endsWith('.onion') && tab.connectionMode !== 'tor') {
     tab.url = url; tab.loading = false; tab.error = 'Endereços .onion só podem ser abertos com a rede Tor ativa.'; layout(); emit(); return;
@@ -1135,7 +1330,7 @@ function navigate(tab, input, navigationOptions) {
   }
   tab.url = url; tab.error = null;
   if (url.startsWith('cypher://')) {
-    tab.loading = false; tab.title = ({ newtab: 'Nova aba', settings: 'Configurações', security: 'Segurança', profile: 'Perfil', extensions: 'Extensões', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', mods: 'Mods' })[url.slice(9)];
+    tab.loading = false; tab.title = ({ newtab: 'Nova aba', settings: 'Configurações', security: 'Segurança', profile: 'Perfil', extensions: 'Extensões', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', mods: 'Mods', productivity:'Espaços e pesquisa' })[url.slice(9)];
     tab.view?.webContents.stop(); layout(); emit(); return;
   }
   const view = tab.view || attachView(tab);
@@ -1178,10 +1373,10 @@ async function savePage(tab) {
 }
 async function clearSiteData() {
   const sessions = new Set([
-    ...configuredSessions,
-    session.fromPartition('persist:cypher'),
-    session.fromPartition(`cypher-tor-${store.settings.torSocksPort}`),
-    session.fromPartition(`cypher-i2p-${store.settings.i2pHttpPort}`),
+    session.fromPartition(normalPartition()),
+    session.fromPartition(`cypher-${activeProfileId}-tor-${store.settings.torSocksPort}`),
+    session.fromPartition(`cypher-${activeProfileId}-i2p-${store.settings.i2pHttpPort}`),
+    ...tabs.map(tab => tab.view?.webContents.session).filter(Boolean),
   ]);
   await Promise.all([...sessions].map(async ses => {
     await ses.clearStorageData();
@@ -1226,13 +1421,18 @@ function setSettings(payload) {
   const taskIds = new Set(taskWidgets.map(widget => widget.id));
   for (const id of Object.keys(store.homeData.tasksById)) if (!taskIds.has(id)) delete store.homeData.tasksById[id];
   for (const widget of taskWidgets) if (!store.homeData.tasksById[widget.id]) store.homeData.tasksById[widget.id] = [];
-  persist(); emit();
+  layout(); persist(); emit();
 }
 async function command(action, payload) {
   const tab = active(), wc = tab?.view?.webContents;
   switch (action) {
     case 'state': return snapshot();
     case 'password:list': return passwordVaultSnapshot();
+    case 'password:generate': return generatePassword(payload?.length);
+    case 'clipboard:write': {
+      if (typeof payload !== 'string' || payload.length > 8192) throw new Error('Texto inválido para a área de transferência.');
+      clipboard.writeText(payload); return true;
+    }
     case 'password:save': {
       const origin = normalizePasswordOrigin(payload?.origin);
       const username = typeof payload?.username === 'string' ? payload.username.trim().slice(0,256) : '';
@@ -1260,6 +1460,73 @@ async function command(action, payload) {
       if (!filled) throw new Error('Não encontramos um formulário de login vazio e seguro nesta página.');
       return true;
     }
+    case 'workspace:list': return store.workspaces;
+    case 'workspace:create': {
+      const name = String(payload?.name || '').trim().slice(0,48);
+      if (!name) throw new Error('Dê um nome ao espaço.');
+      if (store.workspaces.length >= 30) throw new Error('O Cypher permite até 30 espaços por perfil.');
+      captureWorkspaceTabs();
+      const created = { id:randomUUID(), name, color:/^#[\da-f]{6}$/i.test(payload?.color) ? payload.color : '#78d9ee', tabs:[] };
+      store.workspaces.push(created); persist(); emit(); return created;
+    }
+    case 'workspace:rename': {
+      const target = store.workspaces.find(item => item.id === payload?.id);
+      const name = String(payload?.name || '').trim().slice(0,48);
+      if (!target || !name) throw new Error('Não foi possível renomear este espaço.');
+      target.name = name; persist(); emit(); return target;
+    }
+    case 'workspace:delete': {
+      const target = store.workspaces.find(item => item.id === payload);
+      if (!target || store.workspaces.length <= 1) throw new Error('O último espaço do perfil não pode ser removido.');
+      const destination = store.workspaces.find(item => item.id !== target.id);
+      if (target.id === store.activeWorkspaceId) captureWorkspaceTabs(target.id);
+      if (destination) destination.tabs = [...destination.tabs, ...target.tabs].slice(0,100);
+      for (const candidate of tabs) if (candidate.workspaceId === target.id) candidate.workspaceId = destination?.id;
+      store.workspaces = store.workspaces.filter(item => item.id !== target.id);
+      if (store.activeWorkspaceId === target.id) store.activeWorkspaceId = destination.id;
+      persist(); layout(); emit(); return store.workspaces;
+    }
+    case 'workspace:switch': return switchWorkspace(payload);
+    case 'research:add': {
+      if (!tab || tab.private || tab.connectionMode !== 'normal') throw new Error('Salve páginas de pesquisa apenas em abas normais.');
+      let url; try { url = new URL(String(payload?.url || tab.url)); } catch { throw new Error('Endereço da página inválido.'); }
+      if (!['http:','https:'].includes(url.protocol)) throw new Error('A fila de pesquisa aceita apenas páginas HTTP e HTTPS.');
+      const existing = store.researchItems.find(item => item.url === url.href);
+      if (existing) return existing;
+      const item = { id:randomUUID(), url:url.href, title:String(payload?.title || tab.title || url.hostname).slice(0,180), note:'', tags:[], savedAt:Date.now(), read:false };
+      store.researchItems.unshift(item); store.researchItems = store.researchItems.slice(0,1000); persist(); emit(); return item;
+    }
+    case 'research:update': {
+      const item = store.researchItems.find(entry => entry.id === payload?.id);
+      if (!item) break;
+      if (typeof payload.note === 'string') item.note = payload.note.slice(0,5000);
+      if (typeof payload.read === 'boolean') item.read = payload.read;
+      if (Array.isArray(payload.tags)) item.tags = [...new Set(payload.tags.filter(tag => typeof tag === 'string').map(tag => tag.trim().slice(0,32)).filter(Boolean))].slice(0,8);
+      persist(); emit(); return item;
+    }
+    case 'research:remove': store.researchItems = store.researchItems.filter(item => item.id !== payload); persist(); emit(); break;
+    case 'tabs:organize': {
+      const assignments = Array.isArray(payload) ? payload.slice(0,200) : [];
+      for (const assignment of assignments) {
+        const target = tabs.find(item => item.id === assignment?.id && !item.private && item.connectionMode === 'normal');
+        if (target) target.group = String(assignment.group || '').trim().slice(0,50);
+      }
+      persist(); emit(); return tabs.map(({ id, title, url, group }) => ({ id, title, url, group }));
+    }
+    case 'tabs:suggest-groups': {
+      const groups = new Map();
+      for (const entry of tabs) {
+        if (entry.private || entry.connectionMode !== 'normal') continue;
+        let group = 'Página inicial';
+        try { group = new URL(entry.url).hostname.replace(/^www\./,'') || entry.title; } catch {}
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push({ id:entry.id, title:entry.title, url:entry.url });
+      }
+      return [...groups].map(([name, items]) => ({ name, items }));
+    }
+    case 'profile:list': return profileSnapshot();
+    case 'profile:create': return createProfile(payload?.name);
+    case 'profile:switch': return switchProfile(payload);
     case 'extension:install': {
       const result = await dialog.showOpenDialog(win, { title: 'Selecionar extensão descompactada', properties: ['openDirectory'] });
       if (result.canceled || !result.filePaths[0]) break;
@@ -1274,7 +1541,7 @@ async function command(action, payload) {
     case 'extension:toggle': {
       const extension = store.extensions.find(entry => entry.id === payload?.id);
       if (!extension || typeof payload?.enabled !== 'boolean') break;
-      const ses = session.fromPartition('persist:cypher');
+      const ses = session.fromPartition(normalPartition());
       if (payload.enabled) {
         const loaded = await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
         extension.name = String(loaded.name || extension.name).slice(0,128);
@@ -1290,7 +1557,7 @@ async function command(action, payload) {
       if (!extension) break;
       const result = await dialog.showMessageBox(win, { type: 'question', title: 'Remover extensão', message: `Remover ${extension.name} do Cypher?`, detail: 'A pasta original não será apagada.', buttons: ['Cancelar','Remover'], defaultId: 0, cancelId: 0 });
       if (result.response !== 1) break;
-      const ses = session.fromPartition('persist:cypher');
+      const ses = session.fromPartition(normalPartition());
       if (ses.extensions.getExtension(extension.id)) ses.extensions.removeExtension(extension.id);
       store.extensions = store.extensions.filter(entry => entry.id !== extension.id);
       if (extension.source === 'chrome-web-store') {
@@ -1305,6 +1572,19 @@ async function command(action, payload) {
     case 'site-permission:remove': {
       store.sitePermissions = store.sitePermissions.filter(entry => entry.id !== payload);
       persist(); emit(); break;
+    }
+    case 'site-data:clear': {
+      const candidate = tab?.url?.startsWith('cypher://') ? tab.lastExternalUrl : tab?.url;
+      let origin = '';
+      try { const url = new URL(String(payload?.origin || '')); if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error(); origin = url.origin; } catch { throw new Error('Origem do site inválida.'); }
+      let currentOrigin = ''; try { currentOrigin = new URL(candidate).origin; } catch {}
+      if (!tab || tab.private || tab.connectionMode !== 'normal' || origin !== currentOrigin) throw new Error('A limpeza só pode ser feita para a página normal atualmente selecionada.');
+      await session.fromPartition(sessionPartition(tab)).clearStorageData({ origin });
+      store.sitePermissions = store.sitePermissions.filter(entry => entry.origin !== origin);
+      const hostname = new URL(origin).hostname.toLowerCase();
+      store.settings.trackingExceptions = store.settings.trackingExceptions.filter(entry => entry !== hostname);
+      store.settings.popupExceptions = store.settings.popupExceptions.filter(entry => entry !== hostname);
+      persist(); emit(); return true;
     }
     case 'site-permission:clear': store.sitePermissions = []; persist(); emit(); break;
     case 'popup:action': {
@@ -1658,12 +1938,14 @@ app.whenReady().then(async () => {
   });
   protocol.registerSource('cypher-ui', { routes: [{ match: { host: 'app' }, source: { type: 'directory', root: path.resolve(__dirname, '../dist'), index: 'index.html', headers: { 'X-Content-Type-Options': 'nosniff' } } }] });
   loadTrackerEngine();
+  loadProfileRegistry();
   loadStore();
   registerProtonIpcBridge();
   await loadBuiltInProtonVpn();
   mediaTimer = setInterval(() => {
     for (const tab of tabs) if (tab.mediaPlaying || tab.audible) refreshMediaInfo(tab, tab.mediaPlaying);
   }, 1500);
+  setInterval(suspendIdleTabs, 60_000);
   await loadStoredExtensions();
   updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });
   if (process.platform === 'win32' && store.settings.startWithWindows) {
@@ -1711,7 +1993,7 @@ app.whenReady().then(async () => {
   const startupMode = store.settings.startupMode;
   if (startupMode === 'restore') {
     for (const savedTab of store.savedTabs.slice(0,50)) {
-      try { const id = addTab(savedTab.url, false, store.settings.connectionMode); tabs.find(t => t.id === id).pinned = !!savedTab.pinned; } catch {}
+      try { const id = addTab(savedTab.url, false, store.settings.connectionMode); const restored = tabs.find(t => t.id === id); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
     }
   } else if (startupMode === 'specific') {
     for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }

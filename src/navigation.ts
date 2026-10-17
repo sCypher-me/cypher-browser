@@ -8,6 +8,7 @@ export const browserPages = {
   security: 'security',
   settings: 'settings',
   profile: 'profile',
+  productivity: 'productivity',
 } as const;
 
 export type InternalPage = typeof browserPages[keyof typeof browserPages];

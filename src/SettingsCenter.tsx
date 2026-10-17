@@ -54,7 +54,9 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'appearance-motion', title: 'Animações', detail: 'Movimento e transições da interface', category: 'appearance' },
   { id: 'tabs-position', title: 'Posição das abas', detail: 'Abas laterais ou verticais no topo', category: 'tabs' },
   { id: 'tabs-width', title: 'Largura das abas', detail: 'Barra lateral compacta ou largura personalizada', category: 'tabs' },
+  { id: 'tabs-memory-saver', title: 'Economia de memória', detail: 'Suspender páginas inativas e recarregá-las quando selecionadas', category: 'tabs' },
   { id: 'tabs-bookmark-bar', title: 'Barra de favoritos', detail: 'Exibir atalhos para seus sites favoritos sob a barra de endereço', category: 'tabs' },
+  { id: 'tabs-memory-saver', title: 'Economia de memória', detail: 'Suspender abas inativas com segurança e reabri-las ao voltar', category: 'tabs' },
   { id: 'home-editor', title: 'Widgets da página inicial', detail: 'Editar, mover, redimensionar e personalizar widgets', category: 'home' },
   { id: 'search-engine', title: 'Mecanismo de pesquisa', detail: 'DuckDuckGo, Google, Bing ou um mecanismo personalizado', category: 'search' },
   { id: 'search-custom-url', title: 'URL de pesquisa personalizada', detail: 'Configure uma URL HTTPS que contenha {query}', category: 'search' },
@@ -125,6 +127,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
   const [passwordOrigin, setPasswordOrigin] = useState('');
   const [passwordUsername, setPasswordUsername] = useState('');
   const [passwordValue, setPasswordValue] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [passwordTargetTab, setPasswordTargetTab] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -239,6 +242,8 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             {s.tabPosition === 'side' && <Row id="tabs-width-slider" title="Largura da barra lateral" detail={`${s.sidebarWidth} px`}><input className="sc-range" aria-label="Largura da barra lateral" type="range" min="210" max="360" value={s.sidebarWidth} onChange={event => onSettings({ sidebarWidth: +event.target.value })}/><span className="sc-value">{s.sidebarWidth}px</span></Row>}
             <Row id="tabs-links" title="Abrir links em nova aba" detail="Links que abrem janelas serão enviados para uma nova aba"><Switch label="Abrir links em nova aba" checked={s.openLinksInNewTab} onChange={() => onSettings({ openLinksInNewTab: !s.openLinksInNewTab })}/></Row>
             <Row id="tabs-bookmark-bar" title="Mostrar barra de favoritos" detail="Exibe os primeiros favoritos logo abaixo da barra de endereço"><Switch label="Mostrar barra de favoritos" checked={s.showBookmarksBar} onChange={() => onSettings({ showBookmarksBar: !s.showBookmarksBar })}/></Row>
+            <Row id="tabs-memory-saver" title="Suspender abas inativas" detail="Libera o processo de páginas normais sem atividade. A página recarrega quando você volta; abas com formulário alterado, áudio, mídia, privadas, Tor e I2P são preservadas."><Switch label="Economia de memória" checked={s.memorySaverEnabled} onChange={() => onSettings({ memorySaverEnabled: !s.memorySaverEnabled })}/></Row>
+            {s.memorySaverEnabled && <Row title="Tempo até suspender" detail={`Aba sem uso por ${s.memorySaverMinutes} minutos`}><select className="sc-select" value={s.memorySaverMinutes} onChange={event => onSettings({ memorySaverMinutes:+event.target.value })}><option value={5}>5 minutos</option><option value={10}>10 minutos</option><option value={20}>20 minutos</option><option value={30}>30 minutos</option><option value={60}>1 hora</option><option value={120}>2 horas</option></select></Row>}
           </Panel>}
 
           {category === 'home' && <Panel id="home-editor" eyebrow="PÁGINA INICIAL" title="Uma tela feita por você" detail="Adicione widgets, arraste para organizar e abra as opções de cada um para personalizar o conteúdo e o design." icon={LayoutTemplate}>
@@ -324,7 +329,8 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
               }}>
                 <label>Endereço do site<input className="sc-text-input" type="url" required value={passwordOrigin} onChange={event => setPasswordOrigin(event.target.value)} placeholder="https://exemplo.com"/></label>
                 <label>Usuário ou e-mail<input className="sc-text-input" autoComplete="username" required value={passwordUsername} onChange={event => setPasswordUsername(event.target.value)} placeholder="nome@exemplo.com"/></label>
-                <label>Senha<input className="sc-text-input" type="password" autoComplete="new-password" required value={passwordValue} onChange={event => setPasswordValue(event.target.value)} placeholder="Armazenada com criptografia do sistema"/></label>
+                <label>Senha<input className="sc-text-input" type={passwordVisible ? 'text' : 'password'} autoComplete="new-password" required value={passwordValue} onChange={event => setPasswordValue(event.target.value)} placeholder="Armazenada com criptografia do sistema"/></label>
+                <div className="sc-password-actions"><button type="button" className="sc-button sc-button-subtle" onClick={() => setPasswordVisible(value => !value)}>{passwordVisible ? 'Ocultar' : 'Revelar senha'}</button><button type="button" className="sc-button sc-button-subtle" onClick={async () => { const generated = await command('password:generate',{ length:24 }); if (typeof generated === 'string') { setPasswordValue(generated); setPasswordVisible(true); } }}>Gerar senha segura</button><button type="button" className="sc-button sc-button-subtle" disabled={!passwordValue} onClick={() => void command('clipboard:write',passwordValue)}>Copiar</button><span className="sc-password-strength">{passwordValue.length >= 20 ? 'Forte' : passwordValue.length >= 12 ? 'Boa' : passwordValue.length ? 'Fraca' : 'Até 64 caracteres'}</span></div>
                 <button className="sc-button sc-button-primary" disabled={passwordBusy}>{passwordBusy ? 'Salvando…' : 'Salvar senha neste dispositivo'} <LockKeyhole size={14}/></button>
               </form>
               <div className="sc-password-list-heading"><strong>Logins guardados</strong><span>{savedPasswords.length}</span></div>

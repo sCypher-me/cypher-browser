@@ -1,6 +1,6 @@
 # Cypher
 
-Navegador desktop para Windows com interface própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.17**, com navegação real em Chromium através do Electron.
+Navegador desktop para Windows com interface própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.25**, com navegação real em Chromium através do Electron.
 
 ## Executar
 
@@ -15,13 +15,13 @@ npm start
 
 Para desenvolver com atualização da interface: `npm run dev`.
 
-Para gerar as duas opções para Windows: `npm run dist`. O processo baixa e valida os runtimes nativos do Tor e do i2pd antes de empacotar. O instalador autoral `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O Setup é um aplicativo próprio do Cypher, com interface e fluxo desenhados para o navegador, escolha de pasta, atalhos, progresso de instalação, tela de conclusão e desinstalador visual correspondente. Atualizações silenciosas usam o mesmo mecanismo, mantêm os atalhos escolhidos e reabrem o navegador quando terminam. O perfil de navegação é preservado ao atualizar e também ao desinstalar, a menos que a pessoa escolha removê-lo. O pacote local ainda não tem assinatura digital.
+Para gerar as duas opções para Windows: `npm run dist`. O processo baixa e valida os runtimes nativos do Tor e do i2pd antes de empacotar. O instalador autoral `Cypher-<versão>-Setup.exe` e o aplicativo portátil `Cypher-<versão>-Windows.exe` ficam em `release/`. Para gerar somente um deles, use `npm run dist:installer` ou `npm run dist:portable`. O Setup é um aplicativo próprio do Cypher, com interface e fluxo desenhados para o navegador, escolha de pasta, atalhos, progresso de instalação, tela de conclusão e desinstalador visual correspondente. Atualizações silenciosas usam o mesmo mecanismo, mantêm os atalhos escolhidos e reabrem o navegador quando terminam. O perfil de navegação é preservado ao atualizar e também ao desinstalar, a menos que a pessoa escolha removê-lo. O workflow exige assinatura Ed25519 do manifesto nas próximas releases; os executáveis ainda não têm assinatura Authenticode. Builds locais não recebem automaticamente as chaves oficiais.
 
 ## Atualizações automáticas
 
-O Cypher consulta em segundo plano o manifesto `latest.json` do GitHub Releases. A ação `.github/workflows/release.yml` publica as duas versões e seus hashes SHA-512. Antes de atualizar, o aplicativo confere a integridade do arquivo; a versão portátil faz a troca segura do executável e a versão instalada executa o instalador em modo silencioso, reabre o navegador e exibe a animação de atualização. O link HTTPS de `github.com` e dos assets das Releases é o canal de distribuição, então não é preciso contratar ou configurar um servidor separado.
+O Cypher consulta em segundo plano o manifesto `latest.json` do GitHub Releases. A ação `.github/workflows/release.yml` publica as duas versões, seus hashes SHA-512 e a assinatura Ed25519. Instalações compiladas com a chave pública oficial validam a assinatura do manifesto e a integridade do arquivo antes de atualizar; versões anteriores sem a chave pública continuam usando HTTPS e SHA-512. A versão portátil faz a troca segura do executável e a versão instalada executa o instalador em modo silencioso, reabre o navegador e exibe a animação de atualização. O link HTTPS de `github.com` e dos assets das Releases é o canal de distribuição, então não é preciso contratar ou configurar um servidor separado. A publicação falha se as chaves de assinatura não estiverem configuradas no GitHub Actions.
 
-O canal está configurado para `sCypher-me/cypher-browser`. Até a primeira Release publicada, ainda não haverá uma versão nova para instalar. Para lançar uma versão, aumente a versão em `package.json` e crie uma tag correspondente (por exemplo, `v0.7.4`); a ação compila os executáveis, anexa o manifesto e publica a Release.
+O canal está configurado para `sCypher-me/cypher-browser`. Para lançar uma versão, aumente a versão em `package.json` e crie uma tag correspondente no formato `vX.Y.Z`; a ação verifica os tipos, executa testes unitários e smoke tests, audita dependências, compila os executáveis, assina o manifesto e publica a Release.
 
 ## Implementado
 
@@ -29,9 +29,11 @@ O canal está configurado para `sCypher-me/cypher-browser`. Até a primeira Rele
 - Abas laterais ou horizontais, largura configurável, modo compacto, ordenação por arraste, fixação, fechamento e reabertura de abas.
 - Endereços e pesquisa com DuckDuckGo, Google ou Bing; voltar, avançar, recarregar, parar e links em nova aba.
 - Rota de conexão: Normal (proxy do sistema), Tor e I2P. O instalador inclui os runtimes oficiais do Tor e do i2pd; os botões iniciam o serviço selecionado, aplicam a rota às abas e impedem que as duas redes fiquem ativas ao mesmo tempo. Tor usa SOCKS5 na porta 9050; i2pd usa o proxy HTTP na porta 4444. Os dados dos roteadores ficam no perfil local do usuário. I2P é voltado a sites `.i2p`; navegar na web pública depende de um outproxy externo configurado no roteador.
-- VPN nativa no Windows: lista perfis pessoais e compartilhados, abre o diálogo nativo para conectar, acompanha o estado e permite desconectar. A configuração e as credenciais ficam no Windows; é necessário configurar um perfil e contratar/fornecer um servidor VPN. O roteamento segue as regras (túnel dividido ou completo) desse perfil.
+- Proton VPN integrada ao navegador: o cliente vem incluído no Cypher, autentica pela conta Proton e aplica o proxy às abas normais sem instalar outro aplicativo. A conta gratuita e a disponibilidade dos servidores dependem da Proton; a VPN não cobre outros aplicativos do Windows e as rotas Tor/I2P continuam separadas.
 - Abas privadas com sessão em memória, sem histórico local ou restauração; dados da sessão são limpos ao fechar a última aba privada. Downloads privados permanecem no disco, como em outros navegadores.
 - Favoritos, histórico local, restauração de abas normais e preferências persistentes.
+- Cofre de senhas local com criptografia do sistema operacional e preenchimento automático opcional por origem. O preenchimento fica desativado em abas privadas, Tor e I2P; ainda não há suporte a passkeys nem importação de cofres de outros navegadores.
+- Sincronização de favoritos, histórico, preferências e Home por WebDAV HTTPS escolhido pelo usuário. O servidor WebDAV pode ler o JSON sincronizado; senhas de sites, extensões e sessões privadas não são enviados.
 - Downloads com progresso, pausa, continuação enquanto o processo está aberto, cancelamento e acesso à pasta do arquivo. Downloads em andamento não são retomados automaticamente após reiniciar.
 - Localizar na página, zoom, impressão, salvar HTML, tela cheia, ferramentas de desenvolvedor e menu de contexto.
 - Solicitação de permissões para câmera/microfone, localização, notificações, tela cheia e área de transferência. É possível permitir uma vez, lembrar a escolha por site, bloquear ou rever/remover as regras na página Segurança; abas privadas nunca persistem essas escolhas.
@@ -61,7 +63,7 @@ O formato `schemaVersion: 1` aceita nome, autor, descrição e preferências vis
 
 ## Próximas etapas
 
-O objetivo é um navegador completo. O Cypher ainda precisa de gerenciador de senhas e passkeys, autofill, importação de dados de outros navegadores, grupos e espaços de abas, instalação de PWAs, leitor e tradução integrados, restauração de sessões avançada e fluxo dedicado para DRM. A sincronização disponível é por servidor WebDAV do próprio usuário; ainda não existe nuvem Cypher. O formato `.cypherext` empacota extensões Chromium, mas ainda não oferece uma API proprietária própria. O Electron não fornece equivalência total às APIs e serviços do Chrome; cada atualização do motor, extensão e fluxo de autenticação precisa de validação. Consulte a [auditoria de prontidão](docs/browser-readiness-audit.md) para a avaliação completa e uma ordem sugerida de trabalho.
+Próximos passos: passkeys e importação/exportação de dados; perfis isolados, grupos de abas e recuperação de sessão após falha; PWAs e modo de leitura; sincronização ponta a ponta; e uma API própria para extensões Cypher. O Electron não oferece equivalência total às APIs, serviços e DRM do Chrome, então compatibilidade deve ser validada a cada atualização. Consulte a [auditoria de prontidão](docs/browser-readiness-audit.md) para lacunas e prioridades.
 
 O perfil local fica em `%APPDATA%/Cypher/`. Nunca é enviado para um servidor do Cypher; os sites e o mecanismo de busca recebem as requisições de navegação normalmente. Uma aba privada não torna a navegação anônima para sites ou provedores de internet.
 

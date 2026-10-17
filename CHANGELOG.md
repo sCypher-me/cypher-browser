@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.25] - 2026-10-17
+- Espaços de trabalho salvam conjuntos separados de abas; a área Espaços e pesquisa inclui fila de leitura com notas e sugestões locais de grupos por domínio.
+- Perfis adicionais isolam preferências, histórico, favoritos, senhas e armazenamento de sites em arquivos e partições próprios; navegação de visitante usa sessão temporária.
+- Economia de memória suspende após um limite configurável páginas normais ociosas sem formulários alterados ou mídia ativa e as recarrega ao voltar.
+- O painel de privacidade mostra bloqueios por site, permite criar exceções de rastreamento e limpar dados e permissões daquele domínio.
+- O cofre de senhas ganhou geração criptograficamente segura, revelar/ocultar e cópia da senha.
+- O fluxo de publicação agora exige assinatura Ed25519 e executa verificações de tipos, testes unitários e smoke tests antes de empacotar.
+- A CI valida PRs e atualizações de dependências; Dependabot verifica npm e GitHub Actions semanalmente.
+- README e auditoria de prontidão atualizados para refletir a versão 0.7.25 e os recursos atuais.
+
 ## [0.7.24] - 2026-10-17
 - Configurações, Mods, Histórico, Downloads e outras páginas internas agora reutilizam a aba atual em vez de abrir uma nova.
 

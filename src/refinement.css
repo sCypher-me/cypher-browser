@@ -429,3 +429,4 @@ kbd, time, .tabs-heading, .link-date { font-variant-numeric: tabular-nums; }
 .widget-body::-webkit-scrollbar-thumb { border-radius:8px;background:color-mix(in srgb,var(--accent) 30%,transparent); }
 .widget-body::-webkit-scrollbar-track { background:transparent; }
 @media(max-width:1100px) { .connection-launchers>button { padding:0 6px;gap:4px;font-size:var(--ui-font-8,8px); } .connection-launchers>button svg { width:12px;height:12px; } }
+.tracker-popover>.tracker-site-clear{display:block;width:calc(100% - 28px);margin:7px 14px 10px;padding:9px 10px;border:1px solid #ffffff12;border-radius:7px;text-align:left;color:#aab7a6;font-size:var(--ui-font-8,8px)}.tracker-popover>.tracker-site-clear:hover{border-color:color-mix(in srgb,var(--accent) 40%,transparent);color:var(--accent)}

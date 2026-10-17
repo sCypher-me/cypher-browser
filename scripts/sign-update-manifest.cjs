@@ -19,10 +19,7 @@ function main() {
 
   const privatePem = normalizePem(process.env.CYPHER_UPDATE_SIGNING_PRIVATE_KEY);
   const publicPem = normalizePem(process.env.CYPHER_UPDATE_SIGNING_PUBLIC_KEY);
-  if (!privatePem && !publicPem) {
-    console.warn('Manifesto sem assinatura: as chaves de assinatura não estão configuradas.');
-    return;
-  }
+  if (!privatePem && !publicPem) throw new Error('A assinatura Ed25519 é obrigatória; configure CYPHER_UPDATE_SIGNING_PRIVATE_KEY e CYPHER_UPDATE_SIGNING_PUBLIC_KEY.');
   if (!privatePem || !publicPem) throw new Error('As chaves privada e pública de assinatura precisam ser configuradas juntas.');
 
   const privateKey = createPrivateKey(privatePem);

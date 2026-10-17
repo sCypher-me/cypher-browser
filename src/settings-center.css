@@ -257,6 +257,10 @@
 .sc-password-site strong { overflow:hidden;color:#cbd7c5;font-size:var(--ui-font-9,9px);font-weight:500;text-overflow:ellipsis;white-space:nowrap; }
 .sc-password-site small { color:#899587;font-size:var(--ui-font-8,8px); }
 .sc-password-actions { display:flex;gap:6px; }
+.sc-password-form { grid-template-columns:repeat(3,minmax(120px,1fr)); }
+.sc-password-form>.sc-password-actions { grid-column:1 / -1;align-items:center;flex-wrap:wrap; }
+.sc-password-form>.sc-button-primary { grid-column:1 / -1;justify-self:start; }
+.sc-password-strength { margin-left:auto;color:#91a389;font-size:var(--ui-font-8,8px); }
 .sc-password-empty { padding:13px 2px;color:#899587;font-size:var(--ui-font-9,9px); }
 @media(max-width:1120px) {
   .sc-layout { grid-template-columns:1fr; }
@@ -266,5 +270,6 @@
 }
 @media(max-width:760px) {
   .sc-password-form { grid-template-columns:1fr;align-items:stretch; }
+  .sc-password-form>.sc-password-actions,.sc-password-form>.sc-button-primary { grid-column:auto; }
   .sc-password-entry { align-items:flex-start;flex-direction:column; }
 }

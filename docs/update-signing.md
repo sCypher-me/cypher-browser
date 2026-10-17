@@ -10,7 +10,7 @@ O atualizador pode validar a assinatura Ed25519 de `latest.json` antes de oferec
 4. Cadastre a chave pública correspondente como **Actions variable** `CYPHER_UPDATE_SIGNING_PUBLIC_KEY`.
 5. Publique uma nova versão do Cypher. O workflow confere se as duas chaves correspondem, grava a chave pública no aplicativo e assina o manifesto com Ed25519.
 
-O workflow aborta se apenas uma chave for definida ou se o par não corresponder. Sem nenhuma chave configurada, ele ainda publica no modo legado, protegido por HTTPS e SHA-512, e registra um aviso. Esse modo detecta corrupção do download, mas não autentica criptograficamente quem publicou o manifesto.
+O workflow aborta se as chaves estiverem ausentes, apenas uma estiver definida ou se o par não corresponder. A assinatura Ed25519 é obrigatória para publicar novas releases. SHA-512 continua sendo conferido para detectar corrupção do arquivo baixado; a assinatura autentica o manifesto e a origem da atualização para versões que já fixam a chave pública.
 
 As versões do Cypher compiladas com uma chave pública fixada recusam manifestos sem assinatura ou com assinatura inválida. Versões anteriores continuam ignorando o campo adicional e validam o hash SHA-512, permitindo a transição sem interromper o atualizador já instalado.
 

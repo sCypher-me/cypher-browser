@@ -29,6 +29,10 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
+      - name: Verificar sintaxe e tipos
+        run: npm run check
+      - name: Executar testes unitários
+        run: npm test
       - name: Bloquear publicação com vulnerabilidades altas conhecidas
         run: npm audit --audit-level=high
       - name: Baixar e verificar Tor e i2pd nativos
@@ -45,10 +49,12 @@ jobs:
           $hasPublicKey = -not [string]::IsNullOrWhiteSpace($env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY)
           $hasPrivateKey = -not [string]::IsNullOrWhiteSpace($env:CYPHER_UPDATE_SIGNING_PRIVATE_KEY)
           if ($hasPublicKey -ne $hasPrivateKey) { throw "Configure juntos CYPHER_UPDATE_SIGNING_PUBLIC_KEY (Actions variable) e CYPHER_UPDATE_SIGNING_PRIVATE_KEY (Actions secret)." }
-          if (-not $hasPublicKey) { Write-Warning "Chaves de assinatura ausentes. O manifesto será publicado no modo legado, protegido por HTTPS e SHA-512, sem autenticação criptográfica do publicador." }
+          if (-not $hasPublicKey) { throw "A publicação exige assinatura Ed25519. Configure CYPHER_UPDATE_SIGNING_PUBLIC_KEY (Actions variable) e CYPHER_UPDATE_SIGNING_PRIVATE_KEY (Actions secret)." }
           @{ repository = $env:GITHUB_REPOSITORY; updateSigningPublicKey = $env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
       - name: Compilar a interface do Cypher
         run: npm run build
+      - name: Executar smoke tests do navegador
+        run: npm run test:smoke
       - name: Gerar aplicativo Windows e versão portátil
         run: npx electron-builder --win dir portable --publish never
       - name: Compilar o instalador autoral Cypher

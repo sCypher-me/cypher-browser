@@ -1,6 +1,6 @@
 # Auditoria de prontidão do Cypher
 
-**Base analisada:** código e documentação do Cypher 0.7.17. Esta auditoria descreve o estado do repositório, não certifica a segurança de uma versão publicada.
+**Base analisada:** código e documentação do Cypher 0.7.25. Revisão estática do repositório; não certifica a segurança de uma versão publicada nem substitui testes em máquina limpa.
 
 ## O que já existe
 
@@ -10,25 +10,25 @@
 | Organização | Favoritos, histórico, restauração de abas, abas privadas, preferências de início e Home personalizável com widgets. |
 | Proteções | Sandbox, isolamento de contexto, Node desativado nas páginas, permissões por site, filtro local de rastreadores e controles de cookies/WebRTC. |
 | Rotas especiais | Tor e I2P incluídos como proxies locais; Proton VPN é integrado pelo navegador e depende do serviço/conta do provedor. |
-| Extensões | Pastas locais e pacotes assinados da Chrome Web Store, com compatibilidade parcial das APIs Chromium/Electron. Pacotes `.cypherext` agora têm formato e importação próprios. |
-| Perfil e dados | Perfil local. Sincronização disponível por WebDAV configurado pelo usuário; não há nuvem Cypher. |
-| Distribuição | Atualizações por GitHub Releases com hash SHA-512. O atualizador agora aceita e valida manifestos Ed25519 quando a chave pública oficial está fixada no aplicativo; as chaves ainda precisam ser configuradas no GitHub Actions para ativar essa proteção nas releases. A auditoria de dependências está agendada semanalmente e bloqueia releases com alertas altos ou críticos. O instalador ainda não tem assinatura Authenticode. |
+| Extensões | Instalação pela Chrome Web Store, pastas locais e pacotes `.cypherext`, com compatibilidade parcial das APIs Chromium/Electron. Pacotes `.cypherext` não têm assinatura independente do autor. |
+| Perfil e dados | Perfil local, cofre de senhas com `safeStorage` e preenchimento automático opcional em navegação normal. Sincronização de favoritos, histórico, preferências e Home via WebDAV; os dados sincronizados são JSON legível pelo servidor, não há nuvem Cypher nem criptografia ponta a ponta. |
+| Distribuição | Atualizações por GitHub Releases com SHA-512 e assinatura Ed25519 obrigatória no workflow para novas releases. A publicação roda checagem de tipos, testes unitários, smoke tests e auditoria de dependências. O instalador ainda não tem assinatura Authenticode. |
 
 ## Principais lacunas para competir com navegadores atuais
 
 ### Prioridade 0 — confiança e segurança de lançamento
 
-- Assinar digitalmente o instalador e os binários com Authenticode; deixar a origem da atualização verificável além do hash do arquivo. A validação Ed25519 do manifesto foi implementada, mas só fica ativa após configurar as chaves descritas em [update-signing.md](update-signing.md).
-- Formalizar o ciclo de atualizações de Chromium/Electron, com verificações automatizadas de segurança, política de suporte e recuperação se uma versão falhar. A verificação semanal de dependências e o bloqueio de releases com alertas altos/críticos foram adicionados; falta definir e automatizar a cadência de atualização do Chromium/Electron.
+- Configurar e manter as chaves Ed25519 obrigatórias no GitHub Actions antes da próxima release. Assinar também o instalador e os binários com Authenticode; a assinatura do manifesto não substitui a assinatura do executável.
+- Definir a política de suporte e recuperação de versões do Chromium/Electron. Dependabot agora abre atualizações semanais de npm e GitHub Actions, e a CI valida PRs; ainda é necessário revisar e aprovar rapidamente as atualizações do motor e manter testes de recuperação se uma versão falhar.
 - Testar vazamentos de DNS/WebRTC e isolamento das rotas Tor/I2P. O proxy Tor do Cypher não oferece, por si só, a resistência a fingerprinting do Tor Browser; evitar prometer equivalência até implementar e auditar proteções de padronização e isolamento.
 - Testar compatibilidade e acessibilidade em fluxos reais: login, reprodução protegida, chamadas, permissões, leitor de tela e navegação só por teclado.
 
 ### Prioridade 1 — recursos esperados no dia a dia
 
-- Gerenciador de senhas com preenchimento seguro e suporte a passkeys.
+- Passkeys, importação/exportação de dados e cobertura de testes do cofre atual de senhas e do preenchimento automático.
 - Importar e exportar favoritos, senhas, histórico e configurações de outros navegadores.
 - Perfis realmente separados, com dados, extensões, contas e inicializações próprios.
-- Sincronização entre dispositivos com criptografia ponta a ponta, além da opção atual de WebDAV.
+- Sincronização entre dispositivos com criptografia ponta a ponta; a opção atual WebDAV envia um JSON que o servidor pode ler.
 - Grupos de abas, espaços de trabalho, divisão de tela e recuperação de sessão após falha.
 - Instalação e gerenciamento de PWAs, modo de leitura e tradução integrada com controles claros de privacidade.
 - Processo consistente de permissões para câmera, microfone, localização, notificações, pop-ups e downloads, com visão por site.
@@ -43,7 +43,7 @@
 
 ## Ordem sugerida
 
-1. Assinatura e atualização segura; rotina de atualização de Chromium; testes de segurança e compatibilidade.
+1. Configurar a assinatura Ed25519 no GitHub, adicionar Authenticode e validar o instalador/atualizador em Windows limpo; manter uma cadência documentada de atualização do Chromium/Electron.
 2. Importação/exportação, perfis separados, grupos de abas e recuperação de sessão.
 3. Passkeys, gerenciador de senhas e sync criptografado com documentação de recuperação.
 4. PWAs, modo de leitura, tradução e controles de privacidade por site.
