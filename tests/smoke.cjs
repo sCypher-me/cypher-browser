@@ -45,6 +45,7 @@ server.listen(0,'127.0.0.1', async () => {
     const click = selector => win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click()`);
     await click('.home-edit-trigger');
     await until(() => win.webContents.executeJavaScript('!!document.querySelector(".home-editor")'), 'home editor');
+    await click('button[data-home-panel="widgets"]');
     await click('button[aria-label="Adicionar Notas"]');
     await until(() => win.webContents.executeJavaScript('!!document.querySelector(".widget-notes")'), 'notes draft');
     assert.equal((await invoke('state')).settings.home.widgets.length,4,'draft is not saved early');
@@ -62,6 +63,7 @@ server.listen(0,'127.0.0.1', async () => {
       handle.dispatchEvent(new DragEvent('dragend',{ bubbles:true,dataTransfer:data }));
     })()`);
     await until(() => win.webContents.executeJavaScript('document.querySelector(".widget-notes").style.gridRow.startsWith("5")'),'drag moves widget');
+    await click('button[data-home-panel="widgets"]');
     await click('button[aria-label="Mover para cima"]');
     await click('button[aria-label="Mover para baixo"]');
     const setField = (selector,value) => win.webContents.executeJavaScript(`(() => { const input = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(value)}); input.dispatchEvent(new Event('input',{ bubbles:true })); })()`);
@@ -70,7 +72,8 @@ server.listen(0,'127.0.0.1', async () => {
     await setField('.widget-position-inputs input[aria-label="Altura"]','4');
     await click('button[aria-label="Adicionar Foco"]');
     await click('button[data-home-panel="content"]');
-    await setField('input[aria-label="Título principal"]','Meu espaço.');
+    await click('.home-widget[data-widget-type="welcome"]');
+    await win.webContents.executeJavaScript(`(() => { const row=[...document.querySelectorAll('.home-editor-scroll label.editor-field')].find(item => item.querySelector('span')?.textContent.trim() === 'Título'); const input=row?.querySelector('input'); if (!input) throw new Error('Campo Título do widget Boas-vindas não encontrado.'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Meu espaço.'); input.dispatchEvent(new Event('input',{ bubbles:true })); })()`);
     await click('button[data-home-panel="widgets"]');
     await pause(250);
     fs.writeFileSync(path.join(screenshots,'cypher-home-editor.png'),(await win.webContents.capturePage()).toPNG());
@@ -87,6 +90,7 @@ server.listen(0,'127.0.0.1', async () => {
     await invoke('home:focus',{ action:'pause' });
     assert.equal((await invoke('state')).homeData.focus.endsAt,null);
     await click('.home-edit-trigger');
+    await click('button[data-home-panel="widgets"]');
     await click('button[aria-label="Adicionar Relógio"]');
     await click('button[aria-label="Cancelar edição da Home"]');
     assert.equal((await invoke('state')).settings.home.widgets.length,6,'cancel discards draft');
