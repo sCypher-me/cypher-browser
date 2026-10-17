@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.7.24] - 2026-10-17
+- Configurações, Mods, Histórico, Downloads e outras páginas internas agora reutilizam a aba atual em vez de abrir uma nova.
+
 ## [0.7.23] - 2026-10-17
 - Os popovers de proteção agora se abrem alinhados abaixo dos respectivos botões na barra de endereço.
 

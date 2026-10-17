@@ -90,7 +90,7 @@ export default function MediaPlayerWindow() {
       const element = audio.current;
       if (!settings?.backgroundMusicData || !element) {
         await command('media:window:close');
-        await command('tab:new', { url:'cypher://settings' });
+        await command('navigate', 'cypher://settings');
         return;
       }
       if (element.paused) {
@@ -106,7 +106,7 @@ export default function MediaPlayerWindow() {
     const element = audio.current;
     if (!settings?.backgroundMusicData || !element) {
       await command('media:window:close');
-      await command('tab:new', { url:'cypher://settings' });
+      await command('navigate', 'cypher://settings');
       return;
     }
     try { await element.play(); await command('media:background:set', { enabled:true }); }

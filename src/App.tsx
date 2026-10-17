@@ -67,7 +67,9 @@ export default function App() {
     setSettingsDestination({ category: options.category || 'appearance', focusId: name === 'settings' ? options.focusId : undefined });
     setSecurityFocusId(name === 'security' ? options.focusId || '' : '');
     const existing = state.tabs.find(t => t.url === `cypher://${name}` && !t.private);
-    void act(existing ? 'tab:select' : 'tab:new', existing ? existing.id : { url: `cypher://${name}` });
+    if (existing) void act('tab:select', existing.id);
+    else if (tab) void act('navigate', `cypher://${name}`);
+    else void act('tab:new', { url: `cypher://${name}` });
   }
   function navigate(value: string) { setMenu(false); setTabMenu(null); setAddressFocus(false); addressRef.current?.blur(); void act('navigate', value); }
   const settings = (patch: Partial<Settings>) => { void act('settings', patch); };
