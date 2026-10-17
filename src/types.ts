@@ -12,6 +12,7 @@ export interface Settings {
   restoreSession: boolean; startupMode: 'home' | 'restore' | 'specific'; startupPages: string[]; showHomeFirst: boolean;
   openLinksInNewTab: boolean; showSearchSuggestions: boolean; sendDoNotTrack: boolean;
   blockAds: boolean; blockTrackers: boolean; blockThirdPartyCookies: boolean;
+  blockPopups: boolean; popupExceptions: string[];
   passwordAutofillEnabled: boolean; trackingExceptions: string[];
   preferredLanguages: string[]; spellCheckEnabled: boolean; spellCheckLanguages: string[]; translationEnabled: boolean;
   hardwareAcceleration: boolean; webrtcPolicy: 'default' | 'default_public_and_private_interfaces' | 'default_public_interface_only' | 'disable_non_proxied_udp';
@@ -31,9 +32,11 @@ export interface HomeTask { id: string; title: string; done: boolean }
 export interface HomeData { notes: Record<string,string>; focus: FocusTimerData; focusById?: Record<string,FocusTimerData>; tasksById?: Record<string,HomeTask[]> }
 export interface UpdateStatus { state: 'unconfigured' | 'unsupported' | 'idle' | 'checking' | 'up-to-date' | 'available' | 'dismissed' | 'downloading' | 'restarting' | 'complete' | 'error'; currentVersion: string; version: string; progress: number; message: string; releaseNotes: string; repository: string }
 export interface TrackerProtectionStatus { available: boolean; adsAvailable: boolean; name: string; source: string; lastModified: string; fetchedAt?: string; networkRuleCount: number; adRuleCount: number; blockedRequests: number; blockedAds: number; error?: string }
+export interface PopupRequest { id: string; tabId: string; openerTitle: string; openerHost: string; url: string; count: number; date: number; canOpen: boolean; formPost: boolean; private: boolean; connectionMode: ConnectionMode }
+export interface PopupProtectionStatus { blockedCount: number; pending: PopupRequest[] }
 export interface SavedPassword { id: string; origin: string; username: string; updated: number }
 export interface ProfileSyncStatus { configured: boolean; endpoint: string; username: string; syncing: boolean; lastSync: number; error: string }
-export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus }
+export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus }
 declare global {
   interface Window { cypher: { invoke: (action: string, payload?: unknown) => Promise<any>; onState: (callback: (state: BrowserState) => void) => () => void; onShortcut: (callback: (action: string) => void) => () => void } }
 }

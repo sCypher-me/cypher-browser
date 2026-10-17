@@ -53,7 +53,8 @@ app.on('open-file', (event, packageFile) => {
   else pendingCypherPackages.push(packageFile);
 });
 let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
-const tabs = [], closedTabs = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
+const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
+let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
 const sitePermissionTypes = new Set(['media','geolocation','notifications','fullscreen','clipboard-sanitized-write']);
 let privatePartition = `cypher-private-${randomUUID()}`;
@@ -354,6 +355,7 @@ function snapshot() {
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, packageId, error }) => ({ id, name, version, enabled, source, packageId, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
     trackerProtection: trackerList,
+    popupProtection: { blockedCount: blockedPopupCount, pending: popupRequests.map(request => ({ ...request })) },
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
@@ -657,14 +659,53 @@ function registerProtonIpcBridge() {
     return { id:addTab(url.href, false, 'normal') };
   });
 }
-function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode = store.settings.connectionMode) {
+function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode = store.settings.connectionMode, activate = true, navigationOptions) {
   const url = resolveAddress(address, store.settings.searchEngine, store.settings.customSearchUrl);
   if (!['normal','tor','i2p'].includes(connectionMode)) connectionMode = store.settings.connectionMode;
   const tab = { id: randomUUID(), title: 'Nova aba', url: 'cypher://newtab', private: !!isPrivate,
     connectionMode, pinned: false, muted: false, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null };
-  tabs.push(tab); activeId = tab.id;
-  navigate(tab, url); emit();
+  tabs.push(tab); if (activate || !activeId) activeId = tab.id;
+  navigate(tab, url, navigationOptions); emit();
   return tab.id;
+}
+function isReplayablePopup(value, postBody) {
+  try {
+    const parsed = new URL(String(value || ''));
+    return ['http:','https:'].includes(parsed.protocol) && !parsed.username && !parsed.password && (!postBody || !!popupNavigationOptions(postBody));
+  } catch { return false; }
+}
+function popupNavigationOptions(postBody) {
+  if (!postBody) return undefined;
+  if (!Array.isArray(postBody.data) || !postBody.data.length || postBody.data.length > 1000 || !postBody.data.every(item => item && ['rawData','file'].includes(item.type))) return null;
+  let contentType = postBody.contentType;
+  if (contentType === 'multipart/form-data') {
+    if (typeof postBody.boundary !== 'string' || !postBody.boundary || postBody.boundary.length > 200 || /[\r\n]/.test(postBody.boundary)) return null;
+    contentType += `; boundary=${postBody.boundary}`;
+  } else if (contentType !== 'application/x-www-form-urlencoded') return null;
+  return { postData: postBody.data, extraHeaders: `Content-Type: ${contentType}\n` };
+}
+function queueBlockedPopup(tab, value, details = {}) {
+  const rawUrl = typeof value === 'string' && value ? value : 'about:blank';
+  const truncated = rawUrl.length > 2048;
+  let url = rawUrl.slice(0, 2048), canOpen = !truncated && !details.postBody && isReplayablePopup(rawUrl);
+  try {
+    const parsed = new URL(url);
+    parsed.username = ''; parsed.password = '';
+    url = ['http:','https:'].includes(parsed.protocol) ? parsed.href : 'about:blank';
+  } catch { url = 'about:blank'; }
+  let openerHost = '';
+  try { openerHost = new URL(tab.url).hostname.toLowerCase(); } catch {}
+  blockedPopupCount += 1;
+  const existing = popupRequests.find(request => request.tabId === tab.id && request.url === url && request.canOpen === canOpen);
+  if (existing) { existing.count += 1; existing.date = Date.now(); }
+  else popupRequests.unshift({ id: randomUUID(), tabId: tab.id, openerTitle: String(tab.title || openerHost || 'Página atual').slice(0,160), openerHost, url, count: 1, date: Date.now(), canOpen, formPost: !!details.postBody, private: !!tab.private, connectionMode: tab.connectionMode });
+  if (popupRequests.length > 40) popupRequests.length = 40;
+  emit();
+}
+function removePopupRequest(id) {
+  const index = popupRequests.findIndex(request => request.id === id);
+  if (index < 0) return null;
+  return popupRequests.splice(index, 1)[0];
 }
 function removeTab(tab) {
   const index = tabs.indexOf(tab);
@@ -1013,10 +1054,18 @@ function attachView(tab) {
   }
   wc.setZoomFactor(store.settings.defaultZoom);
   wc.setWebRTCIPHandlingPolicy(tab.connectionMode === 'normal' ? (protonProxyValue ? 'disable_non_proxied_udp' : store.settings.webrtcPolicy) : 'disable_non_proxied_udp');
-  wc.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) {
-      if (store.settings.openLinksInNewTab) addTab(url, tab.private, tab.connectionMode);
-      else setImmediate(() => { if (tabs.includes(tab)) navigate(tab, url); });
+  wc.setWindowOpenHandler(({ url, postBody }) => {
+    let openerHost = '';
+    try { openerHost = new URL(tab.url).hostname.toLowerCase(); } catch {}
+    const exception = openerHost && store.settings.popupExceptions.includes(openerHost);
+    const allowed = !store.settings.blockPopups || exception;
+    const replayable = isReplayablePopup(url, postBody);
+    if (!allowed || !replayable) {
+      queueBlockedPopup(tab, url, { postBody });
+    } else {
+      const loadOptions = popupNavigationOptions(postBody);
+      if (store.settings.openLinksInNewTab) addTab(url, tab.private, tab.connectionMode, true, loadOptions);
+      else setImmediate(() => { if (tabs.includes(tab)) navigate(tab, url, loadOptions); });
     }
     return { action: 'deny' };
   });
@@ -1075,7 +1124,7 @@ function attachView(tab) {
   });
   return view;
 }
-function navigate(tab, input) {
+function navigate(tab, input, navigationOptions) {
   const url = resolveAddress(input, store.settings.searchEngine, store.settings.customSearchUrl);
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname.endsWith('.onion') && tab.connectionMode !== 'tor') {
@@ -1095,7 +1144,7 @@ function navigate(tab, input) {
   const routeReady = tab.connectionMode === 'normal'
     ? Promise.resolve()
     : privacyServices.start(tab.connectionMode, connectionPort(tab.connectionMode));
-  void routeReady.then(() => proxyReady.get(ses) || Promise.resolve()).then(() => view.webContents.loadURL(url)).catch(error => {
+  void routeReady.then(() => proxyReady.get(ses) || Promise.resolve()).then(() => navigationOptions ? view.webContents.loadURL(url, navigationOptions) : view.webContents.loadURL(url)).catch(error => {
     tab.error = `Não foi possível iniciar a conexão ${tab.connectionMode}: ${error.message}`; tab.loading = false; layout(); emit();
   });
   layout(); emit();
@@ -1258,6 +1307,28 @@ async function command(action, payload) {
       persist(); emit(); break;
     }
     case 'site-permission:clear': store.sitePermissions = []; persist(); emit(); break;
+    case 'popup:action': {
+      const request = popupRequests.find(item => item.id === payload?.id);
+      const action = payload?.action;
+      if (!request || !['dismiss','open-background','open-current','allow-site'].includes(action)) break;
+      if (action === 'dismiss') { removePopupRequest(request.id); emit(); break; }
+      if (action === 'allow-site') {
+        if (request.private || request.connectionMode !== 'normal') throw new Error('Por privacidade, pop-ups de sessões privadas, Tor e I2P não podem criar exceções salvas.');
+        if (!request.openerHost) throw new Error('Não foi possível identificar o site que abriu este pop-up.');
+        setSettings({ popupExceptions: [...store.settings.popupExceptions, request.openerHost] });
+      }
+      if (!request.canOpen) {
+        if (action === 'allow-site') { removePopupRequest(request.id); emit(); break; }
+        throw new Error('Este pop-up não pode ser reaberto com segurança. A solicitação original não é um link HTTP ou HTTPS simples.');
+      }
+      const opener = tabs.find(item => item.id === request.tabId);
+      if (action === 'open-current') {
+        if (opener) { selectTab(opener.id); navigate(opener, request.url); }
+        else addTab(request.url, request.private, request.connectionMode);
+      } else addTab(request.url, request.private, request.connectionMode, false);
+      removePopupRequest(request.id); emit(); break;
+    }
+    case 'popup:clear': popupRequests.length = 0; emit(); break;
     case 'tab:new': return addTab(payload?.url, payload?.private, payload?.connectionMode);
     case 'tab:select': selectTab(payload); break;
     case 'tab:close': closeTab(payload); break;
@@ -1522,7 +1593,7 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, blockPopups: store.settings.blockPopups, popupExceptions: store.settings.popupExceptions, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;

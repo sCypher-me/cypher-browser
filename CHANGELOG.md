@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.7.21] - 2026-10-17
+- O bloqueador nativo de pop-ups impede novas janelas inesperadas, mostra solicitações pendentes na barra de endereço e permite decidir por site.
+- Após reiniciar com a atualização, o Cypher apresenta as mudanças em um onboarding passo a passo, com opção de pular ou começar a navegar.
+
 ## [0.7.20] - 2026-10-17
 - Os atalhos de proteção abrem diretamente as configurações de anúncios e rastreadores.
 - Os links de permissões levam à seção de permissões por site; as categorias de configurações ficam acessíveis pelo menu.
