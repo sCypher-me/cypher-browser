@@ -147,8 +147,14 @@ server.listen(0,'127.0.0.1', async () => {
     await invoke('tab:close',(await invoke('state')).activeId);
     await until(async () => (await invoke('state')).tabs.length === 1,'close fresh private');
     await view.webContents.executeJavaScript('document.getElementById("popup").click()');
-    await until(async () => (await invoke('state')).tabs.some(t => t.url === base + '/popup'), 'popup opens tab');
-    await invoke('tab:close',(await invoke('state')).activeId);
+    await until(async () => (await invoke('state')).popupProtection.pending.some(request => request.url === base + '/popup'),'popup waits for approval');
+    const popupRequest = (await invoke('state')).popupProtection.pending.find(request => request.url === base + '/popup');
+    const activeBeforePopup = (await invoke('state')).activeId;
+    await invoke('popup:action',{ id:popupRequest.id,action:'open-background' });
+    await until(async () => (await invoke('state')).tabs.some(t => t.url === base + '/popup'),'approved popup opens in background');
+    assert.equal((await invoke('state')).activeId,activeBeforePopup,'approved background popup keeps the current tab active');
+    const popupTab = (await invoke('state')).tabs.find(t => t.url === base + '/popup');
+    await invoke('tab:close',popupTab.id);
     await until(async () => (await invoke('state')).tabs.length === 1,'close popup');
     session.fromPartition('persist:cypher').once('will-download',(_event,item) => item.setSavePath(path.join(app.getPath('userData'),'cypher-test.txt')));
     await view.webContents.executeJavaScript('document.getElementById("download").click()');
