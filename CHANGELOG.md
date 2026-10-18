@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.29] - 2026-10-18
+- Mods de verdade: pacotes .cyphermod mudam tema, papel de parede (imagem ou vídeo), sons da interface, música, fontes e até o visual dos sites que você visita.
+- Música reativa: a camada base toca sempre e a camada de atividade cresce quando você clica, digita ou navega; ela pausa sozinha quando um site está tocando mídia.
+- Estilos por site e filtros de página (CRT, Neon, Sépia, Noir e outros) são aplicados direto nas páginas, e um interruptor desliga tudo de uma vez.
+- Vários mods podem ficar ativos juntos: ligue e desligue cada componente separadamente e defina qual mod tem prioridade.
+- A página Mods virou uma loja com Instalados, Explorar, Criar mod e Temas rápidos; quatro mods vêm com o Cypher: Recorte Noite, Neon Grid, Fita K7 e Papel.
+- O catálogo online é assinado com a chave do Cypher, e cada pacote é conferido pelo SHA-512 antes de instalar.
+- Crie seu próprio mod dentro do navegador, com suas cores, papel de parede, sons, música, estilos por site e filtro, e exporte como .cyphermod.
+- O modo de exibição Sistema agora acompanha de fato o claro ou escuro do Windows.
+
 ## [0.7.28] - 2026-10-18
 - Modo edição (Ctrl E): clique em qualquer parte da interface, como barra, abas, trilho, área da página ou logo, e ajuste formato, posição, cores e fontes ali mesmo, com Desfazer.
 - Tokens de design: tamanho do corte, altura da barra, densidade, espessura das bordas e fontes de título e texto agora são ajustáveis.

@@ -1,0 +1,40 @@
+{
+  "format": "cypher-mod",
+  "formatVersion": 1,
+  "id": "com.cypher.papel",
+  "name": "Papel",
+  "version": "1.0.0",
+  "author": "Cypher",
+  "description": "Caderno claro e silencioso: cliques de papel e páginas levemente aquecidas para ler.",
+  "minCypherVersion": "0.7.29",
+  "preview": "preview.svg",
+  "tags": [
+    "claro",
+    "leitura"
+  ],
+  "components": {
+    "theme": {
+      "accent": "#2f4bd8",
+      "surface": "#ffffff",
+      "background": "#f6f2e8",
+      "skin": "classic",
+      "appearanceMode": "light"
+    },
+    "wallpaper": {
+      "file": "wallpaper.svg",
+      "dim": 0
+    },
+    "sounds": {
+      "volume": 0.6,
+      "click": "sounds/click.wav",
+      "hover": "sounds/hover.wav",
+      "tabOpen": "sounds/tabOpen.wav",
+      "tabClose": "sounds/tabClose.wav",
+      "typing": "sounds/typing.wav"
+    },
+    "shader": {
+      "preset": "warm",
+      "intensity": 0.4
+    }
+  }
+}

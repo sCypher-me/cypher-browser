@@ -1,0 +1,51 @@
+name: Publicar catálogo de mods
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'electron/builtin-mods/**'
+      - 'catalog/**'
+      - 'electron/mod-package.cjs'
+      - 'scripts/build-mod-catalog.cjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mods-catalog
+  cancel-in-progress: false
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências sem scripts
+        run: npm ci --ignore-scripts
+      - name: Testar o formato de mods
+        run: node --test tests/mod-package.test.cjs
+      - name: Empacotar mods e gerar o índice
+        run: node scripts/build-mod-catalog.cjs artifacts/mods
+      - name: Assinar o índice com Ed25519
+        env:
+          CYPHER_UPDATE_SIGNING_PUBLIC_KEY: ${{ vars.CYPHER_UPDATE_SIGNING_PUBLIC_KEY }}
+          CYPHER_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.CYPHER_UPDATE_SIGNING_PRIVATE_KEY }}
+        run: node scripts/sign-update-manifest.cjs artifacts/mods/index.json
+      - name: Publicar na release mods-catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view mods-catalog >/dev/null 2>&1; then
+            gh release create mods-catalog --prerelease --target "${GITHUB_SHA}" \
+              --title "Catálogo de mods do Cypher" \
+              --notes "Pacotes .cyphermod e o índice assinado usados pela loja de mods do Cypher. Esta não é uma versão do navegador."
+          fi
+          gh release upload mods-catalog artifacts/mods/* --clobber
