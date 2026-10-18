@@ -1,0 +1,39 @@
+TERMOS DE USO E AVISO DE PRIVACIDADE DO CYPHER
+Versão de 18 de outubro de 2026
+
+1. SOBRE ESTE SOFTWARE
+O Cypher é um navegador para Windows baseado no Chromium (por meio do Electron). Ao instalar ou usar o Cypher, você concorda com estes termos. Se não concordar, não instale o programa.
+
+2. LICENÇA DE USO
+Você pode instalar e usar o Cypher em quantos computadores quiser, para uso pessoal ou profissional, sem custo. Você não pode distribuir versões modificadas usando o nome ou a marca Cypher de forma que pareçam oficiais. Componentes de terceiros incluídos no Cypher (como o Chromium, o Electron, o Tor, o i2pd, a extensão Proton VPN e listas de filtros) continuam sujeitos às licenças dos respectivos autores, disponíveis na pasta de instalação.
+
+3. SEUS DADOS FICAM NO SEU DISPOSITIVO
+Histórico, favoritos, senhas, notas, configurações, mods e perfis ficam salvos no seu computador. O Cypher não tem contas obrigatórias e não envia sua navegação para servidores do Cypher. Senhas são protegidas com a criptografia do próprio Windows.
+
+4. CONEXÕES QUE O CYPHER FAZ
+- Os sites que você visita, diretamente ou pelas rotas Tor, I2P ou VPN que você escolher.
+- A verificação de atualizações no GitHub do projeto, com manifestos assinados digitalmente.
+- O catálogo de mods no GitHub do projeto, quando você abre a aba Explorar.
+- A sincronização de perfil somente se você configurar um servidor próprio.
+- O envio de relatórios de erro somente se você permitir (veja o item 5).
+
+5. RELATÓRIOS DE ERRO (OPCIONAL)
+Se você permitir, o Cypher registra falhas e erros para que eles possam ser corrigidos. Um relatório contém a versão do Cypher, a versão do Windows, o tipo de erro e o rastreamento técnico do código. Endereços de sites, conteúdo de páginas, senhas, nomes de arquivos pessoais e o seu nome de usuário do Windows são removidos antes de qualquer envio. Você pode desligar essa opção a qualquer momento em Configurações → Privacidade, ver os relatórios guardados e apagá-los.
+
+6. ROTAS ANÔNIMAS
+As rotas Tor e I2P reduzem o rastreamento, mas nenhuma ferramenta garante anonimato absoluto. Use-as de acordo com as leis do seu país. Você é responsável pelo que acessa e publica.
+
+7. MODS E EXTENSÕES
+Mods e extensões de terceiros são criados por outras pessoas. O Cypher verifica o formato e aplica limites de segurança, mas não garante o conteúdo de pacotes que você importa de fora do catálogo oficial.
+
+8. ATUALIZAÇÕES
+O Cypher pode baixar e instalar atualizações verificadas por assinatura digital para corrigir falhas e trazer novidades. As novidades de cada versão são mostradas depois de atualizar.
+
+9. SEM GARANTIAS
+O Cypher é fornecido "como está". Na medida permitida pela lei, os autores não se responsabilizam por perdas decorrentes do uso do programa. Faça backup dos dados importantes.
+
+10. ALTERAÇÕES NESTES TERMOS
+Estes termos podem mudar em versões futuras. Mudanças relevantes serão informadas nas novidades da versão.
+
+11. CONTATO
+Dúvidas, sugestões e relatos de problemas: https://github.com/sCypher-me/cypher-browser/issues

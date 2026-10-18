@@ -10,6 +10,7 @@ const output = path.join(root, 'release', `Cypher-${pkg.version}-Setup.exe`);
 const source = path.join(root, 'installer', 'CypherSetup.cs');
 const icon = path.join(root, 'build', 'icon.ico');
 const manifest = path.join(root, 'installer', 'cypher-installer.manifest');
+const terms = path.join(root, 'installer', 'TERMOS-DE-USO.txt');
 const framework = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework64', 'v4.0.30319');
 const candidates = [path.join(framework, 'csc.exe'), path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe')];
 const compiler = candidates.find(file => fs.existsSync(file));
@@ -24,6 +25,7 @@ function run(command, args, label) {
 if (process.platform !== 'win32') throw new Error('O instalador autoral do Cypher só pode ser gerado em Windows.');
 if (!compiler) throw new Error('O compilador do .NET Framework (csc.exe) não foi encontrado.');
 if (!fs.existsSync(manifest)) throw new Error('O manifesto de DPI do instalador não foi encontrado.');
+if (!fs.existsSync(terms)) throw new Error('Os termos de uso do instalador não foram encontrados.');
 if (!fs.existsSync(path.join(appDirectory, 'Cypher.exe'))) throw new Error('Compile o aplicativo antes de montar o instalador.');
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cypher-setup-'));
@@ -67,6 +69,7 @@ try {
     '/reference:System.IO.Compression.dll',
     '/reference:System.IO.Compression.FileSystem.dll',
     `/resource:${payload},CypherSetup.Payload.zip`,
+    `/resource:${terms},CypherSetup.Terms.txt`,
     `/out:${output}`, versionedSource, metadata,
   ], 'Compilando o instalador autoral Cypher');
 

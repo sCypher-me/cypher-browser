@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.7.30] - 2026-10-18
+- Novo instalador autoral no visual Recorte Noite, em seis etapas: boas-vindas, termos de uso, pasta, preferências, instalação e conclusão.
+- Os termos de uso e o aviso de privacidade precisam ser aceitos antes de instalar; uma cópia fica salva na pasta do Cypher.
+- A escolha da pasta mostra o espaço necessário e o disponível, avisa quando a pasta tem outros arquivos e oferece instalar só para você ou para todos os usuários.
+- O instalador registra o Cypher como navegador no Windows, inclusive para arquivos HTML e PDF, e ao concluir abre a tela do Windows para você confirmá-lo como padrão.
+- Enquanto os arquivos são copiados, um carrossel apresenta mods, modo edição, privacidade, tela dividida, paleta de comandos e a Home.
+- Relatórios de erro opcionais: escolha no instalador ou em Configurações → Privacidade. Endereços de sites, nomes de usuário e e-mails são removidos, e você pode ver, copiar, relatar no GitHub ou apagar cada relatório.
+- O desinstalador ganhou o mesmo visual e remove também os novos registros do Windows.
+- Dependências atualizadas: Electron 44.7.2, TypeScript 7, lucide-react 1, Ghostery adblocker 2.20.1 e ações do GitHub v7.
+
 ## [0.7.29] - 2026-10-18
 - Mods de verdade: pacotes .cyphermod mudam tema, papel de parede (imagem ou vídeo), sons da interface, música, fontes e até o visual dos sites que você visita.
 - Música reativa: a camada base toca sempre e a camada de atividade cresce quando você clica, digita ou navega; ela pausa sozinha quando um site está tocando mídia.

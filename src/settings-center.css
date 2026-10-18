@@ -273,3 +273,13 @@
   .sc-password-form>.sc-password-actions,.sc-password-form>.sc-button-primary { grid-column:auto; }
   .sc-password-entry { align-items:flex-start;flex-direction:column; }
 }
+
+/* Relatórios de erro */
+.sc-diagnostic { border: 1px solid var(--sc-line, rgba(255,255,255,.08)); border-radius: 10px; margin: 8px 0; overflow: hidden; }
+.sc-diagnostic-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; background: transparent; border: 0; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.sc-diagnostic-head:hover { background: rgba(255,255,255,.035); }
+.sc-diagnostic-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sc-diagnostic-head small { opacity: .62; white-space: nowrap; }
+.sc-diagnostic-kind { padding: 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent, #ff5436) 18%, transparent); color: var(--accent, #ff5436); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.sc-diagnostic-body { padding: 0 14px 12px; }
+.sc-diagnostic-body pre { max-height: 180px; overflow: auto; margin: 0 0 10px; padding: 10px; border-radius: 8px; background: rgba(0,0,0,.28); font: 11px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
