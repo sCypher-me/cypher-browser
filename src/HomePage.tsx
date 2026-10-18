@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Check, Clock3, Code2, Globe2, Grip, Github, Headphones, Image as ImageIcon, LayoutGrid, MessageCircle, Pause, Play, Plus, RotateCcw, Search, Settings2, Shield, Smile, Sparkles, Star, StickyNote, Timer, Trash2, Type, X, Youtube, CalendarDays, ListTodo, CalendarClock, Calculator as CalculatorIcon, ChevronLeft, ChevronRight, CircleCheck, Minus } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Check, Clock3, Code2, Globe2, Grip, CodeXml, Headphones, Image as ImageIcon, LayoutGrid, MessageCircle, Pause, Play, Plus, RotateCcw, Search, Settings2, Shield, Smile, Sparkles, Star, StickyNote, Timer, Trash2, Type, X, CirclePlay, CalendarDays, ListTodo, CalendarClock, Calculator as CalculatorIcon, ChevronLeft, ChevronRight, CircleCheck, Minus } from 'lucide-react';
 import { addWidget, defaultHome, moveWidget, resizeWidget, resolveWidgetLayout, sanitizeHome, widgetDefinitions, widgetDesigns, type HomeConfig, type HomeShortcut, type HomeWidget, type ResizeEdge, type WidgetType } from '../electron/home-layout.mjs';
 import type { HomeData, HomeTask, Link, Settings } from './types';
 import { cn } from './lib/cn';
@@ -13,7 +13,7 @@ interface Props {
   modWallpaper?: { url: string; type: 'image' | 'video'; dim: number } | null;
 }
 const icons = { welcome: Sparkles, search: Search, shortcuts: LayoutGrid, clock: Clock3, notes: StickyNote, bookmarks: Star, focus: Timer, text: Type, sticker: Smile, image: ImageIcon, custom: Code2, calendar: CalendarDays, tasks: ListTodo, countdown: CalendarClock, calculator: CalculatorIcon };
-const linkIcons = { youtube: Youtube, github: Github, chat: MessageCircle, music: Headphones, globe: Globe2 };
+const linkIcons = { youtube: CirclePlay, github: CodeXml, chat: MessageCircle, music: Headphones, globe: Globe2 };
 const clone = (home: HomeConfig) => structuredClone(home);
 const emptyData: HomeData = { notes: {}, focus: { endsAt: null,remaining: 1500,duration: 1500 }, tasksById: {} };
 function customWidgetDocument(widget: HomeWidget) {
