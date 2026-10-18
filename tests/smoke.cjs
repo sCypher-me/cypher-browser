@@ -34,6 +34,13 @@ server.listen(0,'127.0.0.1', async () => {
     let state = await invoke('state');
     assert.equal(state.settings.tabPosition,'side');
     assert.ok(state.trackerProtection.available && state.trackerProtection.adsAvailable, `listas de bloqueio indisponíveis: ${state.trackerProtection.error}`);
+    // Canal de atualização: oficial por padrão, Preview pela configuração; nunca bloqueia sem verificação.
+    assert.equal(state.update.channel, 'stable');
+    assert.equal(state.update.blocked, false);
+    await invoke('settings', { updateChannel: 'preview' });
+    await until(async () => (await invoke('state')).update.channel === 'preview', 'canal Preview');
+    await invoke('settings', { updateChannel: 'stable' });
+    assert.equal(await invoke('update:ack'), true);
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-home.png'), (await win.webContents.capturePage()).toPNG());

@@ -1,14 +1,14 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.35",
+  "version": "0.7.36",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "npm run prepare:tracker-list && npm run prepare:proton-vpn && node scripts/dev.cjs",
-    "build": "npm run prepare:tracker-list && npm run prepare:proton-vpn && tsc --noEmit && vite build",
+    "build": "npm run prepare:tracker-list && npm run prepare:proton-vpn && tsc --noEmit && vite build && node scripts/changelog.cjs CHANGELOG.md dist/changelog.json",
     "start": "npm run prepare:proton-vpn && electron .",
     "prepare:privacy-runtime": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-privacy-runtime.ps1",
     "prepare:proton-vpn": "node scripts/prepare-proton-vpn.cjs",

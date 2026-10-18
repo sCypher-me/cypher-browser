@@ -4,17 +4,34 @@ import { Panel, Row, Switch } from '../settings-ui';
 import type { SectionProps } from './types';
 
 export default function System({ settings: s, onSettings, command, update, hardwareAccelerationPending }: SectionProps) {
-  const busy = ['checking', 'downloading', 'restarting'].includes(update.state);
-  const installable = ['available', 'dismissed'].includes(update.state);
+  const ready = update.state === 'ready';
+  const busy = ['checking', 'downloading', 'installing', 'restarting'].includes(update.state);
+  const preview = (s.updateChannel || update.channel) === 'preview';
+  const onBeta = /-beta\.\d+$/.test(update.currentVersion);
+  const headline = ready ? `Versão ${update.version} pronta para instalar`
+    : update.state === 'downloading' ? `Baixando a versão ${update.version} em segundo plano`
+    : update.state === 'up-to-date' ? 'Você está na versão mais recente'
+    : update.state === 'checking' ? 'Procurando uma versão nova…'
+    : update.state === 'error' ? 'Não foi possível verificar agora'
+    : 'Atualizações automáticas';
+  const kindLabel = { new: 'Novo', improved: 'Melhor', fixed: 'Corrige' } as const;
   return <>
-    <Panel id="updates-status" eyebrow="ATUALIZAÇÃO" title={`Cypher ${update.currentVersion}`} detail={update.message || (update.repository ? 'Verifica sozinho ao iniciar e a cada 6 horas.' : 'Canal de atualizações não configurado nesta compilação.')} icon={RefreshCw} wide>
+    <Panel id="updates-status" eyebrow={preview ? 'ATUALIZAÇÃO · CANAL PREVIEW' : 'ATUALIZAÇÃO · CANAL OFICIAL'} title={`Cypher ${update.currentVersion}`} detail={update.repository ? 'Baixa sozinho em segundo plano e instala quando você reiniciar ou fechar o Cypher.' : 'Canal de atualizações não configurado nesta compilação.'} icon={RefreshCw} wide>
       <div className="sc-update-summary">
-        <span className={`sc-update-indicator ${update.state === 'up-to-date' ? 'ready' : installable ? 'available' : ''}`}><Sparkles size={16}/></span>
-        <div><strong>{installable ? `Nova versão ${update.version}` : update.state === 'complete' ? `Versão ${update.version} instalada` : update.state === 'up-to-date' ? 'Você está na versão mais recente' : 'Atualizações automáticas'}</strong><small>{update.repository ? `GitHub Releases · ${update.repository}` : 'Sem canal'} · pacote conferido por assinatura e SHA-512</small></div>
-        <button className="sc-button sc-button-primary" disabled={busy} onClick={() => void command(installable ? 'update:install' : 'update:check')}>{installable ? 'Instalar agora' : update.state === 'checking' ? 'Verificando…' : update.state === 'downloading' ? `${update.progress}%` : update.state === 'restarting' ? 'Reiniciando…' : update.state === 'error' ? 'Tentar de novo' : 'Verificar'} <ArrowRight size={13}/></button>
+        <span className={`sc-update-indicator ${update.state === 'up-to-date' ? 'ready' : ready ? 'available' : ''}`}><Sparkles size={16}/></span>
+        <div><strong>{headline}</strong><small>{update.state === 'error' ? update.message : `GitHub Releases · assinatura Ed25519 e SHA-512${update.lastChecked ? ` · verificado às ${new Date(update.lastChecked).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}</small></div>
+        {ready
+          ? <button className="sc-button sc-button-primary" onClick={() => void command('update:install')}>Reiniciar e atualizar <ArrowRight size={13}/></button>
+          : <button className="sc-button sc-button-subtle" disabled={busy} onClick={() => void command('update:check')}>{update.state === 'checking' ? 'Verificando…' : update.state === 'downloading' ? `${update.progress}%` : 'Verificar agora'}</button>}
       </div>
       {update.state === 'downloading' && <div className="sc-update-progress"><span><i style={{ width: `${update.progress}%` }}/></span></div>}
-      {update.releaseNotes && installable && <div className="sc-release-notes"><span className="sc-eyebrow">NOVIDADES</span><p>{update.releaseNotes}</p></div>}
+      {ready && <div className="sc-info-strip"><Sparkles size={15}/><span>Se preferir, só feche o Cypher quando terminar: a atualização é instalada ao fechar e a versão nova abre na próxima vez.</span></div>}
+      {(ready || update.state === 'downloading') && (update.notes?.length || 0) > 0 && <div className="sc-release-notes"><span className="sc-eyebrow">NOVIDADES DA {update.version}</span><ul className="sc-update-notes">{update.notes!.slice(0, 8).map(note => <li key={note.title}><b className={`upd-tag upd-tag-${note.kind}`}>{kindLabel[note.kind]}</b>{note.title}</li>)}</ul></div>}
+      <Row id="updates-preview" title="Participar do Preview" detail={preview
+        ? (onBeta ? 'Você recebe versões antecipadas. Ao sair, fica nesta versão até a oficial chegar nela.' : 'Você recebe versões antecipadas, antes do canal oficial.')
+        : 'Receba as próximas versões antes de todo mundo e ajude a encontrar problemas.'}>
+        <Switch label="Participar do Preview" checked={preview} onChange={() => onSettings({ updateChannel: preview ? 'stable' : 'preview' })}/>
+      </Row>
     </Panel>
 
     <Panel id="system-startup" eyebrow="WINDOWS" title="Integração com o Windows" icon={MonitorCog}>

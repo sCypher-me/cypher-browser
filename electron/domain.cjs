@@ -24,7 +24,7 @@ const defaults = {
   tabsAutoHide: false, showRail: true, workspaceAccent: false, customCss: '', skinPackage: '',
   shortcuts: {}, routeRules: [], containers: [], blockCookieBanners: true, webPanels: [], panelWidth: 380,
   modSoundsEnabled: true, modSoundsVolume: 0.6, modMusicEnabled: true, modMusicVolume: 0.5, modPageEffects: true,
-  sendErrorReports: false,
+  sendErrorReports: false, updateChannel: 'stable',
 };
 const toolbarItems = ['navigation','address','routes','skin','media','customize','menu'];
 const hideableToolbarItems = ['navigation','routes','skin','media','customize'];
@@ -101,7 +101,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ skin: ['recorte','classic'], tabPosition: ['side','top'], appearanceMode: ['dark','light','system'], toolbarPosition: ['top','bottom'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
+  for (const [key, values] of Object.entries({ updateChannel: ['stable','preview'], skin: ['recorte','classic'], tabPosition: ['side','top'], appearanceMode: ['dark','light','system'], toolbarPosition: ['top','bottom'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
   for (const key of ['sendErrorReports','modSoundsEnabled','modMusicEnabled','modPageEffects','tabsAutoHide','showRail','workspaceAccent','blockCookieBanners','motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.36] - 2026-10-18
+- [Novo★] Canal Preview: experimente as próximas versões antes de todo mundo. Liga e desliga em Configurações → Sistema; ao sair, você fica na sua versão até a oficial chegar nela. {preview}
+- [Melhorado★] Atualiza em segundo plano: o Cypher baixa a versão nova sozinho, avisa quando está pronta e instala quando você reiniciar ou fechar o navegador. {atualizacao}
+- [Melhorado★] Nova tela de atualização: progresso real, etapas e as novidades passando enquanto instala, também na janela do instalador. {instalador}
+- [Corrigido★] Copiar e colar depois de atualizar: o Cypher agora reabre como pelo atalho e a área de transferência funciona logo de cara. {generico}
+- [Novo] Versões antigas saem de circulação: só as duas versões oficiais mais recentes navegam; sem internet para verificar, o Cypher abre normalmente.
+- [Melhorado] Novidades depois de atualizar: mostram tudo que mudou desde a última versão que você usou, mesmo pulando várias.
+- [Corrigido] Instaladores antigos acumulados: a pasta de atualizações agora guarda só a versão pronta para instalar.
+
 ## [0.7.35] - 2026-10-18
 - Botões "Copiar" dos sites (código, respostas, links) voltaram a copiar direto para a área de transferência do Windows, sem perguntar, como no Chrome. Bloqueios que você salvou continuam valendo.
 - Botões "Colar" de sites e editores online agora pedem sua permissão em vez de falhar sempre; em abas Tor e I2P continuam bloqueados.

@@ -57,6 +57,11 @@ namespace Cypher.Setup
                 SetupWindow.RenderPages(options);
                 return;
             }
+            if (options.Silent && options.ProgressUi)
+            {
+                Application.Run(new UpdateProgressWindow(options));
+                return;
+            }
             if (options.Silent)
             {
                 try { SetupEngine.Install(options, delegate { }); }
@@ -546,6 +551,9 @@ namespace Cypher.Setup
         public bool ErrorReports;
         public bool TermsAccepted;
         public string RenderPagesTo = "";
+        public bool ProgressUi;
+        public string UpdateVersion = "";
+        public readonly List<string> UpdateTitles = new List<string>();
 
         public static SetupOptions Parse(string[] args)
         {
@@ -572,6 +580,13 @@ namespace Cypher.Setup
                 if (arg.StartsWith("--target=", StringComparison.OrdinalIgnoreCase)) result.Target = arg.Substring(9).Trim('"');
                 if (string.Equals(arg, "--target", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) result.Target = args[++i].Trim('"');
                 if (string.Equals(arg, "--render-pages", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length) result.RenderPagesTo = args[++i].Trim('"');
+                if (string.Equals(arg, "--progress-ui", StringComparison.OrdinalIgnoreCase)) result.ProgressUi = true;
+                if (arg.StartsWith("--update-version=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string version = arg.Substring("--update-version=".Length);
+                    if (version.Length <= 24 && version.All(character => char.IsDigit(character) || character == '.' || character == '-' || char.IsLetter(character))) result.UpdateVersion = version;
+                }
+                if (arg.StartsWith("--update-titles=", StringComparison.OrdinalIgnoreCase)) result.UpdateTitles.AddRange(DecodeTitles(arg.Substring("--update-titles=".Length)));
             }
             if (string.IsNullOrWhiteSpace(result.Target))
             {
@@ -600,6 +615,19 @@ namespace Cypher.Setup
             if (args.Any(arg => string.Equals(arg, "--no-start-menu", StringComparison.OrdinalIgnoreCase))) result.StartMenu = false;
             if (string.IsNullOrWhiteSpace(result.Target)) result.Target = DefaultTarget;
             return result;
+        }
+
+        /// <summary>Títulos das novidades, em base64url separados por quebra de linha.</summary>
+        private static IEnumerable<string> DecodeTitles(string value)
+        {
+            if (value.Length == 0 || value.Length > 4000 || !value.All(character => char.IsLetterOrDigit(character) || character == '-' || character == '_')) return new string[0];
+            try
+            {
+                string base64 = value.Replace('-', '+').Replace('_', '/');
+                base64 = base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '=');
+                return Encoding.UTF8.GetString(Convert.FromBase64String(base64)).Split('\n').Select(line => line.Trim()).Where(line => line.Length > 0 && line.Length <= 120).Take(8).ToArray();
+            }
+            catch { return new string[0]; }
         }
 
         public static string DefaultTarget { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Cypher"); } }
@@ -1048,9 +1076,11 @@ namespace Cypher.Setup
         {
             string app = Path.Combine(target, "Cypher.exe");
             if (!File.Exists(app)) throw new FileNotFoundException("Os arquivos do Cypher não foram encontrados.", app);
-            string arguments = updated ? "--updated" : "";
-            if (updated && !string.IsNullOrEmpty(updateNotesBase64)) arguments += " --cypher-update-notes=" + updateNotesBase64;
-            Process.Start(new ProcessStartInfo(app) { WorkingDirectory = target, Arguments = arguments, UseShellExecute = true });
+            // Abre pelo Explorer, como o atalho: o Cypher nasce no ambiente normal da sessão,
+            // sem herdar variáveis e estado do processo que pediu a atualização (isso quebrava o colar).
+            string explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            if (File.Exists(explorer)) { Process.Start(new ProcessStartInfo(explorer, Quote(app)) { UseShellExecute = false, WorkingDirectory = target }); return; }
+            Process.Start(new ProcessStartInfo(app) { WorkingDirectory = target, UseShellExecute = true });
         }
 
         internal static void TryDelete(string path) { try { if (Directory.Exists(path)) Directory.Delete(path, true); else if (File.Exists(path)) File.Delete(path); } catch { } }
@@ -1504,6 +1534,193 @@ namespace Cypher.Setup
                     }
                 }
                 window.installing = false; window.installed = true; window.Close();
+            }
+            var update = new SetupOptions { UpdateVersion = "0.7.36", Target = options.Target };
+            update.UpdateTitles.AddRange(new[] { "Canal Preview", "Bloqueio de versões antigas", "Atualiza em segundo plano", "Colar logo após atualizar" });
+            UpdateProgressWindow.Render(update, Path.Combine(options.RenderPagesTo, "setup-update.png"));
+        }
+    }
+
+    /// <summary>Janela da atualização (visual A1): progresso real da instalação silenciosa pedida pelo navegador.</summary>
+    internal sealed class UpdateProgressWindow : Form
+    {
+        private readonly SetupOptions options;
+        private readonly bool previewOnly;
+        private readonly Canvas canvas;
+        private readonly System.Windows.Forms.Timer animation = new System.Windows.Forms.Timer { Interval = 33 };
+        private int percent = 6, frame;
+        private string detail = "Preparando a instalação", stage = "Instalando arquivos";
+        private bool finished;
+        private string failure = "";
+
+        public UpdateProgressWindow(SetupOptions setupOptions, bool preview = false)
+        {
+            options = setupOptions; previewOnly = preview;
+            Text = "Atualizando o Cypher"; AutoScaleMode = AutoScaleMode.Dpi; AutoScaleDimensions = new SizeF(96f, 96f);
+            ClientSize = new Size(980, 600); FormBorderStyle = FormBorderStyle.None; StartPosition = FormStartPosition.CenterScreen;
+            BackColor = CypherStyle.Background; DoubleBuffered = true; ShowInTaskbar = true; TopMost = true;
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+            canvas = new Canvas { Dock = DockStyle.Fill };
+            canvas.Paint += PaintWindow;
+            canvas.MouseDown += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); } };
+            Controls.Add(canvas);
+            animation.Tick += delegate { frame++; canvas.Invalidate(); };
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ReleaseCapture();
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            animation.Start();
+            if (previewOnly) return;
+            var worker = new System.ComponentModel.BackgroundWorker { WorkerReportsProgress = true };
+            worker.DoWork += delegate(object sender, System.ComponentModel.DoWorkEventArgs args) { SetupEngine.Install(options, delegate(int value, string text) { worker.ReportProgress(value, text); }); };
+            worker.ProgressChanged += delegate(object sender, System.ComponentModel.ProgressChangedEventArgs args) { SetProgress(args.ProgressPercentage, Convert.ToString(args.UserState)); };
+            worker.RunWorkerCompleted += delegate(object sender, System.ComponentModel.RunWorkerCompletedEventArgs args)
+            {
+                if (args.Error != null)
+                {
+                    failure = args.Error.GetBaseException().Message; Environment.ExitCode = 1;
+                    // A versão anterior foi restaurada pelo instalador; reabre o Cypher para o usuário não ficar sem navegador.
+                    try { SetupEngine.LaunchInstalledCypher(Path.GetFullPath(options.Target), false); } catch { }
+                    canvas.Invalidate();
+                    var close = new System.Windows.Forms.Timer { Interval = 9000 }; close.Tick += delegate { close.Stop(); Close(); }; close.Start();
+                    return;
+                }
+                finished = true; stage = "Reabrindo o Cypher"; percent = 100; canvas.Invalidate();
+                var done = new System.Windows.Forms.Timer { Interval = 1400 }; done.Tick += delegate { done.Stop(); Close(); }; done.Start();
+            };
+            worker.RunWorkerAsync();
+        }
+
+        public void SetProgress(int value, string text)
+        {
+            percent = Math.Max(percent, Math.Min(100, value));
+            if (!string.IsNullOrEmpty(text)) detail = text;
+            stage = value >= 90 ? "Registrando no Windows" : "Instalando arquivos";
+            canvas.Invalidate();
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (!previewOnly && !finished && failure.Length == 0 && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; return; }
+            animation.Stop(); base.OnFormClosing(e);
+        }
+
+        private static Color Alpha(int alpha, Color color) { return Color.FromArgb(Math.Max(0, Math.Min(255, alpha)), color); }
+
+        private void PaintWindow(object sender, PaintEventArgs e)
+        {
+            var g = e.Graphics; CypherStyle.Quality(g);
+            int w = canvas.Width, h = canvas.Height;
+            Color accent = CypherStyle.Accent, warm = Color.FromArgb(255, 155, 106), text = Color.FromArgb(241, 235, 223), muted = Color.FromArgb(155, 148, 136);
+
+            // Fundo: brilho difuso, número vazado e moldura
+            using (var glow = new GraphicsPath())
+            {
+                glow.AddEllipse(-260, -300, 760, 760);
+                using (var brush = new PathGradientBrush(glow) { CenterColor = Color.FromArgb(70, accent), SurroundColors = new[] { Color.FromArgb(0, accent) } }) g.FillPath(brush, glow);
+            }
+            string version = string.IsNullOrEmpty(options.UpdateVersion) ? SetupMetadata.Version : options.UpdateVersion;
+            string tail = version.Length > 2 ? version.Substring(version.Length - 2).Replace(".", "") : version;
+            using (var ghost = new GraphicsPath())
+            using (var family = new FontFamily(CypherStyle.Display(10).Name))
+            {
+                ghost.AddString(tail, family, (int)FontStyle.Regular, 440f, new PointF(w - 470, 20), StringFormat.GenericTypographic);
+                using (var pen = new Pen(Color.FromArgb(18, 255, 255, 255), 1.5f)) g.DrawPath(pen, ghost);
+            }
+            using (var brush = new LinearGradientBrush(new RectangleF(w - 150, 0, 150, 150), Color.FromArgb(255, 84, 54), Color.FromArgb(196, 58, 31), 45f))
+                g.FillPolygon(brush, new[] { new PointF(w - 150, 0), new PointF(w, 0), new PointF(w, 150) });
+            CypherStyle.DrawMark(g, new RectangleF(w - 58, 16, 38, 38), CypherStyle.Background);
+            using (var brush = new SolidBrush(accent)) g.FillRectangle(brush, 0, h * 0.18f, 5, h * 0.64f);
+
+            float left = 70, top = 58, right = w - 70;
+            // Cabeçalho com ponto pulsante
+            int pulse = (int)(110 + 110 * Math.Sin(frame / 6.0));
+            using (var brush = new SolidBrush(Alpha(pulse, accent))) g.FillEllipse(brush, left - 2, top + 4, 14, 14);
+            using (var brush = new SolidBrush(accent)) g.FillEllipse(brush, left + 1, top + 7, 8, 8);
+            using (var font = CypherStyle.Display(11)) CypherStyle.Write(g, failure.Length > 0 ? "NÃO FOI POSSÍVEL ATUALIZAR" : finished ? "ATUALIZAÇÃO CONCLUÍDA" : "ATUALIZAÇÃO EM ANDAMENTO", font, accent, new RectangleF(left + 22, top, 420, 24));
+
+            // Versão gigante com degradê
+            using (var font = CypherStyle.Display(118))
+            {
+                var size = g.MeasureString(version, font);
+                var box = new RectangleF(left - 8, top + 26, size.Width + 20, size.Height);
+                using (var brush = new LinearGradientBrush(box, Color.White, Color.FromArgb(207, 198, 182), 90f)) g.DrawString(version, font, brush, box.Location);
+                using (var label = CypherStyle.Display(18)) CypherStyle.Write(g, "→ NOVA", label, accent, new RectangleF(box.Right + 6, box.Bottom - 70, 160, 30));
+            }
+            using (var brush = new LinearGradientBrush(new RectangleF(left, top + 214, 400, 9), accent, warm, 0f))
+            using (var path = CypherStyle.Slant(new RectangleF(left, top + 214, 400, 9), 9)) g.FillPath(brush, path);
+
+            // Etapa atual e porcentagem
+            float row = top + 262;
+            using (var font = CypherStyle.Display(22)) CypherStyle.Write(g, (failure.Length > 0 ? "A versão anterior foi mantida" : stage).ToUpperInvariant(), font, text, new RectangleF(left, row, 520, 34));
+            using (var font = new Font("Consolas", 9.5f)) CypherStyle.Write(g, failure.Length > 0 ? failure : detail, font, muted, new RectangleF(left, row + 36, right - left - 160, 22));
+            using (var font = CypherStyle.Display(40)) CypherStyle.Write(g, percent + "%", font, text, new RectangleF(right - 200, row - 8, 200, 60), StringAlignment.Far);
+
+            // Barra de progresso com listras em movimento
+            var track = new RectangleF(left, row + 66, right - left, 16);
+            using (var path = CypherStyle.Slant(track, 8)) using (var brush = new SolidBrush(Color.FromArgb(14, 255, 255, 255))) g.FillPath(brush, path);
+            float fillWidth = Math.Max(16, track.Width * percent / 100f);
+            var fill = new RectangleF(track.X, track.Y, fillWidth, track.Height);
+            using (var path = CypherStyle.Slant(fill, 8))
+            {
+                using (var brush = new LinearGradientBrush(fill, Color.FromArgb(196, 58, 31), failure.Length > 0 ? CypherStyle.Warning : warm, 0f)) g.FillPath(brush, path);
+                var clip = g.Clip; g.SetClip(path);
+                using (var pen = new Pen(Color.FromArgb(46, 255, 255, 255), 4f))
+                    for (float x = fill.X - 40 + (frame * 2 % 22); x < fill.Right + 20; x += 22) g.DrawLine(pen, x, fill.Bottom + 2, x + 14, fill.Y - 2);
+                g.Clip = clip;
+            }
+            using (var brush = new SolidBrush(Color.FromArgb(120, 255, 210, 194))) g.FillEllipse(brush, fill.Right - 14, fill.Y - 6, 24, fill.Height + 12);
+
+            // Etapas
+            string[] steps = { "Baixado", "Assinatura", finished ? "Instalado" : "Instalando", "Reabrir" };
+            int current = finished ? 3 : 2;
+            float stepWidth = (track.Width - 18) / 4f;
+            for (int i = 0; i < steps.Length; i++)
+            {
+                var chip = new RectangleF(left + i * (stepWidth + 6), row + 94, stepWidth, 38);
+                bool done = i < current, now = i == current;
+                using (var path = CypherStyle.Slant(chip, 10))
+                using (var brush = new SolidBrush(now ? accent : Color.FromArgb(done ? 16 : 9, 255, 255, 255))) g.FillPath(brush, path);
+                var badge = new RectangleF(chip.X + 16, chip.Y + 9, 20, 20);
+                using (var path = CypherStyle.Slant(badge, 4)) using (var brush = new SolidBrush(now ? CypherStyle.Background : done ? CypherStyle.Good : Color.FromArgb(24, 255, 255, 255))) g.FillPath(brush, path);
+                using (var font = CypherStyle.Display(11)) CypherStyle.Write(g, done ? "✓" : (i + 1).ToString(), font, now ? accent : CypherStyle.Background, badge, StringAlignment.Center, StringAlignment.Center);
+                using (var font = CypherStyle.Display(13)) CypherStyle.Write(g, steps[i].ToUpperInvariant(), font, now ? CypherStyle.Background : done ? text : muted, new RectangleF(badge.Right + 10, chip.Y, chip.Width - 50, chip.Height), StringAlignment.Near, StringAlignment.Center);
+            }
+
+            // Letreiro com as novidades
+            float ticker = row + 160;
+            using (var pen = new Pen(Color.FromArgb(18, 255, 255, 255))) g.DrawLine(pen, left, ticker, right, ticker);
+            using (var font = CypherStyle.Display(11)) CypherStyle.Write(g, "NESTA VERSÃO", font, accent, new RectangleF(left, ticker + 14, 130, 22));
+            string marquee = options.UpdateTitles.Count > 0 ? string.Join("     ●     ", options.UpdateTitles.ToArray()) : "Melhorias e correções para o seu navegador";
+            var lane = new RectangleF(left + 140, ticker + 10, right - left - 140, 28);
+            var saved = g.Clip; g.SetClip(lane);
+            using (var font = CypherStyle.Body(10.5f))
+            {
+                float textWidth = g.MeasureString(marquee + "     ●     ", font).Width;
+                float offset = -(frame * 1.4f % Math.Max(1, textWidth));
+                for (float x = lane.X + offset; x < lane.Right; x += textWidth) CypherStyle.Write(g, marquee + "     ●     ", font, text, new RectangleF(x, lane.Y + 3, textWidth + 10, 24));
+            }
+            g.Clip = saved;
+            using (var font = CypherStyle.Body(9)) CypherStyle.Write(g, "Seus favoritos, senhas e abas estão a salvo. O Cypher reabre sozinho onde você parou.", font, muted, new RectangleF(left, ticker + 46, right - left, 22));
+            using (var pen = new Pen(CypherStyle.Line)) g.DrawRectangle(pen, 0, 0, w - 1, h - 1);
+        }
+
+        /// <summary>Desenvolvimento: desenha a janela num PNG, sem instalar nada.</summary>
+        public static void Render(SetupOptions options, string file)
+        {
+            using (var window = new UpdateProgressWindow(options, true) { StartPosition = FormStartPosition.Manual, Location = new Point(-4000, -4000), ShowInTaskbar = false })
+            {
+                window.Show(); window.SetProgress(72, "Copiando arquivos do navegador · 312 de 468"); window.frame = 40; Application.DoEvents();
+                using (var bitmap = new Bitmap(window.Width, window.Height))
+                {
+                    window.DrawToBitmap(bitmap, new Rectangle(0, 0, window.Width, window.Height));
+                    bitmap.Save(file, ImageFormat.Png);
+                }
+                window.Close();
             }
         }
     }
