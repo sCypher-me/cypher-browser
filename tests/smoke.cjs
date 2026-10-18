@@ -113,11 +113,22 @@ server.listen(0,'127.0.0.1', async () => {
     // Área de transferência (Electron 44 tornou a API assíncrona e removeu writeImage).
     const { clipboard } = require('electron');
     assert.equal(await invoke('clipboard:write', 'copiado pelo Cypher'), true);
-    assert.equal(await clipboard.readText(), 'copiado pelo Cypher');
+    // Lê pelo Windows: o readText do Electron 44 às vezes devolve a versão ANSI do texto e estraga acentos.
+    const windowsClipboard = () => {
+      const file = path.join(require('node:os').tmpdir(), `cypher-smoke-clip-${process.pid}.txt`);
+      require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-Command', `Add-Type -AssemblyName System.Windows.Forms; [IO.File]::WriteAllText('${file}', [Windows.Forms.Clipboard]::GetText(), [Text.UTF8Encoding]::new($false))`]);
+      return fs.readFileSync(file, 'utf8');
+    };
+    await until(() => windowsClipboard() === 'copiado pelo Cypher', 'texto copiado pelo Cypher no Windows');
     const onePixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
     assert.equal(await invoke('clipboard:image', onePixel), true);
     assert.ok(await clipboard.has('image/png'), 'captura copiada como imagem');
     assert.ok(win.webContents.listenerCount('context-menu') > 0, 'interface tem menu do botão direito para copiar e colar');
+    // Botões "Copiar" dos sites escrevem na área de transferência do sistema sem pedir permissão.
+    view.webContents.focus();
+    const siteCopy = await view.webContents.executeJavaScript(`navigator.clipboard.writeText('copiado pelo botão do site').then(() => 'ok', error => error.message)`, true);
+    assert.equal(siteCopy, 'ok');
+    await until(() => windowsClipboard() === 'copiado pelo botão do site', 'texto com acento copiado pelo botão do site no Windows');
     // Popovers da barra precisam ficar por cima da página: ela sai da frente e vira uma imagem.
     for (const selector of ['.tracker-toolbar-button', '.popup-toolbar-button']) {
       await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click()`);

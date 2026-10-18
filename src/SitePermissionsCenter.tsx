@@ -1,7 +1,7 @@
 import { Globe2, RotateCcw, ShieldCheck, Trash2 } from 'lucide-react';
 import type { SitePermission } from './types';
 
-const permissionNames: Record<string, string> = { media: 'Câmera e microfone', geolocation: 'Localização', notifications: 'Notificações', fullscreen: 'Tela cheia', 'clipboard-sanitized-write': 'Área de transferência' };
+const permissionNames: Record<string, string> = { media: 'Câmera e microfone', geolocation: 'Localização', notifications: 'Notificações', fullscreen: 'Tela cheia', 'clipboard-sanitized-write': 'Copiar para a área de transferência', 'clipboard-read': 'Colar da área de transferência' };
 
 export default function SitePermissionsCenter({ permissions, command }: { permissions: SitePermission[]; command: (action: string, payload?: unknown) => Promise<any> }) {
   return <section className="settings-card site-permissions-card">

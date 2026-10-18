@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.35] - 2026-10-18
+- Botões "Copiar" dos sites (código, respostas, links) voltaram a copiar direto para a área de transferência do Windows, sem perguntar, como no Chrome. Bloqueios que você salvou continuam valendo.
+- Botões "Colar" de sites e editores online agora pedem sua permissão em vez de falhar sempre; em abas Tor e I2P continuam bloqueados.
+- Permissões de sites mostram "Copiar" e "Colar" da área de transferência separadamente.
+
 ## [0.7.34] - 2026-10-18
 - O botão direito na barra de endereço, na busca da Home e em todos os campos do Cypher abre um menu com Desfazer, Refazer, Recortar, Copiar, Colar e Selecionar tudo.
 - No menu do botão direito dos sites, as opções de edição aparecem em português e ficam desativadas quando não se aplicam.
