@@ -33,7 +33,9 @@ try {
   New-Item -ItemType Directory -Force -Path $torTarget | Out-Null
   Copy-Item -Path (Join-Path $torExecutable.Directory.FullName '*') -Destination $torTarget -Recurse -Force
 
-  $i2pdRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/PurpleI2P/i2pd/releases/tags/$i2pdVersion" -Headers @{ 'User-Agent' = 'Cypher-Browser-runtime-builder'; 'Accept' = 'application/vnd.github+json' }
+  $gitHubHeaders = @{ 'User-Agent' = 'Cypher-Browser-runtime-builder'; 'Accept' = 'application/vnd.github+json' }
+  if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) { $gitHubHeaders['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+  $i2pdRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/PurpleI2P/i2pd/releases/tags/$i2pdVersion" -Headers $gitHubHeaders
   $i2pdAsset = $i2pdRelease.assets | Where-Object { $_.name -eq $i2pdArchiveName } | Select-Object -First 1
   if (-not $i2pdAsset -or $i2pdAsset.digest -notmatch '^sha256:([A-Fa-f0-9]{64})$') { throw 'O lançamento oficial do i2pd não publicou um SHA-256 verificável para o pacote Windows.' }
   $expectedI2pdHash = $Matches[1].ToUpperInvariant()
