@@ -1,7 +1,7 @@
 import type { HomeConfig } from '../electron/home-layout.mjs';
 export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
-  home: HomeConfig;
+  home: HomeConfig; skin: 'recorte' | 'classic';
   tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
   radius: number; font: 'system' | 'mono'; interfaceTextScale: number; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
   buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';

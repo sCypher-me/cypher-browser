@@ -17,7 +17,7 @@ import { browserPages, internalPageFromUrl, type InternalPage, type SettingsSect
 import './browser-features.css';
 import './productivity.css';
 
-const initial: BrowserState = { tabs: [], activeId: '', settings: { tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513', background: '#090c0b', radius: 14, font: 'system', interfaceTextScale: 1.2, wallpaper: 'orbital', wallpaperImageData: '', buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher', backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false, motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original', connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '', restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false, openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false, blockAds: true, blockTrackers: true, blockThirdPartyCookies: false, blockPopups: true, popupExceptions: [], passwordAutofillEnabled: false, trackingExceptions: [], preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true, hardwareAcceleration: true, webrtcPolicy: 'default', showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true, clearDataOnExit: false, clearHistoryOnExit: false, confirmCloseWithMultipleTabs: false, memorySaverEnabled:true, memorySaverMinutes:20, defaultZoom: 1, downloadDirectory: '', startWithWindows: false, home: defaultHome }, bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], workspaces:[], activeWorkspaceId:'', researchItems:[], profiles:[], profileId:'default', maximized: false, hardwareAccelerationPending: false, homeData: { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, tasksById: {} }, update: { state: 'unconfigured', currentVersion: '0.7.20', version: '', progress: 0, message: '', releaseNotes: '', repository: '' }, trackerProtection: { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0, blockedTrackers:0, bySite:{}, error: 'As listas de proteção ainda não foram carregadas.' }, popupProtection: { blockedCount: 0, pending: [] } };
+const initial: BrowserState = { tabs: [], activeId: '', settings: { skin: 'recorte', tabPosition: 'side', sidebarWidth: 206, appearanceMode: 'dark', accent: '#ff5436', surface: '#151310', background: '#0a0908', radius: 14, font: 'system', interfaceTextScale: 1.2, wallpaper: 'none', wallpaperImageData: '', buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher', backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false, motion: true, compact: false, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'recorte-noite', connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '', restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false, openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false, blockAds: true, blockTrackers: true, blockThirdPartyCookies: false, blockPopups: true, popupExceptions: [], passwordAutofillEnabled: false, trackingExceptions: [], preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true, hardwareAcceleration: true, webrtcPolicy: 'default', showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true, clearDataOnExit: false, clearHistoryOnExit: false, confirmCloseWithMultipleTabs: false, memorySaverEnabled:true, memorySaverMinutes:20, defaultZoom: 1, downloadDirectory: '', startWithWindows: false, home: defaultHome }, bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], mods: [], workspaces:[], activeWorkspaceId:'', researchItems:[], profiles:[], profileId:'default', maximized: false, hardwareAccelerationPending: false, homeData: { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, tasksById: {} }, update: { state: 'unconfigured', currentVersion: '0.7.20', version: '', progress: 0, message: '', releaseNotes: '', repository: '' }, trackerProtection: { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0, blockedTrackers:0, bySite:{}, error: 'As listas de proteção ainda não foram carregadas.' }, popupProtection: { blockedCount: 0, pending: [] } };
 const pageLabels: Record<InternalPage, string> = { newtab: 'Página inicial', settings: 'Configurações', security: 'Segurança', extensions: 'Extensões', profile: 'Perfil', mods: 'Mods', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', productivity:'Espaços e pesquisa' };
 const size = (bytes: number) => bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
 const date = (value: number) => new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -70,6 +70,7 @@ export default function App() {
   const [popupPanelOpen, setPopupPanelOpen] = useState(false);
   const [tabMenu, setTabMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [palette, setPalette] = useState(false);
+  const [skinMenu, setSkinMenu] = useState(false);
   const [findResult, setFindResult] = useState<{ matches: number; active: number } | null>(null);
   const [addressRect, setAddressRect] = useState<{ left: number; top: number; width: number } | null>(null);
   const [find, setFind] = useState(false);
@@ -88,14 +89,14 @@ export default function App() {
   const activeWorkspace = state.workspaces.find(workspace => workspace.id === state.activeWorkspaceId);
   const visibleTabs = state.tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === state.activeWorkspaceId);
   const pageMedia = state.nowPlaying || null;
-  const overlay = menu || !!tabMenu || addressFocus || palette;
+  const overlay = menu || !!tabMenu || addressFocus || palette || skinMenu;
   function notify(message: string) { setToast(message); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4500); }
   async function act(action: string, payload?: unknown) {
     try { return await window.cypher.invoke(action, payload); }
     catch (error) { notify(String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': Error: /, '')); }
   }
   function openPage(name: InternalPage, options: { category?: SettingsSection; focusId?: string } = {}) {
-    setMenu(false); setTabMenu(null); setPalette(false); setAddressFocus(false); setFind(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setFilter('');
+    setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setFind(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setFilter('');
     setSettingsDestination({ category: options.category || 'appearance', focusId: name === 'settings' ? options.focusId : undefined });
     setSecurityFocusId(name === 'security' ? options.focusId || '' : '');
     const existing = state.tabs.find(t => t.url === `cypher://${name}` && !t.private);
@@ -130,14 +131,14 @@ export default function App() {
       if (action === 'address') { setAddressFocus(true); addressRef.current?.focus(); addressRef.current?.select(); }
       if (action === 'find') { setFind(true); setTimeout(() => { findRef.current?.focus(); findRef.current?.select(); }, 0); }
       if (action === 'palette') { setMenu(false); setTabMenu(null); setAddressFocus(false); setPalette(value => !value); }
-      if (action === 'escape') { setMenu(false); setTabMenu(null); setPalette(false); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); void act('find', { text: '' }); }
+      if (action === 'escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); void act('find', { text: '' }); }
       if (action === 'page-fullscreen') setPageFullscreen(true);
       if (action === 'leave-fullscreen') setPageFullscreen(false);
     });
   }, []);
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setMenu(false); setTabMenu(null); setPalette(false); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); addressRef.current?.blur(); void act('find', { text: '' }); }
+      if (event.key === 'Escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); addressRef.current?.blur(); void act('find', { text: '' }); }
     };
     window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener);
   }, []);
@@ -175,7 +176,7 @@ export default function App() {
     const key = Number.isInteger(points) ? String(points) : String(points).replace('.', '-');
     return [`--ui-font-${key}`, `${(points * s.interfaceTextScale).toFixed(2)}px`];
   }));
-  const style = { ...fontTokens, '--accent': s.accent, '--surface': s.surface, '--base': s.background, '--radius': `${s.radius}px`, '--sidebar': `${sidebarSize}px`, '--font': s.font === 'mono' ? 'Consolas, monospace' : '"Segoe UI Variable Text", "Segoe UI", sans-serif' } as CSSProperties;
+  const style = { ...fontTokens, '--accent': s.accent, '--surface': s.surface, '--base': s.background, '--radius': `${s.radius}px`, '--sidebar': `${sidebarSize}px`, '--font': s.font === 'mono' ? 'Consolas, monospace' : s.skin === 'recorte' ? '"Work Sans", "Segoe UI", sans-serif' : '"Segoe UI Variable Text", "Segoe UI", sans-serif', '--display': s.skin === 'recorte' ? '"Big Shoulders Display", "Arial Narrow", sans-serif' : 'var(--font)' } as CSSProperties;
   const suggestionSources = [...(s.suggestBookmarks ? state.bookmarks : []), ...(s.suggestHistory ? state.history : [])];
   const suggestions = suggestionSources.filter((link, index, arr) => arr.findIndex(l => l.url === link.url) === index && (link.title + link.url).toLowerCase().includes(address.toLowerCase())).slice(0,5);
   const renderTab = (item: Tab) => <TabItem key={item.id} item={item} selected={item.id === state.activeId} onSelect={() => { setTabMenu(null); void act('tab:select', item.id); }} onClose={() => void act('tab:close', item.id)} onMute={() => void act('tab:mute', item.id)} onMove={from => void act('tab:move', { from, to: item.id })} onMenu={(x, y) => setTabMenu({ id: item.id, x, y })}/>;
@@ -207,7 +208,7 @@ export default function App() {
     { id: 'appearance', title: s.appearanceMode === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', icon: <Monitor size={16}/>, keywords: 'modo claro escuro tema', run: () => settings(s.appearanceMode === 'dark' ? { appearanceMode: 'light', accent: '#587b35', surface: '#ffffff', background: '#f0f3ee' } : { appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513', background: '#090c0b' }) },
   ];
   const nav: { key: InternalPage; icon: typeof Home; title: string }[] = [{ key: browserPages.home, icon: Home, title: 'Home' }, { key: browserPages.productivity, icon: Layers3, title: 'Espaços e pesquisa' }, { key: browserPages.bookmarks, icon: Star, title: 'Favoritos' }, { key: browserPages.history, icon: Clock3, title: 'Histórico' }, { key: browserPages.downloads, icon: Download, title: 'Downloads' }, { key: browserPages.extensions, icon: Puzzle, title: 'Extensões' }, { key: browserPages.mods, icon: Sparkles, title: 'Mods' }];
-  return <div className={`app ${isSide ? 'side-tabs' : 'top-tabs'} ${s.compact ? 'compact' : ''} ${!s.motion ? 'no-motion' : ''} ${pageFullscreen ? 'page-fullscreen' : ''}`} data-appearance={s.appearanceMode} data-button-shape={s.buttonShape} data-interface-effect={s.interfaceEffect} style={style}>
+  return <div className={`app ${isSide ? 'side-tabs' : 'top-tabs'} ${s.compact ? 'compact' : ''} ${!s.motion ? 'no-motion' : ''} ${pageFullscreen ? 'page-fullscreen' : ''}`} data-appearance={s.appearanceMode} data-skin={s.skin} data-button-shape={s.buttonShape} data-interface-effect={s.interfaceEffect} style={style}>
     <header className="titlebar">
       <div className="brand"><Logo /><span>CYPHER</span></div>
       <div className="titlebar-right"><IconButton className="window-control window-minimize" label="Minimizar" onClick={() => act('window:minimize')}><WindowMinimizeIcon/></IconButton><IconButton className="window-control window-maximize" label={state.maximized ? 'Restaurar janela' : 'Maximizar'} onClick={() => act('window:maximize')}><WindowMaximizeIcon restore={state.maximized}/></IconButton><IconButton className="window-control window-close" label="Fechar navegador" onClick={() => act('window:close')}><WindowCloseIcon/></IconButton></div>
@@ -238,6 +239,15 @@ export default function App() {
             <button type="button" className={(tab?.connectionMode || s.connectionMode) === 'tor' ? 'active' : ''} aria-pressed={(tab?.connectionMode || s.connectionMode) === 'tor'} onClick={() => { setAddressFocus(false); void act('connection:select',(tab?.connectionMode || s.connectionMode) === 'tor' ? 'normal' : 'tor'); }} title="Iniciar Tor · Todas as abas serão movidas para essa rota"><VenetianMask size={14}/><span>{(tab?.connectionMode || s.connectionMode) === 'tor' ? 'Tor ativo' : 'Iniciar Tor'}</span></button>
             <button type="button" className={(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'active' : ''} aria-pressed={(tab?.connectionMode || s.connectionMode) === 'i2p'} onClick={() => { setAddressFocus(false); void act('connection:select',(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'normal' : 'i2p'); }} title="Iniciar I2P · Todas as abas serão movidas para essa rota"><Waypoints size={14}/><span>{(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'I2P ativo' : 'Iniciar I2P'}</span></button>
           </div>
+          <span className="toolbar-popover-anchor skin-anchor">
+            <button type="button" className="skin-chip" aria-haspopup="menu" aria-expanded={skinMenu} title="Trocar a pele da interface" onClick={() => { setSkinMenu(!skinMenu); setMenu(false); setAddressFocus(false); }}><SkinGlyph skin={s.skin}/><span>Pele: {s.skin === 'recorte' ? 'Recorte' : 'Clássico'}</span><ChevronDown size={13}/></button>
+            {skinMenu && <div className="skin-menu" role="menu" aria-label="Pele da interface">
+              <span className="eyebrow">PELE DA INTERFACE</span>
+              {([['recorte', 'Recorte', 'Silhuetas cortadas e tipografia condensada'], ['classic', 'Clássico', 'Cantos suaves e o visual original']] as const).map(([value, title, detail]) => <button type="button" role="menuitemradio" aria-checked={s.skin === value} key={value} className={s.skin === value ? 'chosen' : ''} onClick={() => { settings({ skin: value }); setSkinMenu(false); }}><SkinGlyph skin={value}/><span><strong>{title}</strong><small>{detail}</small></span>{s.skin === value && <Check size={15}/>}</button>)}
+              <div className="menu-separator"/>
+              <button type="button" role="menuitem" onClick={() => openPage('mods')}><Sparkles size={16}/><span><strong>Mais visuais</strong><small>Mods de cor, importar e exportar</small></span><ArrowRight size={14}/></button>
+            </div>}
+          </span>
           <IconButton label={pageMedia?.playing ? `Abrir miniplayer · ${pageMedia.title}` : 'Abrir miniplayer'} active={!!pageMedia?.playing || s.backgroundMusicEnabled} onClick={() => void act('media:window:toggle')}><Music2 size={17}/></IconButton>
           <IconButton label="Personalizar Cypher" onClick={() => openPage('settings')}><SlidersHorizontal size={18}/></IconButton><IconButton label="Menu do navegador" active={menu} onClick={() => { setMenu(!menu); setAddressFocus(false); }}><MoreHorizontal size={21}/></IconButton>
         </div>
@@ -300,5 +310,6 @@ function UpdateOnboarding({ version, releaseNotes, onComplete }: { version: stri
     </section>
   </div>;
 }
+function SkinGlyph({ skin }: { skin: Settings['skin'] }) { return skin === 'recorte' ? <svg width="16" height="13" viewBox="0 0 36 30" aria-hidden="true"><path d="M0 0h28l8 8v22H6L0 24Z" fill="currentColor"/></svg> : <svg width="16" height="13" viewBox="0 0 36 30" aria-hidden="true"><rect width="36" height="30" rx="9" fill="currentColor"/></svg>; }
 function Logo({ small = false }: { small?: boolean }) { return <svg className={`cypher-logo ${small ? 'small' : ''}`} width={small ? 18 : 25} height={small ? 18 : 25} viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M25 7H13L5 16l8 9h12l-5-6h-6l-3-3 3-3h6l5-6Z" fill="currentColor"/><path d="m25 14-3 3h7l-4-3Z" fill="currentColor" opacity=".45"/></svg>; }
 function Empty({ icon,title,description }: { icon: ReactNode; title: string; description: string }) { return <div className="empty-state"><div>{icon}</div><h2>{title}</h2><p>{description}</p></div>; }

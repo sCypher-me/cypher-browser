@@ -46,6 +46,7 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
 
 const preferenceIndex: { id: string; title: string; detail: string; category: Category }[] = [
   { id: 'appearance-presets', title: 'Temas e cores', detail: 'Tema, destaque, superfícies e fundo do navegador', category: 'appearance' },
+  { id: 'appearance-skin', title: 'Pele da interface', detail: 'Troque o formato da interface: Recorte ou Clássico', category: 'appearance' },
   { id: 'appearance-mode', title: 'Modo claro ou escuro', detail: 'Escolha uma interface clara ou escura para o navegador', category: 'appearance' },
   { id: 'appearance-shape', title: 'Cantos e tipografia', detail: 'Arredondamento, fonte e identidade visual', category: 'appearance' },
   { id: 'appearance-wallpaper', title: 'Papel de parede', detail: 'Fundo orbital, grade, imagem própria ou vídeo animado na Home', category: 'appearance' },
@@ -104,6 +105,7 @@ function Panel({ id, eyebrow, title, detail, icon: Icon, children }: { id?: stri
 }
 
 const themePresets = [
+  { id: 'recorte', name: 'Recorte Noite', accent: '#ff5436', surface: '#151310', background: '#0a0908' },
   { id: 'cypher', name: 'Cypher', accent: '#b6f36a', surface: '#111513', background: '#090c0b' },
   { id: 'ultraviolet', name: 'Ultravioleta', accent: '#b5a0ff', surface: '#15121d', background: '#0b0910' },
   { id: 'arctic', name: 'Sinal ártico', accent: '#78d9ee', surface: '#10191e', background: '#080e12' },
@@ -174,7 +176,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
   const chooseTheme = (theme: typeof themePresets[number]) => onSettings({ appearanceMode: 'dark', accent: theme.accent, surface: theme.surface, background: theme.background });
   const chooseAppearanceMode = (mode: Settings['appearanceMode']) => onSettings(mode === 'light'
     ? { appearanceMode: mode, accent: '#587b35', surface: '#ffffff', background: '#f0f3ee' }
-    : { appearanceMode: mode, accent: '#b6f36a', surface: '#111513', background: '#090c0b' });
+    : s.skin === 'recorte' ? { appearanceMode: mode, accent: '#ff5436', surface: '#151310', background: '#0a0908' } : { appearanceMode: mode, accent: '#b6f36a', surface: '#111513', background: '#090c0b' });
 
   return <div className="settings-center">
     <header className="sc-header">
@@ -203,6 +205,12 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
           <div className="sc-section-heading"><div><span className="sc-eyebrow">{activeCategory.group}</span><h2>{activeCategory.label}</h2><p>{category === 'appearance' ? 'Uma identidade visual que muda junto com você.' : category === 'tabs' ? 'Organize suas abas do jeito que combina com seu fluxo.' : category === 'home' ? 'Monte uma página inicial que tenha a sua cara.' : category === 'search' ? 'Escolha como encontrar o que procura.' : category === 'languages' ? 'Defina os idiomas dos sites, o corretor e a tradução sob demanda.' : category === 'startup' ? 'Escolha o que aparece quando você abre o Cypher.' : category === 'connections' ? 'Gerencie as rotas Tor e I2P do navegador.' : category === 'downloads' ? 'Escolha onde seus arquivos ficam e acompanhe o progresso.' : category === 'privacy' ? 'Controles claros para seus dados e sua navegação.' : category === 'accessibility' ? 'Ajustes para ler e navegar com conforto.' : category === 'system' ? 'Preferências do aplicativo e integração com o computador.' : category === 'updates' ? 'Confira a versão, acompanhe o canal e instale atualizações do Cypher.' : category === 'shortcuts' ? 'Ações rápidas para navegar sem tirar as mãos do teclado.' : category === 'mods' ? 'Instale ou compartilhe um visual feito por você.' : 'Sua identidade e suas preferências locais.'}</p></div></div>
 
           {category === 'appearance' && <>
+            <Panel id="appearance-skin" eyebrow="PELE" title="Formato da interface" detail="A pele muda as silhuetas, a tipografia e o desenho de cada peça. As cores continuam suas." icon={LayoutTemplate}>
+              <div className="sc-choice-grid">
+                <button type="button" className={`sc-choice-card ${s.skin === 'recorte' ? 'chosen' : ''}`} onClick={() => onSettings({ skin: 'recorte' })} aria-pressed={s.skin === 'recorte'}><span className="sc-choice-icon"><svg width="18" height="15" viewBox="0 0 36 30" aria-hidden="true"><path d="M0 0h28l8 8v22H6L0 24Z" fill="currentColor"/></svg></span><span><strong>Recorte</strong><small>Silhuetas cortadas e tipografia condensada.</small></span>{s.skin === 'recorte' && <Check size={15}/>}</button>
+                <button type="button" className={`sc-choice-card ${s.skin === 'classic' ? 'chosen' : ''}`} onClick={() => onSettings({ skin: 'classic' })} aria-pressed={s.skin === 'classic'}><span className="sc-choice-icon"><svg width="18" height="15" viewBox="0 0 36 30" aria-hidden="true"><rect width="36" height="30" rx="9" fill="currentColor"/></svg></span><span><strong>Clássico</strong><small>Cantos suaves e o visual original.</small></span>{s.skin === 'classic' && <Check size={15}/>}</button>
+              </div>
+            </Panel>
             <Panel id="appearance-mode" eyebrow="MODO DE EXIBIÇÃO" title="Claro ou escuro" detail="Escolha o aspecto da interface do Cypher." icon={s.appearanceMode === 'light' ? Sun : Moon}>
               <div className="sc-choice-grid">
                 <button type="button" className={`sc-choice-card ${s.appearanceMode === 'light' ? 'chosen' : ''}`} onClick={() => chooseAppearanceMode('light')} aria-pressed={s.appearanceMode === 'light'}><span className="sc-choice-icon"><Sun size={16}/></span><span><strong>Claro</strong><small>Superfícies claras e texto escuro.</small></span>{s.appearanceMode === 'light' && <Check size={15}/>}</button>

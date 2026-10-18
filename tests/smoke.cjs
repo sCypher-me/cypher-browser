@@ -167,7 +167,7 @@ server.listen(0,'127.0.0.1', async () => {
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-settings.png'), (await win.webContents.capturePage()).toPNG());
     await invoke('tab:new',{ url:'cypher://mods' });
-    await until(() => win.webContents.executeJavaScript('document.querySelectorAll(".mod-card").length === 4'), 'mods UI');
+    await until(() => win.webContents.executeJavaScript('document.querySelectorAll(".mod-card").length === 5'), 'mods UI');
     await invoke('mod:apply','ultraviolet');
     assert.equal((await invoke('state')).settings.accent,'#b5a0ff');
     await pause(300);
