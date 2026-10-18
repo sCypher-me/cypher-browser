@@ -12,6 +12,9 @@ const { extractCypherPackage } = require('./cypher-package.cjs');
 const modPackage = require('./mod-package.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
 const { createErrorReporter } = require('./error-reports.cjs');
+const { normalizePasswordOrigin, passwordsFromCsv, sha1Hex, pwnedCountForHash } = require('./password-tools.cjs');
+const browserImport = require('./importers.cjs');
+const { classifyLoadError, errorName, createHttpsUpgrader } = require('./https-mode.cjs');
 const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -89,6 +92,8 @@ app.on('open-file', (event, packageFile) => {
 let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
 let split = null, openPanelId = '', panelBounds = null, statsTimer = null;
 const panelViews = new Map();
+const httpsUpgrader = createHttpsUpgrader();
+const certificateExceptions = new Set();
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
@@ -338,11 +343,12 @@ function loadStore(profileId = activeProfileId) {
   }
   if (!store.workspaces.length) store.workspaces = [{ id:'personal', name:'Pessoal', color:'#78d9ee', tabs:store.savedTabs.filter(item => item && typeof item.url === 'string').slice(0,100).map(item => ({ url:item.url, title:item.title || item.url, pinned:item.pinned === true, group:item.group || '' })) }];
   if (!store.workspaces.some(item => item.id === store.activeWorkspaceId)) store.activeWorkspaceId = store.workspaces[0]?.id || 'personal';
-  if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,500).flatMap(entry => {
+  store.passwordNever = Array.isArray(saved.passwordNever) ? [...new Set(saved.passwordNever.map(normalizePasswordOrigin).filter(Boolean))].slice(0,500) : [];
+  if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,1000).flatMap(entry => {
     if (!entry || typeof entry.id !== 'string' || typeof entry.username !== 'string' || typeof entry.passwordEncrypted !== 'string') return [];
     const origin = normalizePasswordOrigin(entry.origin);
     if (!origin || entry.passwordEncrypted.length > 8192 || !/^[A-Za-z\d+/]+={0,2}$/.test(entry.passwordEncrypted)) return [];
-    return [{ id: entry.id.slice(0,80), origin, username: entry.username.slice(0,256), passwordEncrypted: entry.passwordEncrypted, updated: Number.isFinite(entry.updated) ? entry.updated : Date.now() }];
+    return [{ id: entry.id.slice(0,80), origin, username: entry.username.slice(0,256), passwordEncrypted: entry.passwordEncrypted, updated: Number.isFinite(entry.updated) ? entry.updated : Date.now(), leaked: Number.isFinite(entry.leaked) ? Math.max(0, Math.floor(entry.leaked)) : 0, reused: entry.reused === true, checkedAt: Number.isFinite(entry.checkedAt) ? entry.checkedAt : 0 }];
   });
   if (Array.isArray(saved.extensions)) store.extensions = saved.extensions.slice(0,100).flatMap(extension => {
     if (!extension || typeof extension.id !== 'string' || typeof extension.path !== 'string' || extension.path.length > 4096) return [];
@@ -391,15 +397,75 @@ function flush() {
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
 }
-function normalizePasswordOrigin(value) {
-  try {
-    const url = new URL(String(value || '').trim());
-    if (!['http:','https:'].includes(url.protocol) || url.username || url.password || (url.protocol === 'http:' && !['localhost','127.0.0.1','[::1]'].includes(url.hostname))) return '';
-    return url.origin;
-  } catch { return ''; }
-}
 function passwordVaultSnapshot() {
-  return store.passwords.map(({ id, origin, username, updated }) => ({ id, origin, username, updated }));
+  return store.passwords.map(({ id, origin, username, updated, leaked, reused, checkedAt }) => ({ id, origin, username, updated, leaked: leaked || 0, reused: !!reused, checkedAt: checkedAt || 0 }));
+}
+// Login enviado numa aba: fica aqui (fora do objeto da aba, que vai para a interface) até a
+// página sair do formulário; aí vira o pedido "Salvar senha?".
+const loginCandidates = new Map();
+let passwordPrompt = null, passwordPromptTimer = null;
+const pwnedCache = new Map();
+function passwordPromptSnapshot() {
+  if (!passwordPrompt || !tabs.some(tab => tab.id === passwordPrompt.tabId)) return null;
+  const { id, tabId, origin, username, update, leaked } = passwordPrompt;
+  return { id, tabId, origin, username, update, leaked };
+}
+function clearPasswordPrompt() { passwordPrompt = null; clearTimeout(passwordPromptTimer); emit(); }
+async function leakCount(hash) {
+  try { return await pwnedCountForHash(hash, (url, options) => net.fetch(url, options), pwnedCache); }
+  catch (error) { console.warn('Verificação de vazamentos indisponível:', error.message); return -1; }
+}
+function loginCaptured(tab, origin, username, password) {
+  if (!store.settings.passwordSavePrompt || tab.private || tab.connectionMode !== 'normal' || !origin || store.passwordNever.includes(origin)) return;
+  if (!safeStorage.isEncryptionAvailable()) return;
+  const sameUser = store.passwords.filter(entry => entry.origin === origin && (!username || entry.username === username));
+  for (const entry of sameUser) { try { if (decryptPassword(entry) === password) return; } catch {} }
+  const existing = username ? store.passwords.find(entry => entry.origin === origin && entry.username === username) : null;
+  loginCandidates.set(tab.id, { origin, username, passwordEncrypted: encryptPassword(password), hash: sha1Hex(password), update: !!existing, at: Date.now() });
+  setTimeout(() => void maybeOfferPassword(tab, false), 2500);
+}
+const passwordFieldStillFilled = "[...document.querySelectorAll('input[type=password]')].some(field => field.value && field.offsetParent)";
+async function maybeOfferPassword(tab, navigated) {
+  const candidate = loginCandidates.get(tab.id);
+  if (!candidate || !tabs.includes(tab) || Date.now() - candidate.at > 60_000) { loginCandidates.delete(tab.id); return; }
+  // Sem navegação: só oferece quando o formulário de senha sumiu (login feito por script).
+  if (!navigated && await tab.view?.webContents.executeJavaScript(passwordFieldStillFilled, true).catch(() => true) !== false) return;
+  loginCandidates.delete(tab.id);
+  passwordPrompt = { id: randomUUID(), tabId: tab.id, origin: candidate.origin, username: candidate.username, update: candidate.update, passwordEncrypted: candidate.passwordEncrypted, leaked: 0 };
+  const prompt = passwordPrompt;
+  clearTimeout(passwordPromptTimer);
+  passwordPromptTimer = setTimeout(() => { if (passwordPrompt === prompt) clearPasswordPrompt(); }, 120_000);
+  emit();
+  if (store.settings.passwordLeakCheck) {
+    const count = await leakCount(candidate.hash);
+    if (passwordPrompt === prompt && count > 0) { prompt.leaked = count; emit(); }
+  }
+}
+async function checkPasswordLeaks() {
+  const hashes = new Map();
+  for (const entry of store.passwords) { try { hashes.set(entry.id, sha1Hex(decryptPassword(entry))); } catch {} }
+  const uses = new Map();
+  for (const hash of hashes.values()) uses.set(hash, (uses.get(hash) || 0) + 1);
+  let leaked = 0, failed = 0;
+  for (const entry of store.passwords) {
+    const hash = hashes.get(entry.id);
+    if (!hash) continue;
+    entry.reused = uses.get(hash) > 1;
+    const count = await leakCount(hash);
+    if (count < 0) { failed++; continue; }
+    entry.leaked = count; entry.checkedAt = Date.now();
+    if (count > 0) leaked++;
+  }
+  persist(); emit();
+  if (failed && failed === hashes.size) throw new Error('Não foi possível falar com o serviço de vazamentos agora. Tente mais tarde.');
+  return { checked: hashes.size - failed, leaked, reused: store.passwords.filter(entry => entry.reused).length };
+}
+function savePasswordEntry(origin, username, passwordEncrypted) {
+  const existing = store.passwords.find(entry => entry.origin === origin && entry.username === username);
+  if (existing) { existing.passwordEncrypted = passwordEncrypted; existing.updated = Date.now(); existing.leaked = 0; existing.checkedAt = 0; return 'updated'; }
+  store.passwords.unshift({ id:randomUUID(), origin, username, passwordEncrypted, updated:Date.now() });
+  store.passwords = store.passwords.slice(0,1000);
+  return 'added';
 }
 function encryptPassword(value) {
   if (!safeStorage.isEncryptionAvailable()) throw new Error('O cofre exige a criptografia segura do sistema operacional.');
@@ -610,6 +676,7 @@ function snapshot() {
     popupProtection: { blockedCount: blockedPopupCount, pending: popupRequests.map(request => ({ ...request })) },
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     onboarding,
+    passwordPrompt: passwordPromptSnapshot(),
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
@@ -978,7 +1045,7 @@ function selectTab(id) {
 }
 function restoreSuspendedTab(tab) {
   if (!tab?.suspended) return;
-  tab.suspended = false; tab.lastActiveAt = Date.now(); tab.error = null; tab.loading = false;
+  tab.suspended = false; tab.lastActiveAt = Date.now(); tab.error = null; tab.errorInfo = null; tab.loading = false;
   if (/^https?:\/\//i.test(tab.url)) { attachView(tab); navigate(tab, tab.url); }
   else { layout(); emit(); }
 }
@@ -1221,6 +1288,8 @@ function removePopupRequest(id) {
 function removeTab(tab) {
   const index = tabs.indexOf(tab);
   if (index < 0) return;
+  loginCandidates.delete(tab.id);
+  if (passwordPrompt?.tabId === tab.id) { passwordPrompt = null; clearTimeout(passwordPromptTimer); }
   if (split && (split.left === tab.id || split.right === tab.id)) split = null;
   const wasActive = activeId === tab.id;
   tabs.splice(index, 1);
@@ -1271,6 +1340,12 @@ function setupSession(ses, mode = 'normal') {
   const matchesHost = (hostname, hostSet) => [...hostSet].some(host => hostname === host || hostname.endsWith(`.${host}`));
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*','https://*/*'] }, (details, callback) => {
     let blocked = false;
+    if (details.resourceType === 'mainFrame' && mode === 'normal' && /^http:/i.test(details.url)) {
+      const webContentsId = details.webContentsId ?? details.webContents?.id;
+      const tab = tabs.find(entry => entry.view?.webContents.id === webContentsId);
+      const redirectURL = tab && tab.connectionMode === 'normal' ? httpsUpgrader.rewrite(details.url, store.settings.httpsMode) : null;
+      if (redirectURL) return callback({ redirectURL });
+    }
     try {
       const hostname = new URL(details.url).hostname.toLowerCase();
       const webContentsId = details.webContentsId ?? details.webContents?.id;
@@ -1574,8 +1649,9 @@ async function loadStoredExtensions() {
 function attachView(tab) {
   const ses = session.fromPartition(sessionPartition(tab));
   setupSession(ses, tab.connectionMode);
-  void prepareProxy(tab, ses).catch(error => { tab.error = `Não foi possível configurar ${tab.connectionMode}: ${error.message}`; layout(); emit(); });
-  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
+  void prepareProxy(tab, ses).catch(error => showTabError(tab, 'route', { description: `Não foi possível configurar ${tab.connectionMode}: ${error.message}` }));
+  const loginWatcher = !tab.private && tab.connectionMode === 'normal' ? { preload: path.join(__dirname, 'tab-preload.cjs') } : {};
+  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, ...loginWatcher } });
   tab.view = view;
   win.contentView.addChildView(view);
   const wc = view.webContents;
@@ -1605,13 +1681,16 @@ function attachView(tab) {
   });
   wc.on('will-navigate', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
-  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
+  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.errorInfo = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
   wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); tab.modCssKey = ''; void applyPageMods(tab); });
   wc.on('focus', () => { if (split && [split.left, split.right].includes(tab.id) && activeId !== tab.id) { activeId = tab.id; emit(); } });
   wc.on('page-title-updated', (_event, title) => { tab.title = title; if (/^https?:\/\//i.test(tab.url)) tab.lastExternalTitle = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
-    tab.url = url; tab.error = null;
+    tab.url = url; tab.error = null; tab.errorInfo = null;
+    tab.certificateWarning = /^https:/i.test(url) && certificateExceptions.has(hostOf(url));
+    httpsUpgrader.succeeded(url);
+    if (loginCandidates.has(tab.id)) void maybeOfferPassword(tab, true);
     tab.lastActiveAt = Date.now();
     tab.lastExternalUrl = url; tab.lastExternalTitle = wc.getTitle() || url;
     if (!tab.private && tab.connectionMode === 'normal') {
@@ -1620,7 +1699,7 @@ function attachView(tab) {
     }
     layout(); update(tab);
   });
-  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); installStoreClickHandler(tab); maybeAutofillPassword(tab); } });
+  wc.on('did-navigate-in-page', (_event, url, mainFrame) => { if (mainFrame) { tab.url = url; update(tab); if (loginCandidates.has(tab.id)) void maybeOfferPassword(tab, true); installStoreClickHandler(tab); maybeAutofillPassword(tab); } });
   wc.on('did-finish-load', () => {
     installStoreClickHandler(tab);
     maybeAutofillPassword(tab);
@@ -1628,11 +1707,14 @@ function attachView(tab) {
     if (!tab.private && tab.connectionMode === 'normal') { const entry = store.history.find(h => h.url === tab.url); if (entry) { entry.title = wc.getTitle(); persist(); } }
     update(tab);
   });
-  wc.on('did-fail-load', (_event, code, description, _url, mainFrame) => {
+  wc.on('did-fail-load', (_event, code, description, failedUrl, mainFrame) => {
     if (!mainFrame || code === -3) return;
-    tab.error = `${description} (${code})`; tab.loading = false; layout(); emit();
+    const fallback = httpsUpgrader.failed(failedUrl, code);
+    if (fallback && store.settings.httpsMode !== 'strict') { httpsUpgrader.allowHttp(hostOf(fallback)); void wc.loadURL(fallback).catch(() => {}); return; }
+    if (/^https?:\/\//i.test(failedUrl)) tab.url = fallback || failedUrl;
+    showTabError(tab, fallback ? 'https' : classifyLoadError(code), { code, url: fallback || failedUrl, description });
   });
-  wc.on('render-process-gone', () => { tab.error = 'A página foi encerrada. Recarregue para continuar.'; tab.loading = false; layout(); emit(); });
+  wc.on('render-process-gone', () => showTabError(tab, 'crashed', { url: tab.url, description: 'A página foi encerrada. Recarregue para continuar.' }));
   wc.on('media-started-playing', () => { tab.mediaPlaying = true; nowPlayingTabId = tab.id; refreshMediaInfo(tab, true); update(tab); });
   wc.on('media-paused', () => setTimeout(() => refreshMediaInfo(tab, false), 180));
   wc.on('audio-state-changed', (_event, audible) => { tab.audible = !!audible; if (audible) { tab.mediaPlaying = true; nowPlayingTabId = tab.id; } setTimeout(() => refreshMediaInfo(tab, !!audible), 120); update(tab); });
@@ -1666,16 +1748,23 @@ function attachView(tab) {
   });
   return view;
 }
+function hostOf(url) { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } }
+/** Tela de erro da aba: `error` continua sendo o texto técnico; `errorInfo` diz qual tela mostrar. */
+function showTabError(tab, kind, { code = 0, url = tab.url, description = '' } = {}) {
+  tab.error = description ? `${description}${code ? ` (${code})` : ''}` : errorName(code);
+  tab.errorInfo = { kind, code, name: code ? errorName(code) : '', host: hostOf(url), url };
+  tab.loading = false; layout(); emit();
+}
 function navigate(tab, input, navigationOptions) {
   const url = resolveAddress(input, store.settings.searchEngine, store.settings.customSearchUrl);
   if (url.startsWith('cypher://') && /^https?:\/\//i.test(tab.url)) { tab.lastExternalUrl = tab.url; tab.lastExternalTitle = tab.title; }
   else if (/^https?:\/\//i.test(url)) { tab.lastExternalUrl = url; tab.lastExternalTitle = tab.title; }
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname.endsWith('.onion') && tab.connectionMode !== 'tor') {
-    tab.url = url; tab.loading = false; tab.error = 'Endereços .onion só podem ser abertos com a rede Tor ativa.'; layout(); emit(); return;
+    tab.url = url; showTabError(tab, 'route', { url, description: 'Endereços .onion só podem ser abertos com a rede Tor ativa.' }); return;
   }
   if (hostname.endsWith('.i2p') && tab.connectionMode !== 'i2p') {
-    tab.url = url; tab.loading = false; tab.error = 'Endereços .i2p só podem ser abertos com a rede I2P ativa.'; layout(); emit(); return;
+    tab.url = url; showTabError(tab, 'route', { url, description: 'Endereços .i2p só podem ser abertos com a rede I2P ativa.' }); return;
   }
   const routeRule = !tab.private && tab.connectionMode === 'normal' && !url.startsWith('cypher://') && store.settings.routeRules.find(rule => hostname === rule.host || hostname.endsWith(`.${rule.host}`));
   if (routeRule) {
@@ -1684,7 +1773,7 @@ function navigate(tab, input, navigationOptions) {
     if (blank && tabs.length > 1) closeTab(tab.id);
     return;
   }
-  tab.url = url; tab.error = null;
+  tab.url = url; tab.error = null; tab.errorInfo = null;
   if (url.startsWith('cypher://')) {
     tab.loading = false; tab.title = ({ newtab: 'Nova aba', settings: 'Configurações', security: 'Segurança', profile: 'Perfil', extensions: 'Extensões', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', mods: 'Mods', productivity:'Espaços e pesquisa' })[url.slice(9)];
     tab.view?.webContents.stop(); layout(); emit(); return;
@@ -1697,7 +1786,9 @@ function navigate(tab, input, navigationOptions) {
     ? Promise.resolve()
     : privacyServices.start(tab.connectionMode, connectionPort(tab.connectionMode));
   void routeReady.then(() => proxyReady.get(ses) || Promise.resolve()).then(() => navigationOptions ? view.webContents.loadURL(url, navigationOptions) : view.webContents.loadURL(url)).catch(error => {
-    tab.error = `Não foi possível iniciar a conexão ${tab.connectionMode}: ${error.message}`; tab.loading = false; layout(); emit();
+    // Falha de carregamento (código de rede): a tela certa já veio do did-fail-load.
+    if (Number.isFinite(error?.errno) && error.errno < 0) return;
+    showTabError(tab, 'route', { url, description: `Não foi possível iniciar a conexão ${tab.connectionMode}: ${error.message}` });
   });
   layout(); emit();
 }
@@ -1706,7 +1797,7 @@ function applyConnectionMode(mode) {
   for (const tab of [...tabs]) {
     const address = tab.url;
     tab.connectionMode = mode;
-    tab.error = null;
+    tab.error = null; tab.errorInfo = null;
     if (tab.view && !tab.view.webContents.isDestroyed()) {
       const previousView = tab.view;
       if (win && !win.isDestroyed()) win.contentView.removeChildView(previousView);
@@ -1794,6 +1885,66 @@ async function command(action, payload) {
   switch (action) {
     case 'state': return snapshot();
     case 'password:list': return passwordVaultSnapshot();
+    case 'password:never:list': return store.passwordNever;
+    case 'password:never:remove': store.passwordNever = store.passwordNever.filter(origin => origin !== payload); persist(); return store.passwordNever;
+    case 'password:prompt:save': {
+      if (!passwordPrompt || payload?.id !== passwordPrompt.id) throw new Error('Este pedido para salvar a senha expirou.');
+      const username = typeof payload?.username === 'string' ? payload.username.trim().slice(0,256) : passwordPrompt.username;
+      if (!username) throw new Error('Informe o usuário ou e-mail desta conta.');
+      savePasswordEntry(passwordPrompt.origin, username, passwordPrompt.passwordEncrypted);
+      clearPasswordPrompt(); persist(); return true;
+    }
+    case 'password:prompt:never': {
+      if (passwordPrompt && payload?.id === passwordPrompt.id) { store.passwordNever = [passwordPrompt.origin, ...store.passwordNever.filter(origin => origin !== passwordPrompt.origin)].slice(0,500); persist(); }
+      clearPasswordPrompt(); return true;
+    }
+    case 'password:prompt:dismiss': if (passwordPrompt && payload?.id === passwordPrompt.id) clearPasswordPrompt(); return true;
+    case 'password:check': return checkPasswordLeaks();
+    case 'password:import': {
+      const result = await dialog.showOpenDialog(win, { title: 'Importar senhas (CSV)', properties: ['openFile'], filters: [{ name: 'Senhas exportadas', extensions: ['csv'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      if (fs.statSync(result.filePaths[0]).size > 10 * 1024 * 1024) throw new Error('O arquivo de senhas é grande demais (máximo de 10 MB).');
+      const parsed = passwordsFromCsv(fs.readFileSync(result.filePaths[0], 'utf8'));
+      if (parsed.error) throw new Error(parsed.error);
+      let added = 0, updated = 0, unchanged = 0;
+      for (const entry of parsed.entries) {
+        const existing = store.passwords.find(item => item.origin === entry.origin && item.username === entry.username);
+        if (existing) { try { if (decryptPassword(existing) === entry.password) { unchanged++; continue; } } catch {} }
+        if (savePasswordEntry(entry.origin, entry.username, encryptPassword(entry.password)) === 'added') added++; else updated++;
+      }
+      persist(); emit();
+      return { added, updated, unchanged, skipped: parsed.skipped };
+    }
+    case 'import:detect': return browserImport.detectBrowsers().map(browser => ({ id: browser.id, name: browser.name, profiles: browser.profiles.map(profile => ({ id: profile.id, name: profile.name })) }));
+    case 'import:run': {
+      const browser = browserImport.detectBrowsers().find(item => item.id === payload?.browser);
+      const profile = browser?.profiles.find(item => item.id === payload?.profile);
+      if (!browser || !profile) throw new Error('Não encontramos esse perfil. Ele pode ter sido removido.');
+      const wanted = { bookmarks: payload?.bookmarks !== false, history: payload?.history !== false };
+      if (!wanted.bookmarks && !wanted.history) throw new Error('Escolha o que importar.');
+      const data = browserImport.readProfile(browser, profile, wanted);
+      const merged = browserImport.mergeImport({ bookmarks: store.bookmarks, history: store.history }, data, randomUUID);
+      store.bookmarks = merged.bookmarks; store.history = merged.history;
+      persist(); emit();
+      return { bookmarks: merged.addedBookmarks, history: merged.addedHistory, found: { bookmarks: data.bookmarks.length, history: data.history.length } };
+    }
+    case 'security:proceed': {
+      const target = tabs.find(item => item.id === payload?.tabId) || tab;
+      const info = target?.errorInfo;
+      if (!info?.host || !['certificate','https'].includes(info.kind)) break;
+      if (info.kind === 'certificate') certificateExceptions.add(info.host);
+      else httpsUpgrader.allowHttp(info.host);
+      navigate(target, info.url);
+      return true;
+    }
+    case 'security:back': {
+      const target = tabs.find(item => item.id === payload?.tabId) || tab;
+      if (!target) break;
+      const history = target.view?.webContents.navigationHistory;
+      if (history?.canGoBack()) { target.error = null; target.errorInfo = null; history.goBack(); layout(); emit(); }
+      else navigate(target, 'cypher://newtab');
+      return true;
+    }
     case 'password:generate': return generatePassword(payload?.length);
     case 'clipboard:write': {
       if (typeof payload !== 'string' || payload.length > 8192) throw new Error('Texto inválido para a área de transferência.');
@@ -1804,11 +1955,7 @@ async function command(action, payload) {
       const username = typeof payload?.username === 'string' ? payload.username.trim().slice(0,256) : '';
       if (!origin) throw new Error('O cofre aceita endereços HTTPS. HTTP só é aceito para localhost.');
       if (!username) throw new Error('Informe o nome de usuário ou e-mail.');
-      const passwordEncrypted = encryptPassword(payload?.password);
-      const existing = store.passwords.find(entry => entry.origin === origin && entry.username === username);
-      if (existing) { existing.passwordEncrypted = passwordEncrypted; existing.updated = Date.now(); }
-      else store.passwords.unshift({ id:randomUUID(), origin, username, passwordEncrypted, updated:Date.now() });
-      store.passwords = store.passwords.slice(0,500);
+      savePasswordEntry(origin, username, encryptPassword(payload?.password));
       persist(); emit();
       if (store.settings.passwordAutofillEnabled) for (const candidate of tabs) maybeAutofillPassword(candidate);
       return true;
@@ -2590,6 +2737,18 @@ app.whenReady().then(async () => {
   win.webContents.on('context-menu', (_event, params) => {
     const items = editMenuItems(params);
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
+  ipcMain.on('cypher:login-captured', (event, payload) => {
+    const tab = tabs.find(entry => entry.view?.webContents === event.sender);
+    if (!tab || event.senderFrame !== event.sender.mainFrame || typeof payload?.password !== 'string' || !payload.password || payload.password.length > 4096) return;
+    const username = typeof payload.username === 'string' ? payload.username.trim().slice(0,256) : '';
+    try { loginCaptured(tab, normalizePasswordOrigin(event.senderFrame.url), username, payload.password); }
+    catch (error) { console.warn('Não foi possível preparar o pedido de senha:', error.message); }
+  });
+  app.on('certificate-error', (event, contents, url, _error, _certificate, callback) => {
+    const tab = tabs.find(entry => entry.view?.webContents === contents);
+    if (tab && tab.connectionMode === 'normal' && certificateExceptions.has(hostOf(url))) { event.preventDefault(); callback(true); return; }
+    callback(false);
   });
   ipcMain.handle('cypher:command', (event, action, payload) => {
     if (event.sender === win.webContents) {

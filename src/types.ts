@@ -17,7 +17,7 @@ export interface Settings {
   openLinksInNewTab: boolean; showSearchSuggestions: boolean; sendDoNotTrack: boolean;
   blockAds: boolean; blockTrackers: boolean; blockThirdPartyCookies: boolean;
   blockPopups: boolean; popupExceptions: string[];
-  passwordAutofillEnabled: boolean; trackingExceptions: string[];
+  passwordAutofillEnabled: boolean; passwordSavePrompt: boolean; passwordLeakCheck: boolean; httpsMode: 'upgrade' | 'strict' | 'off'; trackingExceptions: string[];
   preferredLanguages: string[]; spellCheckEnabled: boolean; spellCheckLanguages: string[]; translationEnabled: boolean;
   hardwareAcceleration: boolean; webrtcPolicy: 'default' | 'default_public_and_private_interfaces' | 'default_public_interface_only' | 'disable_non_proxied_udp';
   showBookmarksBar: boolean; suggestBookmarks: boolean; suggestHistory: boolean;
@@ -38,7 +38,7 @@ export interface ModPackageInfo { id: string; source: 'builtin' | 'catalog' | 'f
 export interface CatalogMod { id: string; name: string; version: string; author: string; description: string; tags: string[]; components: ModComponent[]; preview: string; source: 'builtin' | 'catalog'; size?: number }
 export interface ModEffects { wallpaper: { url: string; type: 'image' | 'video'; dim: number; modId: string } | null; sounds: { volume: number; files: Partial<Record<'click' | 'hover' | 'tabOpen' | 'tabClose' | 'typing' | 'navigate', string>> } | null; music: { base: string; active: string; volume: number; modId: string } | null; shader: { preset: string; intensity: number } | null; fonts: Partial<Record<'display' | 'body', { family: string; url: string }>>; interfaceCss: string }
 export interface SplitView { left: string; right: string; ratio: number }
-export interface Tab { id: string; containerId?: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null; workspaceId?: string; group?: string; suspended?: boolean; lastExternalUrl?: string; lastExternalTitle?: string }
+export interface Tab { id: string; containerId?: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null; errorInfo?: TabErrorInfo | null; certificateWarning?: boolean; workspaceId?: string; group?: string; suspended?: boolean; lastExternalUrl?: string; lastExternalTitle?: string }
 export interface NowPlaying { tabId: string; tabTitle: string; pageUrl: string; title: string; artist: string; album: string; artwork: string; currentTime: number; duration: number; playing: boolean }
 export interface Link { id: string; title: string; url: string; date: number }
 export interface Download { id: string; name: string; url: string; total: number; received: number; state: string; date: number; path: string; private: boolean }
@@ -61,11 +61,16 @@ export interface Workspace { id: string; name: string; color: string; tabs: Arra
 export interface ResearchItem { id: string; url: string; title: string; note: string; tags: string[]; savedAt: number; read: boolean }
 export interface BrowserProfile { id: string; name: string; active: boolean }
 export interface SiteProtectionCounts { blockedRequests: number; blockedAds: number; blockedTrackers: number }
-export interface SavedPassword { id: string; origin: string; username: string; updated: number }
+export interface SavedPassword { id: string; origin: string; username: string; updated: number; leaked: number; reused: boolean; checkedAt: number }
 export interface ProfileSyncStatus { configured: boolean; endpoint: string; username: string; syncing: boolean; lastSync: number; error: string }
-export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus; skins?: SkinPackage[]; privacyStats?: Record<string, DailyPrivacyStats>; split?: SplitView | null; openPanelId?: string; systemDark?: boolean; modPackages?: ModPackageInfo[]; modEffects?: ModEffects; onboarding?: UpdateOnboardingState | null }
+export interface BrowserState { passwordPrompt?: PasswordPrompt | null; tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus; skins?: SkinPackage[]; privacyStats?: Record<string, DailyPrivacyStats>; split?: SplitView | null; openPanelId?: string; systemDark?: boolean; modPackages?: ModPackageInfo[]; modEffects?: ModEffects; onboarding?: UpdateOnboardingState | null }
 /** Imagem de uma página nativa, mostrada sob menus e popovers enquanto ela fica escondida. */
 export interface PageSnapshot { x: number; y: number; width: number; height: number; dataUrl: string }
 declare global {
   interface Window { cypher: { invoke: (action: string, payload?: unknown) => Promise<any>; onState: (callback: (state: BrowserState) => void) => () => void; onShortcut: (callback: (action: string) => void) => () => void; onFindResult?: (callback: (result: { matches: number; active: number }) => void) => () => void; onPageSnapshot?: (callback: (shots: PageSnapshot[]) => void) => () => void } }
 }
+
+export type TabErrorKind = 'certificate' | 'https' | 'ssl' | 'dns' | 'offline' | 'refused' | 'timeout' | 'network' | 'blocked' | 'crashed' | 'route' | 'generic';
+export interface TabErrorInfo { kind: TabErrorKind; code: number; name: string; host: string; url: string }
+export interface PasswordPrompt { id: string; tabId: string; origin: string; username: string; update: boolean; leaked: number }
+export interface ImportableBrowser { id: string; name: string; profiles: { id: string; name: string }[] }
