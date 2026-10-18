@@ -163,9 +163,14 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(fs.readFileSync(download.path,'utf8'),'Cypher download works');
     await assert.rejects(() => invoke('navigate','javascript:alert(1)'));
     await invoke('tab:new',{ url:'cypher://settings' });
-    await until(() => win.webContents.executeJavaScript('!!document.querySelector(".settings-center")'), 'settings UI');
+    await until(() => win.webContents.executeJavaScript('!!document.querySelector(".central .central-tabs")'), 'settings UI');
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-settings.png'), (await win.webContents.capturePage()).toPNG());
+    // Segurança, Perfil e Extensões abrem a Central na seção certa.
+    for (const [page, label, marker] of [['security','Privacidade e segurança','#site-permissions'],['profile','Perfil e dados','#profile-manager'],['extensions','Extensões','#extensions-list']]) {
+      await invoke('navigate',`cypher://${page}`);
+      await until(() => win.webContents.executeJavaScript(`document.querySelector('.central-tabs [aria-selected="true"]')?.textContent === ${JSON.stringify(label)} && !!document.querySelector(${JSON.stringify(marker)})`), `central alias ${page}`);
+    }
     await invoke('tab:new',{ url:'cypher://mods' });
     await until(() => win.webContents.executeJavaScript('!!document.querySelector(".mods-store")'), 'mods store UI');
     const accentBeforeMod = (await invoke('state')).settings.accent;

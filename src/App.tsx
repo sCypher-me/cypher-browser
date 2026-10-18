@@ -1,25 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Search, Star, Download, Clock3, SlidersHorizontal, Home, Puzzle, PanelLeftClose, PanelLeftOpen, Shield, ShieldCheck, Globe2, ChevronRight, ChevronDown, MoreHorizontal, ArrowUpRight, Pin, Volume2, VolumeX, Trash2, Upload, Check, ExternalLink, FolderOpen, Pause, Play, ScanLine, Command, LockKeyhole, Sparkles, Monitor, LayoutList, Grid2X2, Maximize, Printer, Code2, Save, CheckCircle2, AlertCircle, Headphones, MessageCircle, UserRound, ImagePlus, Music2, Ban, Layers3, Copy, CopyPlus, Undo2, ZoomIn, ListX, Link2, VenetianMask, Waypoints, BookOpen, Camera, Columns2, Boxes, PanelRight, PenTool, Tag, ArrowLeftRight, Pipette } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Search, Star, Download, Clock3, SlidersHorizontal, Home, Puzzle, PanelLeftClose, PanelLeftOpen, Shield, ShieldCheck, Globe2, ChevronRight, ChevronDown, MoreHorizontal, ArrowUpRight, Pin, Volume2, VolumeX, Trash2, Upload, Check, ExternalLink, FolderOpen, Pause, Play, ScanLine, Command, LockKeyhole, Sparkles, Monitor, LayoutList, Grid2X2, Maximize, Printer, Code2, Save, CheckCircle2, AlertCircle, Headphones, MessageCircle, Music2, Ban, Layers3, Copy, CopyPlus, Undo2, ZoomIn, ListX, Link2, VenetianMask, Waypoints, BookOpen, Camera, Columns2, Boxes, PanelRight, PenTool, Tag, ArrowLeftRight, Pipette } from 'lucide-react';
 import type { BrowserState, ConnectionMode, Settings, Tab, ToolbarItem, TrackerProtectionStatus } from './types';
 import { cn } from './lib/cn';
 import { defaultHome } from '../electron/home-layout.mjs';
 import HomePage from './HomePage';
-import ConnectionSettings from './ConnectionSettings';
 import SettingsCenter from './SettingsCenter';
-import ExtensionsPage from './ExtensionsPage';
-import SitePermissionsCenter from './SitePermissionsCenter';
-import ProfileSyncPanel from './ProfileSyncPanel';
 import PopupProtectionPanel from './PopupProtectionPanel';
 import ProductivityCenter from './ProductivityCenter';
-import ProfileManager from './ProfileManager';
 import CommandPalette, { type PaletteCommand } from './CommandPalette';
 import InspectorPanel, { type InspectTarget } from './InspectorPanel';
 import CaptureEditor from './CaptureEditor';
-import PrivacyReport from './PrivacyReport';
 import { defaultTokens } from './CustomizationSettings';
 import ModsStore from './ModsStore';
 import { useModAudio } from './modAudio';
-import { browserPages, internalPageFromUrl, type InternalPage, type SettingsSection } from './navigation';
+import { browserPages, centralAlias, internalPageFromUrl, sectionFor, type InternalPage, type LegacySection, type SettingsSection } from './navigation';
 import './browser-features.css';
 import './productivity.css';
 
@@ -100,13 +94,13 @@ export default function App() {
   const [filter, setFilter] = useState('');
   const [toast, setToast] = useState('');
   const [pageFullscreen, setPageFullscreen] = useState(false);
-  const [settingsDestination, setSettingsDestination] = useState<{ category: SettingsSection; focusId?: string }>({ category: 'appearance' });
-  const [securityFocusId, setSecurityFocusId] = useState('');
+  const [settingsDestination, setSettingsDestination] = useState<{ category: SettingsSection; focusId?: string; stamp: number }>({ category: 'overview', stamp: 0 });
   const addressFormRef = useRef<HTMLFormElement>(null), addressRef = useRef<HTMLInputElement>(null), findRef = useRef<HTMLInputElement>(null), viewportRef = useRef<HTMLDivElement>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const soundContext = useRef<AudioContext | null>(null);
   const tab = state.tabs.find(t => t.id === state.activeId);
   const page = internalPageFromUrl(tab?.url);
+  const isCentral = page === 'settings' || !!(page && centralAlias[page]);
   const s = state.settings, isSide = s.tabPosition === 'side';
   const activeWorkspace = state.workspaces.find(workspace => workspace.id === state.activeWorkspaceId);
   const visibleTabs = state.tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === state.activeWorkspaceId);
@@ -119,11 +113,13 @@ export default function App() {
     try { return await window.cypher.invoke(action, payload); }
     catch (error) { notify(String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': Error: /, '')); }
   }
-  function openPage(name: InternalPage, options: { category?: SettingsSection; focusId?: string } = {}) {
+  function openPage(target: InternalPage, options: { category?: SettingsSection | LegacySection; focusId?: string } = {}) {
     setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setFind(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setFilter('');
-    setSettingsDestination({ category: options.category || 'appearance', focusId: name === 'settings' ? options.focusId : undefined });
-    setSecurityFocusId(name === 'security' ? options.focusId || '' : '');
-    const existing = state.tabs.find(t => t.url === `cypher://${name}` && !t.private);
+    // Segurança, Perfil e Extensões agora são seções da Central de Configurações.
+    const alias = centralAlias[target];
+    const name: InternalPage = alias ? 'settings' : target;
+    if (name === 'settings') setSettingsDestination({ category: alias || sectionFor(options.category), focusId: options.focusId, stamp: Date.now() });
+    const existing = state.tabs.find(t => (t.url === `cypher://${name}` || (name === 'settings' && !!centralAlias[internalPageFromUrl(t.url) as InternalPage])) && !t.private);
     if (existing) void act('tab:select', existing.id);
     else if (tab) void act('navigate', `cypher://${name}`);
     else void act('tab:new', { url: `cypher://${name}` });
@@ -144,11 +140,6 @@ export default function App() {
     void window.cypher.invoke('state').then(setState);
     return () => { off(); clearTimeout(toastTimer.current); };
   }, []);
-  useEffect(() => {
-    if (page !== 'security' || !securityFocusId) return;
-    const timer = window.setTimeout(() => document.getElementById(securityFocusId)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-    return () => window.clearTimeout(timer);
-  }, [page, securityFocusId]);
   useEffect(() => { setAddress(tab?.url === 'cypher://newtab' ? '' : tab?.url || ''); setFind(false); setQuery(''); setFilter(''); setFindResult(null); }, [tab?.id, tab?.url]);
   useEffect(() => window.cypher?.onFindResult?.(setFindResult), []);
   useLayoutEffect(() => {
@@ -350,11 +341,9 @@ export default function App() {
         <div className={`viewport ${page ? 'internal' : 'external'} ${splitActive ? 'split' : ''}`} ref={viewportRef} data-inspect="page">
           {splitActive && splitPair && <div className="split-divider" role="separator" aria-orientation="vertical" aria-label="Arraste para ajustar a divisão" style={{ left: `calc(${splitPair.ratio * 100}% - 3px)` }} onPointerDown={event => event.currentTarget.setPointerCapture(event.pointerId)} onPointerMove={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const rect = viewportRef.current!.getBoundingClientRect(); const ratio = (event.clientX - rect.left) / rect.width; cancelAnimationFrame(splitFrame.current); splitFrame.current = requestAnimationFrame(() => void act('split:ratio', ratio)); }} onDoubleClick={() => void act('split:ratio', 0.5)}/>}
           {page === 'newtab' && <HomePage key={tab?.id} settings={{ ...s, appearanceMode: effectiveMode }} modWallpaper={state.modEffects?.wallpaper} data={state.homeData} bookmarks={state.bookmarks} isPrivate={!!tab?.private} navigate={navigate} openSettings={() => openPage('settings')} save={home => window.cypher.invoke('settings', { home })} command={(action,payload) => window.cypher.invoke(action,payload)}/>}
-          {page && page !== 'newtab' && <div className={`internal-page ${page === 'settings' ? 'settings-internal' : ''}`}>{page !== 'settings' && <div className="page-heading"><span className="eyebrow">CYPHER / {pageLabels[page]?.toUpperCase()}</span><h1>{page === 'mods' ? <>Mude a <em>frequência.</em></> : pageLabels[page]}</h1><p>{({ security: 'Gerencie rotas por aba, privacidade da sessão e as permissões salvas para cada site.', extensions: 'Adicione extensões locais compatíveis. Extensões e mods têm funções diferentes.', profile: 'Sua identidade local neste dispositivo.', mods: 'Uma nova atmosfera em um clique. Encontre a sua.', bookmarks: 'Guarde os lugares para onde você quer voltar.', history: 'Os caminhos que você percorreu. Abas privadas ficam fora daqui.', downloads: 'Seus arquivos, em um só lugar.', productivity:'Organize contextos de navegação e reúna páginas para consultar depois.' })[page]}</p></div>}
-            {page === 'settings' && <SettingsCenter settings={s} update={state.update} trackerProtection={state.trackerProtection} profileSync={state.profileSync} hardwareAccelerationPending={state.hardwareAccelerationPending} tabs={state.tabs} activeTabId={state.activeId} initialCategory={settingsDestination.category} focusSettingId={settingsDestination.focusId} onSettings={settings} command={act} navigate={openPage} skins={state.skins}/>}
-            {page === 'security' && <div className="settings-grid"><PrivacyReport stats={state.privacyStats} protection={state.trackerProtection}/><ConnectionSettings settings={s} onSettings={settings} onConnection={mode => { void act('connection:select',mode); }}/><section className="settings-card session-privacy-card"><h2><ShieldCheck size={18}/> Privacidade da sessão</h2><p>Controles locais para os dados de navegação.</p><div className="setting-row"><span><strong>Dados do site</strong><small>Limpa cookies e cache e pode desconectar suas contas</small></span><button className="button secondary" onClick={() => act('data:clear')}>Limpar dados</button></div><div className="setting-row"><span><strong>Abas privadas</strong><small>Não entram no histórico e usam sessão temporária</small></span><button className="button secondary" onClick={() => act('tab:new',{ private:true })}><Shield size={15}/> Nova aba privada</button></div></section><div id="site-permissions"><SitePermissionsCenter permissions={state.sitePermissions} command={act}/></div></div>}
-            {page === 'extensions' && <ExtensionsPage extensions={state.extensions} command={act}/>}
-            {page === 'profile' && <div className="settings-grid"><section className="settings-card wide-card profile-card"><div className="profile-large-avatar">{s.profilePhoto ? <img src={s.profilePhoto} alt="Foto do perfil"/> : <UserRound size={40}/>}</div><div className="profile-copy"><span className="eyebrow">PERFIL</span><h2>{state.profiles.find(profile => profile.id === state.profileId)?.name || 'Seu perfil do Cypher'}</h2><p>Preferências, favoritos, histórico, senhas e sessões de sites ficam separados por perfil neste dispositivo.</p><div className="profile-actions"><button className="button primary" onClick={() => void chooseProfilePhoto()}><ImagePlus size={15}/>{s.profilePhoto ? 'Trocar foto' : 'Escolher foto'}</button>{s.profilePhoto && <button className="button secondary" onClick={() => settings({ profilePhoto:'' })}>Remover foto</button>}</div></div></section><ProfileManager profiles={state.profiles} profileId={state.profileId} command={act}/><ProfileSyncPanel sync={state.profileSync} command={act}/></div>}
+          {page && page !== 'newtab' && <div className={`internal-page page-${page} ${isCentral ? 'settings-internal' : ''}`}>{!isCentral && <div className="page-heading"><span className="eyebrow">CYPHER / {pageLabels[page]?.toUpperCase()}</span><h1>{page === 'mods' ? <>Mude a <em>frequência.</em></> : pageLabels[page]}</h1><p>{({ security: 'Gerencie rotas por aba, privacidade da sessão e as permissões salvas para cada site.', extensions: 'Adicione extensões locais compatíveis. Extensões e mods têm funções diferentes.', profile: 'Sua identidade local neste dispositivo.', mods: 'Uma nova atmosfera em um clique. Encontre a sua.', bookmarks: 'Guarde os lugares para onde você quer voltar.', history: 'Os caminhos que você percorreu. Abas privadas ficam fora daqui.', downloads: 'Seus arquivos, em um só lugar.', productivity:'Organize contextos de navegação e reúna páginas para consultar depois.' })[page]}</p></div>}
+            {isCentral && <SettingsCenter settings={s} update={state.update} trackerProtection={state.trackerProtection} profileSync={state.profileSync} hardwareAccelerationPending={state.hardwareAccelerationPending} tabs={state.tabs} activeTabId={state.activeId} initialCategory={centralAlias[page] || settingsDestination.category} focusSettingId={settingsDestination.focusId} focusStamp={settingsDestination.stamp} onSettings={settings} command={act} navigate={openPage} skins={state.skins}
+              privacyStats={state.privacyStats} sitePermissions={state.sitePermissions} profiles={state.profiles} profileId={state.profileId} extensions={state.extensions} connectionMode={state.settings.connectionMode} onChooseProfilePhoto={() => void chooseProfilePhoto()}/>}
             {page === 'productivity' && <ProductivityCenter tabs={state.tabs} activeTab={tab} workspaces={state.workspaces} activeWorkspaceId={state.activeWorkspaceId} researchItems={state.researchItems} command={act} navigate={navigate}/>}
             {page === 'mods' && <ModsStore settings={s} packages={state.modPackages || []} command={act} onSettings={settings} notify={notify} themes={<><div className="collection-toolbar"><span><span className="live-dot"/> {state.mods.length} TEMAS RÁPIDOS · SÓ CORES E PAPEL DE PAREDE</span><div><button className="button secondary" onClick={() => act('mod:import')}><Download size={15}/> Importar tema</button><button className="button primary" onClick={() => act('mod:export')}><Upload size={15}/> Exportar tema</button></div></div><div className="mods-grid">{state.mods.map(mod => <article key={mod.id} className={`mod-card ${s.activeMod === mod.id ? 'mod-active' : ''}`}><div className={`mod-preview mod-${mod.settings.wallpaper}`} style={{ '--mod-accent': mod.settings.accent, '--mod-bg': mod.settings.background, '--mod-surface': mod.settings.surface } as CSSProperties}><div className="mini-rail"/><div className="mini-sidebar"><i/><i/><i/></div><div className="mini-main"><div className="mini-address"/><div className="mini-orbit"/><span>Seu próximo<br/><b>universo.</b></span></div><span className="mod-preview-tag">{mod.custom ? 'COMUNIDADE' : 'CYPHER COLLECTION'}</span></div><div className="mod-info"><div><span className="eyebrow">POR {mod.author.toUpperCase()}</span><h2>{mod.name}</h2><p>{mod.description}</p></div><div className="mod-actions"><button className={`button ${s.activeMod === mod.id ? 'secondary' : 'primary'}`} onClick={() => act('mod:apply', mod.id)}>{s.activeMod === mod.id ? <><Check size={15}/> Em uso</> : <>Aplicar mod <ArrowUpRight size={15}/></>}</button>{mod.custom && <IconButton label="Remover mod" onClick={() => act('mod:remove', mod.id)}><Trash2 size={16}/></IconButton>}</div></div></article>)}</div><div className="info-note"><Puzzle size={19}/><div><strong>Mods visuais e extensões locais.</strong><p>Mods importados ajustam a aparência com segurança. Extensões Chromium descompactadas podem ser gerenciadas na seção Extensões; mods com código e marketplace ainda estão no roadmap.</p></div></div></>}/>}
             {(page === 'bookmarks' || page === 'history') && <><div className="collection-toolbar"><label className="filter-input"><Search size={16}/><input aria-label="Filtrar lista" placeholder="Encontre um endereço…" value={filter} onChange={event => setFilter(event.target.value)}/></label>{page === 'history' && <button className="button secondary" disabled={!state.history.length} onClick={() => act('history:clear')}><Trash2 size={15}/> Limpar histórico</button>}</div><div className="link-list">{(page === 'history' ? state.history : state.bookmarks).filter(link => (link.title + link.url).toLowerCase().includes(filter.toLowerCase())).map((link, index, list) => <div className="link-row-wrap" key={link.id}>{page === 'history' && (index === 0 || dayLabel(list[index - 1].date) !== dayLabel(link.date)) && <h3 className="link-day">{dayLabel(link.date)}</h3>}<div className="link-row"><span className="link-avatar">{hostname(link.url)[0]?.toUpperCase()}</span><button className="link-details" onClick={() => act('tab:new', { url: link.url })}><strong>{link.title}</strong><small>{link.url}</small></button><span className="link-date">{date(link.date)}</span><IconButton label="Abrir em nova aba" onClick={() => act('tab:new', { url: link.url })}><ArrowUpRight size={16}/></IconButton><IconButton label="Copiar endereço" onClick={() => void copyText(link.url, 'Endereço copiado.')}><Copy size={15}/></IconButton><IconButton label="Remover item" onClick={() => act(page === 'history' ? 'history:remove' : 'bookmark:remove', link.id)}><Trash2 size={15}/></IconButton></div></div>)}</div>{!(page === 'history' ? state.history : state.bookmarks).length && <Empty icon={page === 'history' ? <Clock3/> : <Star/>} title={page === 'history' ? 'Toda jornada começa em algum lugar.' : 'Seus próximos lugares favoritos.'} description={page === 'history' ? 'Suas páginas visitadas aparecerão aqui.' : 'Clique na estrela da barra de endereço para guardar uma página.'}/>}</>}
