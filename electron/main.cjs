@@ -791,6 +791,21 @@ function refreshMediaInfo(tab, started = false) {
   }).catch(() => {});
 }
 function shortcut(action) { win.webContents.send('cypher:shortcut', action); }
+async function sendPageSnapshot() {
+  if (!win || win.isDestroyed()) return;
+  const views = win.contentView.children.filter(view => view.webContents && !view.webContents.isDestroyed() && (typeof view.getVisible !== 'function' || view.getVisible()));
+  const capture = async view => {
+    const bounds = view.getBounds();
+    if (bounds.width < 2 || bounds.height < 2) return null;
+    const image = await view.webContents.capturePage();
+    if (image.isEmpty()) return null;
+    return { ...bounds, dataUrl: `data:image/jpeg;base64,${image.toJPEG(78).toString('base64')}` };
+  };
+  try {
+    const shots = await Promise.race([Promise.all(views.map(capture)), new Promise(resolve => setTimeout(() => resolve([]), 300))]);
+    win.webContents.send('cypher:page-snapshot', shots.filter(Boolean));
+  } catch { win.webContents.send('cypher:page-snapshot', []); }
+}
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
@@ -2152,7 +2167,13 @@ async function command(action, payload) {
     case 'stop': wc?.stop(); break;
     case 'viewport': {
       if (!payload || !['x','y','width','height'].every(k => Number.isFinite(payload[k]))) break;
-      viewport = payload; obscured = !!payload.obscured;
+      const nextObscured = !!payload.obscured;
+      // Antes de tirar a página da frente de um menu ou popover, guarda uma imagem dela
+      // para a interface mostrar por baixo: o site parece continuar ali.
+      if (nextObscured && !obscured) await sendPageSnapshot();
+      // Com a página fora da frente, o teclado volta para a interface (Esc, setas, Enter).
+      if (nextObscured && !obscured && win && !win.isDestroyed()) win.webContents.focus();
+      viewport = payload; obscured = nextObscured;
       panelBounds = payload.panel && ['x','y','width','height'].every(k => Number.isFinite(payload.panel[k])) ? payload.panel : null;
       layout(); break;
     }

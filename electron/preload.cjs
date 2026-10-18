@@ -15,5 +15,6 @@ contextBridge.exposeInMainWorld('cypher', {
   invoke: (action, payload) => invokeActions.has(action) ? ipcRenderer.invoke('cypher:command', action, payload) : Promise.reject(new Error('Ação indisponível para a interface do Cypher.')),
   onState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('cypher:state', listener); return () => ipcRenderer.removeListener('cypher:state', listener); },
   onShortcut: callback => { const listener = (_event, action) => callback(action); ipcRenderer.on('cypher:shortcut', listener); return () => ipcRenderer.removeListener('cypher:shortcut', listener); },
+  onPageSnapshot: callback => { const listener = (_event, shots) => callback(Array.isArray(shots) ? shots : []); ipcRenderer.on('cypher:page-snapshot', listener); return () => ipcRenderer.removeListener('cypher:page-snapshot', listener); },
   onFindResult: callback => { const listener = (_event, result) => callback(result); ipcRenderer.on('cypher:find-result', listener); return () => ipcRenderer.removeListener('cypher:find-result', listener); },
 });

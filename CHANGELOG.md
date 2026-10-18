@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.32] - 2026-10-18
+- Os painéis de proteção e de pop-ups não ficam mais escondidos atrás do site aberto.
+- Menus, popovers e modais aparecem sobre uma imagem escurecida da página, em vez de a página sumir.
+- Esc fecha qualquer menu ou popover; um clique fora fecha os popovers da barra; abrir um fecha os outros.
+- Com um menu aberto, o teclado volta para a interface do Cypher.
+- Menus, popovers, a paleta de comandos e os avisos ganharam o mesmo acabamento: cantos cortados, linha de destaque, sombra e uma entrada suave (desligada quando as animações estão desativadas).
+
 ## [0.7.31] - 2026-10-18
 - Configurações viraram uma central única, com sete seções em abas: Visão geral, Aparência, Navegação, Privacidade e segurança, Perfil e dados, Extensões e Sistema.
 - Segurança, Perfil e Extensões agora moram dentro da central; links e endereços antigos (cypher://security, cypher://profile, cypher://extensions) abrem direto na seção certa.
