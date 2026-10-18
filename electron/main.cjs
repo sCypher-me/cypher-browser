@@ -1301,6 +1301,9 @@ function attachView(tab) {
     if (input.key === 'Escape') { shortcut('escape'); return; }
     if ((input.control || input.meta) && input.key.toLowerCase() === 'l') { event.preventDefault(); shortcut('address'); }
   });
+  wc.on('found-in-page', (_event, result) => {
+    if (tab.id === activeId && result.finalUpdate) win.webContents.send('cypher:find-result', { matches: result.matches, active: result.activeMatchOrdinal });
+  });
   wc.on('context-menu', (_event, params) => {
     const template = [];
     if (store.settings.translationEnabled && tab.connectionMode === 'normal' && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
@@ -1613,6 +1616,16 @@ async function command(action, payload) {
     case 'tab:select': selectTab(payload); break;
     case 'tab:close': closeTab(payload); break;
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
+    case 'tab:duplicate': { const target = tabs.find(t => t.id === payload); if (target) return addTab(target.url, target.private, target.connectionMode); break; }
+    case 'tab:reload': { const target = tabs.find(t => t.id === payload); if (target?.view && !target.view.webContents.isDestroyed()) target.view.webContents.reload(); break; }
+    case 'tab:close-others': {
+      const keep = tabs.find(t => t.id === payload);
+      if (!keep) break;
+      const visible = item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId;
+      selectTab(keep.id);
+      for (const item of tabs.filter(t => t.id !== keep.id && !t.pinned && visible(t))) closeTab(item.id);
+      break;
+    }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
     case 'tab:mute': { const target = tabs.find(t => t.id === payload); if (target) { target.muted = !target.muted; target.view?.webContents.setAudioMuted(target.muted); emit(); } break; }
     case 'media:window:toggle': toggleMediaPlayerWindow(); break;
@@ -1902,6 +1915,13 @@ function installMenu() {
       { label: 'Reabrir aba', accelerator: 'CmdOrCtrl+Shift+T', click: run('tab:restore') },
       { label: 'Próxima aba', accelerator: 'Ctrl+Tab', click: () => selectTab(tabs[(tabs.findIndex(t => t.id === activeId) + 1) % tabs.length]?.id) },
       { label: 'Aba anterior', accelerator: 'Ctrl+Shift+Tab', click: () => selectTab(tabs[(tabs.findIndex(t => t.id === activeId) - 1 + tabs.length) % tabs.length]?.id) },
+      { label: 'Pesquisar abas e comandos', accelerator: 'CmdOrCtrl+Shift+A', click: () => shortcut('palette') },
+      ...Array.from({ length: 9 }, (_, index) => ({ label: index === 8 ? 'Última aba' : `Aba ${index + 1}`, accelerator: `CmdOrCtrl+${index + 1}`, click: () => {
+        const visible = tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId);
+        const ordered = [...visible.filter(item => item.pinned), ...visible.filter(item => !item.pinned)];
+        const target = index === 8 ? ordered[ordered.length - 1] : ordered[index];
+        if (target) selectTab(target.id);
+      } })),
       { type: 'separator' }, { role: 'quit', label: 'Sair' },
     ] },
     { label: 'Navegação', submenu: [

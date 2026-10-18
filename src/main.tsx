@@ -8,4 +8,5 @@ import './connection.css';
 import './navigation.css';
 import './settings-center.css';
 import './appearance-theme.css';
+import './polish.css';
 createRoot(document.getElementById('root')!).render(<React.StrictMode>{window.location.hash === '#mini-player' ? <MediaPlayerWindow /> : <App />}</React.StrictMode>);
