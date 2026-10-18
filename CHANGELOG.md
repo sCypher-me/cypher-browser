@@ -1,6 +1,15 @@
 # Cypher — novidades
 
 ## [Unreleased]
+- Paleta de comandos (Ctrl Shift A) pesquisa abas abertas, favoritos, histórico e ações do navegador, com navegação pelo teclado.
+- O menu de contexto das abas abre junto ao cursor e ganhou Recarregar, Duplicar, Copiar endereço, Fechar outras abas e Reabrir aba fechada; Ctrl 1–9 seleciona abas.
+- Localizar na página mostra a posição e o total de resultados; Shift Enter volta ao resultado anterior.
+- A barra de endereço mostra o zoom quando diferente de 100% e as sugestões ficam alinhadas a ela; o contador de bloqueios só aparece quando há bloqueios.
+- A barra de ferramentas se adapta a janelas menores: rotas Tor e I2P viram ícones próprios e os botões do lado direito não saem mais da tela.
+- A Home escala o layout inteiro de forma proporcional, sem cortes, setas de rolagem ou rolagem horizontal, e empilha os widgets em janelas muito estreitas.
+- No editor da Home, os rótulos dos widgets não se sobrepõem mais ao conteúdo; a nota "Papel" acompanha o tema escuro.
+- O tema claro da Home deixou de esconder título, relógio e atalhos.
+- O histórico é agrupado por dia e permite copiar endereços; a lista de abas usa toda a altura da barra lateral.
 
 ## [0.7.25] - 2026-10-17
 - Espaços de trabalho salvam conjuntos separados de abas; a área Espaços e pesquisa inclui fila de leitura com notas e sugestões locais de grupos por domínio.

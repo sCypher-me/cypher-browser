@@ -8,11 +8,12 @@ const invokeActions = new Set([
   'reload','save','settings','site-data:clear','site-permission:clear','site-permission:remove','state','stop','system:default-browser','password:list','password:save','password:delete','password:fill','password:generate','clipboard:write',
   'workspace:list','workspace:create','workspace:rename','workspace:delete','workspace:switch','research:add','research:update','research:remove','tabs:organize','tabs:suggest-groups','profile:list','profile:create','profile:switch',
   'system:dns-settings','system:proxy','system:restart','tab:close','tab:move','tab:mute','tab:new','tab:pin',
-  'tab:restore','tab:select','update:ack','update:check','update:dismiss','update:install','viewport','vpn:proton:account',
+  'tab:restore','tab:select','tab:duplicate','tab:reload','tab:close-others','update:ack','update:check','update:dismiss','update:install','viewport','vpn:proton:account',
   'vpn:proton:open','vpn:proton:status','vpn:proton:verify','window:close','window:fullscreen','window:maximize','window:minimize','zoom',
 ]);
 contextBridge.exposeInMainWorld('cypher', {
   invoke: (action, payload) => invokeActions.has(action) ? ipcRenderer.invoke('cypher:command', action, payload) : Promise.reject(new Error('Ação indisponível para a interface do Cypher.')),
   onState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('cypher:state', listener); return () => ipcRenderer.removeListener('cypher:state', listener); },
   onShortcut: callback => { const listener = (_event, action) => callback(action); ipcRenderer.on('cypher:shortcut', listener); return () => ipcRenderer.removeListener('cypher:shortcut', listener); },
+  onFindResult: callback => { const listener = (_event, result) => callback(result); ipcRenderer.on('cypher:find-result', listener); return () => ipcRenderer.removeListener('cypher:find-result', listener); },
 });
