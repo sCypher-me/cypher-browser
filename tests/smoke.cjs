@@ -33,6 +33,7 @@ server.listen(0,'127.0.0.1', async () => {
     };
     let state = await invoke('state');
     assert.equal(state.settings.tabPosition,'side');
+    assert.ok(state.trackerProtection.available && state.trackerProtection.adsAvailable, `listas de bloqueio indisponíveis: ${state.trackerProtection.error}`);
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-home.png'), (await win.webContents.capturePage()).toPNG());

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Search, Star, Download, Clock3, SlidersHorizontal, Home, Puzzle, PanelLeftClose, PanelLeftOpen, Shield, ShieldCheck, Globe2, ChevronRight, ChevronDown, MoreHorizontal, ArrowUpRight, Pin, Volume2, VolumeX, Trash2, Upload, Check, ExternalLink, FolderOpen, Pause, Play, ScanLine, Command, LockKeyhole, Sparkles, Monitor, LayoutList, Grid2X2, Maximize, Printer, Code2, Save, CheckCircle2, AlertCircle, Headphones, MessageCircle, Music2, Ban, Layers3, Copy, CopyPlus, Undo2, ZoomIn, ListX, Link2, VenetianMask, Waypoints, BookOpen, Camera, Columns2, Boxes, PanelRight, PenTool, Tag, ArrowLeftRight, Pipette } from 'lucide-react';
-import type { BrowserState, PageSnapshot, ConnectionMode, Settings, Tab, ToolbarItem, TrackerProtectionStatus } from './types';
+import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Search, Star, Download, Clock3, SlidersHorizontal, Home, Puzzle, PanelLeftClose, PanelLeftOpen, Shield, ShieldCheck, Globe2, ChevronRight, ChevronDown, MoreHorizontal, ArrowUpRight, Pin, Volume2, VolumeX, Trash2, Upload, Check, ExternalLink, FolderOpen, Pause, Play, ScanLine, Command, LockKeyhole, Sparkles, Monitor, Maximize, Printer, Code2, Save, AlertCircle, Music2, Ban, Layers3, Copy, CopyPlus, Undo2, ZoomIn, ListX, Link2, VenetianMask, Waypoints, BookOpen, Camera, Columns2, Boxes, PanelRight, PenTool, Tag, ArrowLeftRight, Pipette } from 'lucide-react';
+import type { BrowserState, PageSnapshot, Settings, Tab, ToolbarItem, TrackerProtectionStatus } from './types';
 import { cn } from './lib/cn';
 import { defaultHome } from '../electron/home-layout.mjs';
 import HomePage from './HomePage';

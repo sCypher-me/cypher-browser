@@ -62,6 +62,7 @@
 [data-skin="recorte"] .tabs-heading { padding: 0 14px 0 4px; margin-bottom: 8px; font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: 2.5px; }
 [data-skin="recorte"] .tabs-heading > span:last-child { border-radius: 0; }
 [data-skin="recorte"] .tabs-list { counter-reset: cypher-tab; gap: 5px; }
+[data-skin="recorte"] .horizontal-tabs { counter-reset: cypher-tab; }
 [data-skin="recorte"] .side-tabs .tab, [data-skin="recorte"].side-tabs .tab { min-height: 38px; margin-right: 14px; border: 0; border-radius: 0; background: color-mix(in srgb, var(--text) 5%, transparent); color: color-mix(in srgb, var(--text) 82%, transparent); clip-path: polygon(0 0, 100% 0, calc(100% - calc(var(--cut) * 0.83)) 100%, 0 100%); box-shadow: none; }
 [data-skin="recorte"].side-tabs .tab:hover { background: color-mix(in srgb, var(--text) 10%, transparent); }
 [data-skin="recorte"].side-tabs .tab.selected { min-height: 40px; margin-right: 0; background: var(--text); color: var(--base); clip-path: polygon(0 0, 100% 0, calc(100% - calc(var(--cut) * 1.0)) 100%, 0 100%); }

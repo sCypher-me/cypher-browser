@@ -55,6 +55,8 @@ jobs:
           @{ repository = $env:GITHUB_REPOSITORY; updateSigningPublicKey = $env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
       - name: Compilar a interface do Cypher
         run: npm run build
+      - name: Conferir listas de bloqueio compiladas
+        run: node scripts/verify-tracker-lists.cjs
       - name: Executar smoke tests do navegador
         run: npm run test:smoke
       - name: Gerar aplicativo Windows e versão portátil

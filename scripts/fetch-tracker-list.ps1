@@ -19,8 +19,13 @@ if (-not $Force -and (Test-Path -LiteralPath $compiledPrivacy) -and (Test-Path -
     $privacyFetched = [DateTimeOffset]$privacy.fetchedAt
     $adsFetched = [DateTimeOffset]$ads.fetchedAt
     if ($privacyFetched -gt [DateTimeOffset]::UtcNow.AddDays(-3) -and $adsFetched -gt [DateTimeOffset]::UtcNow.AddDays(-3)) {
-      Write-Output 'EasyList e EasyPrivacy já estão atualizadas no pacote local.'
-      exit 0
+      # Recentes não bastam: depois de atualizar o bloqueador, os .bin antigos deixam de abrir.
+      node (Join-Path $PSScriptRoot 'verify-tracker-lists.cjs')
+      if ($LASTEXITCODE -eq 0) {
+        Write-Output 'EasyList e EasyPrivacy já estão atualizadas no pacote local.'
+        exit 0
+      }
+      Write-Output 'As listas locais foram geradas por outra versão do bloqueador; compilando de novo.'
     }
   } catch {}
 }

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.33] - 2026-10-18
+- O bloqueio de anúncios voltou a funcionar: a lista EasyList empacotada nas versões 0.7.30 a 0.7.32 tinha sido gerada para uma versão anterior do bloqueador e era ignorada. A publicação agora confere as listas antes de gerar o instalador.
+- Fechar o Cypher não gera mais um erro interno quando uma aba termina de fechar depois da janela.
+- Com as abas no topo, a numeração segue 01, 02, 03… em vez de repetir 01.
+- No modo claro, títulos das rotas Tor/I2P, da Proton VPN, das portas e da lista de senhas voltaram a aparecer.
+- Execuções de teste e desenvolvimento não leem nem alteram mais a escolha de relatórios de erro feita no Cypher instalado.
+
 ## [0.7.32] - 2026-10-18
 - Os painéis de proteção e de pop-ups não ficam mais escondidos atrás do site aberto.
 - Menus, popovers e modais aparecem sobre uma imagem escurecida da página, em vez de a página sumir.
