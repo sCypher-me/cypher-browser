@@ -1,6 +1,8 @@
 # Cypher — novidades
 
 ## [Unreleased]
+
+## [0.7.27] - 2026-10-18
 - Novo visual principal: a pele Recorte Noite traz silhuetas cortadas, tipografia condensada e uma barra superior única que reúne navegação, endereço, rotas e controles da janela.
 - O botão Pele, na barra, e Configurações → Aparência trocam a pele entre Recorte e Clássico sem mudar suas cores; o mod Cypher Original restaura o visual anterior completo.
 - As abas são numeradas, e a página interna ganhou um canto cortado com destaque na cor principal; as fontes Big Shoulders Display e Work Sans vêm embutidas no navegador.
