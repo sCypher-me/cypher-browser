@@ -90,7 +90,9 @@ const panelViews = new Map();
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
-const sitePermissionTypes = new Set(['media','geolocation','notifications','fullscreen','clipboard-sanitized-write']);
+const sitePermissionTypes = new Set(['media','geolocation','notifications','fullscreen','clipboard-sanitized-write','clipboard-read']);
+// Como no Chrome: botões "Copiar" dos sites escrevem sem perguntar (o Chromium já exige o clique do usuário).
+const autoGrantedPermissions = new Set(['clipboard-sanitized-write']);
 let privatePartition = `cypher-private-${randomUUID()}`;
 const builtInMods = [
   { id: 'recorte-noite', name: 'Recorte Noite', author: 'Cypher', description: 'Silhuetas cortadas, tipografia condensada e um laranja que corta a noite.', settings: { ...defaults } },
@@ -1282,21 +1284,23 @@ function setupSession(ses, mode = 'normal') {
   ses.setPermissionCheckHandler((wc, permission, origin) => {
     const tab = tabs.find(entry => entry.view?.webContents === wc);
     if (!tab || !sitePermissionTypes.has(permission)) return false;
-    if (tab.connectionMode !== 'normal') return false;
     const rule = !tab.private && store.sitePermissions.find(entry => entry.origin === origin && entry.permission === permission);
+    if (autoGrantedPermissions.has(permission)) return rule ? rule.allowed : true;
+    if (tab.connectionMode !== 'normal') return false;
     return rule ? rule.allowed : grants.has(`${origin}:${permission}`);
   });
   ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
     if (!sitePermissionTypes.has(permission) || !tabs.some(t => t.view?.webContents === wc)) return callback(false);
     const tab = tabs.find(entry => entry.view?.webContents === wc);
-    if (tab.connectionMode !== 'normal') return callback(false);
     let origin;
     try { origin = new URL(details.requestingUrl || wc.getURL()).origin; } catch { return callback(false); }
-    if (!/^https?:/.test(origin)) return callback(false);
     const savedRule = tab && !tab.private && store.sitePermissions.find(entry => entry.origin === origin && entry.permission === permission);
+    if (autoGrantedPermissions.has(permission)) return callback(savedRule ? savedRule.allowed : true);
+    if (tab.connectionMode !== 'normal') return callback(false);
+    if (!/^https?:/.test(origin)) return callback(false);
     if (savedRule) return callback(savedRule.allowed);
     if (grants.has(`${origin}:${permission}`)) return callback(true);
-    const names = { media: 'câmera ou microfone', geolocation: 'localização', notifications: 'notificações', fullscreen: 'tela cheia', 'clipboard-sanitized-write': 'copiar para a área de transferência' };
+    const names = { media: 'câmera ou microfone', geolocation: 'localização', notifications: 'notificações', fullscreen: 'tela cheia', 'clipboard-sanitized-write': 'copiar para a área de transferência', 'clipboard-read': 'ler o que você copiou (colar)' };
     const result = await dialog.showMessageBox(win, { type: 'question', title: 'Permissão do site', message: `${origin} quer acessar ${names[permission]}.`, buttons: ['Bloquear sempre','Permitir uma vez','Permitir sempre'], defaultId: 0, cancelId: 0 });
     if (wc.isDestroyed()) return callback(false);
     const ruleId = `${origin}|${permission}`;
