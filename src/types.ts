@@ -2,7 +2,10 @@ import type { HomeConfig } from '../electron/home-layout.mjs';
 export type ConnectionMode = 'normal' | 'tor' | 'i2p';
 export interface Settings {
   home: HomeConfig; skin: 'recorte' | 'classic';
-  tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light'; accent: string; surface: string; background: string;
+  tokens: DesignTokens; toolbarOrder: ToolbarItem[]; toolbarHidden: ToolbarItem[]; toolbarPosition: 'top' | 'bottom';
+  tabsAutoHide: boolean; showRail: boolean; workspaceAccent: boolean; customCss: string; skinPackage: string;
+  shortcuts: Partial<Record<ShortcutAction, string>>; routeRules: RouteRule[]; containers: TabContainer[]; blockCookieBanners: boolean; webPanels: WebPanel[]; panelWidth: number;
+  tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light' | 'system'; accent: string; surface: string; background: string;
   radius: number; font: 'system' | 'mono'; interfaceTextScale: number; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
   buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';
   soundEffectsEnabled: boolean; soundTheme: 'cypher' | 'soft' | 'arcade';
@@ -21,7 +24,16 @@ export interface Settings {
   memorySaverEnabled: boolean; memorySaverMinutes: number;
   defaultZoom: number; downloadDirectory: string; startWithWindows: boolean;
 }
-export interface Tab { id: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null; workspaceId?: string; group?: string; suspended?: boolean; lastExternalUrl?: string; lastExternalTitle?: string }
+export interface DesignTokens { cut: number; density: number; barHeight: number; borderWidth: number; displayFont: 'big-shoulders' | 'work-sans' | 'system' | 'serif' | 'mono'; bodyFont: 'work-sans' | 'system' | 'serif' | 'mono' }
+export type ToolbarItem = 'navigation' | 'address' | 'routes' | 'skin' | 'media' | 'customize' | 'menu';
+export type ShortcutAction = 'tab:new' | 'tab:private' | 'tab:close' | 'tab:restore' | 'tab:next' | 'tab:previous' | 'palette' | 'inspector' | 'address' | 'find' | 'bookmark' | 'history' | 'downloads' | 'reload' | 'reader' | 'capture' | 'split' | 'print' | 'save' | 'fullscreen' | 'zoom:in' | 'zoom:out' | 'zoom:reset' | 'devtools';
+export interface RouteRule { host: string; mode: 'tor' | 'i2p' }
+export interface TabContainer { id: string; name: string; color: string }
+export interface WebPanel { id: string; url: string; title: string }
+export interface SkinPackage { id: string; name: string; author: string; description: string; base: 'recorte' | 'classic'; css: string; tokens: DesignTokens }
+export interface DailyPrivacyStats { ads: number; trackers: number; requests: number; normal: number; tor: number; i2p: number }
+export interface SplitView { left: string; right: string; ratio: number }
+export interface Tab { id: string; containerId?: string; title: string; url: string; private: boolean; connectionMode: ConnectionMode; pinned: boolean; muted: boolean; audible: boolean; loading: boolean; canGoBack: boolean; canGoForward: boolean; zoom: number; error: string | null; workspaceId?: string; group?: string; suspended?: boolean; lastExternalUrl?: string; lastExternalTitle?: string }
 export interface NowPlaying { tabId: string; tabTitle: string; pageUrl: string; title: string; artist: string; album: string; artwork: string; currentTime: number; duration: number; playing: boolean }
 export interface Link { id: string; title: string; url: string; date: number }
 export interface Download { id: string; name: string; url: string; total: number; received: number; state: string; date: number; path: string; private: boolean }
@@ -41,7 +53,7 @@ export interface BrowserProfile { id: string; name: string; active: boolean }
 export interface SiteProtectionCounts { blockedRequests: number; blockedAds: number; blockedTrackers: number }
 export interface SavedPassword { id: string; origin: string; username: string; updated: number }
 export interface ProfileSyncStatus { configured: boolean; endpoint: string; username: string; syncing: boolean; lastSync: number; error: string }
-export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus }
+export interface BrowserState { tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus; skins?: SkinPackage[]; privacyStats?: Record<string, DailyPrivacyStats>; split?: SplitView | null; openPanelId?: string; systemDark?: boolean }
 declare global {
   interface Window { cypher: { invoke: (action: string, payload?: unknown) => Promise<any>; onState: (callback: (state: BrowserState) => void) => () => void; onShortcut: (callback: (action: string) => void) => () => void; onFindResult?: (callback: (result: { matches: number; active: number }) => void) => () => void } }
 }

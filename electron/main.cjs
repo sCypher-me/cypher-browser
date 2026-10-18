@@ -1,9 +1,9 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage, screen } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage, screen, nativeImage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID, randomBytes } = require('node:crypto');
-const { defaults, resolveAddress, sanitizeSettings, validateMod } = require('./domain.cjs');
+const { defaults, resolveAddress, sanitizeSettings, validateMod, validateSkinPackage, shortcutActions } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { extractCypherPackage } = require('./cypher-package.cjs');
@@ -61,6 +61,8 @@ app.on('open-file', (event, packageFile) => {
   else pendingCypherPackages.push(packageFile);
 });
 let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
+let split = null, openPanelId = '', panelBounds = null, statsTimer = null;
+const panelViews = new Map();
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
@@ -138,6 +140,15 @@ function loadStore(profileId = activeProfileId) {
   }
   for (const id of taskWidgets) if (!store.homeData.tasksById[id]) store.homeData.tasksById[id] = [];
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
+  store.skins = Array.isArray(saved.skins) ? saved.skins.slice(0,50).flatMap(item => {
+    try { const skin = validateSkinPackage({ ...item, schemaVersion:1, type:'cypher-skin' }); return [{ ...skin, id: typeof item.id === 'string' && /^skin-[a-f\d-]{36}$/.test(item.id) ? item.id : skin.id }]; } catch { return []; }
+  }) : [];
+  if (store.settings.skinPackage && !store.skins.some(item => item.id === store.settings.skinPackage)) store.settings.skinPackage = '';
+  store.privacyStats = {};
+  if (saved.privacyStats && typeof saved.privacyStats === 'object') for (const [day, value] of Object.entries(saved.privacyStats).slice(-60)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !value || typeof value !== 'object') continue;
+    store.privacyStats[day] = Object.fromEntries(['ads','trackers','requests','normal','tor','i2p'].map(key => [key, Number.isFinite(value[key]) ? Math.max(0, Math.floor(value[key])) : 0]));
+  }
   if (!store.workspaces.length) store.workspaces = [{ id:'personal', name:'Pessoal', color:'#78d9ee', tabs:store.savedTabs.filter(item => item && typeof item.url === 'string').slice(0,100).map(item => ({ url:item.url, title:item.title || item.url, pinned:item.pinned === true, group:item.group || '' })) }];
   if (!store.workspaces.some(item => item.id === store.activeWorkspaceId)) store.activeWorkspaceId = store.workspaces[0]?.id || 'personal';
   if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,500).flatMap(entry => {
@@ -189,7 +200,7 @@ function flush() {
       const liveTabs = tabs.filter(t => !t.private && t.connectionMode === 'normal' && t.workspaceId === workspace.id && /^https?:\/\//i.test(t.url)).slice(0,100);
       if (liveTabs.length) workspace.tabs = liveTabs.map(t => ({ url:t.url, title:t.title, pinned:t.pinned, group:t.group || '' }));
     }
-    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal' && /^https?:\/\//i.test(t.url)).map(t => ({ url: t.url, title:t.title, pinned: t.pinned, workspaceId:t.workspaceId, group:t.group || '' })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
+    fs.writeFileSync(storePath + '.tmp', JSON.stringify({ ...store, savedTabs: tabs.filter(t => !t.private && t.connectionMode === 'normal' && /^https?:\/\//i.test(t.url)).map(t => ({ url: t.url, title:t.title, pinned: t.pinned, workspaceId:t.workspaceId, group:t.group || '', containerId:t.containerId || '' })), downloads: store.downloads.filter(d => !d.private && (d.connectionMode || 'normal') === 'normal') }, null, 2));
     fs.renameSync(storePath + '.tmp', storePath);
   } catch (error) { console.error('Não foi possível salvar o perfil:', error.message); }
 }
@@ -413,7 +424,8 @@ function snapshot() {
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
-    nowPlaying: getNowPlaying() };
+    nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
+    split, openPanelId, systemDark: nativeTheme.shouldUseDarkColors };
 }
 function emit() {
   const state = snapshot();
@@ -464,6 +476,7 @@ async function switchProfile(id) {
   flush();
   profileSyncReady = false; profileSyncBusy = false; clearTimeout(profileSyncTimer);
   profileSwitching = true;
+  closePanels(); split = null;
   for (const tab of [...tabs]) {
     tab.suspending = true;
     if (tab.view) {
@@ -479,7 +492,7 @@ async function switchProfile(id) {
   protonExtensionReady = false; protonProxyValue = null;
   const homeId = addTab('cypher://newtab', false, store.settings.connectionMode);
   if (store.settings.startupMode === 'restore') for (const savedTab of store.savedTabs.slice(0,50)) {
-    try { const tabId = addTab(savedTab.url, false, store.settings.connectionMode); const restored = tabs.find(item => item.id === tabId); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
+    try { const tabId = addTab(savedTab.url, false, store.settings.connectionMode, true, undefined, { containerId: savedTab.containerId }); const restored = tabs.find(item => item.id === tabId); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
   }
   else if (store.settings.startupMode === 'specific') for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }
   profileSwitching = false; profileSyncReady = true;
@@ -597,16 +610,95 @@ function shortcut(action) { win.webContents.send('cypher:shortcut', action); }
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
-  const x = Math.min(Math.max(0, Math.round(viewport.x)), width);
-  const y = Math.min(Math.max(0, Math.round(viewport.y)), height);
-  const bounds = { x, y, width: Math.max(0, Math.min(Math.round(viewport.width), width - x)), height: Math.max(0, Math.min(Math.round(viewport.height), height - y)) };
+  const clampRect = rect => {
+    const x = Math.min(Math.max(0, Math.round(rect.x)), width);
+    const y = Math.min(Math.max(0, Math.round(rect.y)), height);
+    return { x, y, width: Math.max(0, Math.min(Math.round(rect.width), width - x)), height: Math.max(0, Math.min(Math.round(rect.height), height - y)) };
+  };
+  const bounds = clampRect(viewport);
+  const pair = split && [split.left, split.right].includes(activeId) ? [tabs.find(t => t.id === split.left), tabs.find(t => t.id === split.right)] : null;
+  const splitActive = !!pair && pair.every(t => t && t.view && !t.url.startsWith('cypher://') && !t.error);
+  const leftWidth = splitActive ? Math.max(0, Math.round(bounds.width * split.ratio) - 3) : 0;
+  const boundsFor = tab => {
+    if (!splitActive) return bounds;
+    if (tab.id === split.left) return { ...bounds, width: leftWidth };
+    return { x: bounds.x + leftWidth + 6, y: bounds.y, width: Math.max(0, bounds.width - leftWidth - 6), height: bounds.height };
+  };
   for (const tab of tabs) if (tab.view) {
-    tab.view.setBounds(tab.connectionMode === 'normal' ? bounds : letterboxBounds(bounds));
+    const tabBounds = boundsFor(tab);
+    tab.view.setBounds(tab.connectionMode === 'normal' ? tabBounds : letterboxBounds(tabBounds));
     const inWorkspace = tab.private || tab.connectionMode !== 'normal' || tab.workspaceId === store.activeWorkspaceId;
-    tab.view.setVisible(tab.id === activeId && inWorkspace && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
-    try { tab.view.webContents.setBackgroundThrottling(store.settings.memorySaverEnabled && tab.id !== activeId); } catch {}
+    const shown = splitActive ? tab.id === split.left || tab.id === split.right : tab.id === activeId;
+    tab.view.setVisible(shown && inWorkspace && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
+    try { tab.view.webContents.setBackgroundThrottling(store.settings.memorySaverEnabled && !shown); } catch {}
+  }
+  for (const [id, view] of panelViews) {
+    const visible = id === openPanelId && !!panelBounds && !obscured;
+    if (visible) view.setBounds(clampRect(panelBounds));
+    view.setVisible(visible);
   }
 }
+function closePanels() {
+  for (const view of panelViews.values()) {
+    if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  }
+  panelViews.clear(); openPanelId = '';
+}
+function panelView(panel) {
+  const existing = panelViews.get(panel.id);
+  if (existing && !existing.webContents.isDestroyed()) return existing;
+  const ses = session.fromPartition(normalPartition());
+  setupSession(ses, 'normal');
+  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
+  view.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:\/\//i.test(url)) addTab(url, false, 'normal'); return { action: 'deny' }; });
+  view.webContents.on('will-navigate', (event, url) => { if (!/^https?:\/\//i.test(url)) event.preventDefault(); });
+  view.webContents.on('dom-ready', () => { if (store.settings.blockCookieBanners) void view.webContents.insertCSS(cookieBannerCss).catch(() => {}); });
+  win.contentView.addChildView(view);
+  panelViews.set(panel.id, view);
+  void view.webContents.loadURL(panel.url).catch(error => console.warn('Painel lateral:', error.message));
+  return view;
+}
+function localDay(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; }
+function bumpStat(key, amount = 1) {
+  if (!store?.privacyStats) return;
+  const day = localDay();
+  if (!store.privacyStats[day]) {
+    store.privacyStats[day] = { ads:0, trackers:0, requests:0, normal:0, tor:0, i2p:0 };
+    const days = Object.keys(store.privacyStats).sort();
+    for (const old of days.slice(0, Math.max(0, days.length - 60))) delete store.privacyStats[old];
+  }
+  store.privacyStats[day][key] += amount;
+  if (!statsTimer) statsTimer = setTimeout(() => { statsTimer = null; persist(); }, 10000);
+}
+const cookieBannerCss = `#onetrust-consent-sdk,#onetrust-banner-sdk,#CybotCookiebotDialog,#CybotCookiebotDialogBodyUnderlay,.qc-cmp2-container,#qc-cmp2-container,#didomi-host,#didomi-popup,.fc-consent-root,#usercentrics-root,#cookie-law-info-bar,.cky-consent-container,.cc-window,.cc-banner,#cookiescript_injected,#truste-consent-track,.truste_box_overlay,#sp_message_container_,div[id^="sp_message_container_"],.osano-cm-window,#cmpbox,#cmpbox2,.cmp-root,#gdpr-cookie-message,.cookie-banner,.cookie-consent,.cookie-notice,#cookie-banner,#cookie-consent,#cookie-notice,#cookieConsent,.js-cookie-consent{display:none!important;visibility:hidden!important}html.didomi-popup-open,body.didomi-popup-open,html.sp-message-open,body.sp-message-open{overflow:auto!important}`;
+const readerScript = `(() => {
+  if (document.documentElement.dataset.cypherReader) { location.reload(); return 'off'; }
+  const textOf = el => [...el.querySelectorAll('p')].reduce((total, p) => total + p.innerText.trim().length, 0);
+  let best = [...document.querySelectorAll('article, main, [role=main], .post, .article, .entry-content, #content, .content')].sort((a, b) => textOf(b) - textOf(a))[0];
+  if (!best || textOf(best) < 400) {
+    const parents = new Map();
+    for (const p of document.querySelectorAll('p')) parents.set(p.parentElement, (parents.get(p.parentElement) || 0) + p.innerText.length);
+    best = [...parents].sort((a, b) => b[1] - a[1])[0]?.[0];
+  }
+  if (!best || textOf(best) < 200) return 'none';
+  const clone = best.cloneNode(true);
+  clone.querySelectorAll('script,style,noscript,iframe,form,nav,aside,footer,header,button,input,select,textarea,[aria-hidden="true"],[class*="share"],[class*="related"],[class*="newsletter"],[class*="advert"]').forEach(node => node.remove());
+  clone.querySelectorAll('*').forEach(node => { for (const attribute of [...node.attributes]) if (!['href','src','alt','title'].includes(attribute.name)) node.removeAttribute(attribute.name); });
+  const title = (document.querySelector('h1')?.innerText || document.title || '').trim();
+  clone.querySelectorAll('h1').forEach(node => { if (node.innerText.trim() === title) node.remove(); });
+  document.documentElement.dataset.cypherReader = '1';
+  document.querySelectorAll('link[rel="stylesheet"], style').forEach(node => node.remove());
+  const heading = document.createElement('h1'); heading.textContent = title;
+  const site = document.createElement('p'); site.className = 'cypher-reader-site'; site.textContent = location.hostname.replace(/^www\\./, '');
+  document.body.replaceChildren(site, heading, clone);
+  scrollTo(0, 0); return 'on';
+})()`;
+function readerCss() {
+  const accent = store.settings.accent;
+  return `html[data-cypher-reader]{background:#151310!important;color:#ece6d8!important}html[data-cypher-reader] body{max-width:720px!important;margin:0 auto!important;padding:64px 28px 120px!important;font:20px/1.75 Georgia,"Times New Roman",serif!important;background:none!important;color:inherit!important}html[data-cypher-reader] h1{font:800 48px/1.02 "Arial Narrow","Segoe UI",sans-serif!important;text-transform:uppercase;letter-spacing:.3px;margin:0 0 36px!important;color:#ece6d8!important}html[data-cypher-reader] .cypher-reader-site{font:600 14px "Arial Narrow",sans-serif!important;letter-spacing:3px;text-transform:uppercase;color:${accent}!important;margin:0 0 8px!important}html[data-cypher-reader] img,html[data-cypher-reader] video{max-width:100%!important;height:auto!important}html[data-cypher-reader] a{color:${accent}!important}html[data-cypher-reader] p{margin:0 0 1.2em!important}html[data-cypher-reader] h2,html[data-cypher-reader] h3{font-family:"Arial Narrow",sans-serif!important;text-transform:uppercase;letter-spacing:.3px}html[data-cypher-reader] pre,html[data-cypher-reader] code{font:15px Consolas,monospace!important;white-space:pre-wrap!important}html[data-cypher-reader] *{background:transparent!important;box-shadow:none!important;position:static!important;max-width:100%}`;
+}
+function validImageData(value) { return typeof value === 'string' && value.length <= 40_000_000 && /^data:image\/png;base64,[\dA-Za-z+/=]+$/.test(value); }
 function letterboxBounds(bounds) {
   const width = Math.floor(bounds.width / 200) * 200;
   const height = Math.floor(bounds.height / 100) * 100;
@@ -699,6 +791,7 @@ function matchTrackerRequest(details) {
 }
 function noteProtectionBlocked(isAd = false, isTracker = false) {
   trackerList.blockedRequests++;
+  bumpStat('requests'); if (isAd) bumpStat('ads'); if (isTracker) bumpStat('trackers');
   if (isAd) trackerList.blockedAds++;
   if (isTracker) trackerList.blockedTrackers++;
   if (trackerCountTimer) return;
@@ -709,6 +802,7 @@ function normalPartition() { return activeProfileId === 'default' ? 'persist:cyp
 function sessionPartition(tab) {
   const mode = tab.connectionMode || 'normal';
   if (tab.private) return `${privatePartition}-${mode}-${connectionPort(mode)}`;
+  if (mode === 'normal' && tab.containerId) return `persist:cypher-container-${activeProfileId}-${tab.containerId}`;
   if (mode === 'normal') return normalPartition();
   return `cypher-${activeProfileId}-${mode}-${connectionPort(mode)}`;
 }
@@ -829,12 +923,13 @@ function registerProtonIpcBridge() {
     return { id:addTab(url.href, false, 'normal') };
   });
 }
-function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode = store.settings.connectionMode, activate = true, navigationOptions) {
+function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode = store.settings.connectionMode, activate = true, navigationOptions, options = {}) {
   const url = resolveAddress(address, store.settings.searchEngine, store.settings.customSearchUrl);
   if (!['normal','tor','i2p'].includes(connectionMode)) connectionMode = store.settings.connectionMode;
   const tab = { id: randomUUID(), title: 'Nova aba', url: 'cypher://newtab', private: !!isPrivate,
     connectionMode, pinned: false, muted: false, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null,
-    workspaceId:!isPrivate && connectionMode === 'normal' ? store.activeWorkspaceId : undefined, group:'', suspended:false, lastActiveAt:Date.now() };
+    workspaceId:!isPrivate && connectionMode === 'normal' ? store.activeWorkspaceId : undefined, group:'', suspended:false, lastActiveAt:Date.now(),
+    containerId: !isPrivate && connectionMode === 'normal' && store.settings.containers.some(item => item.id === options.containerId) ? options.containerId : '' };
   tabs.push(tab); if (activate || !activeId) activeId = tab.id;
   navigate(tab, url, navigationOptions); emit();
   return tab.id;
@@ -881,6 +976,7 @@ function removePopupRequest(id) {
 function removeTab(tab) {
   const index = tabs.indexOf(tab);
   if (index < 0) return;
+  if (split && (split.left === tab.id || split.right === tab.id)) split = null;
   const wasActive = activeId === tab.id;
   tabs.splice(index, 1);
   if (!tab.private && tab.connectionMode === 'normal' && tab.workspaceId && !tabs.some(item => !item.private && item.connectionMode === 'normal' && item.workspaceId === tab.workspaceId && /^https?:\/\//i.test(item.url))) {
@@ -1264,6 +1360,8 @@ function attachView(tab) {
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
+  wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); });
+  wc.on('focus', () => { if (split && [split.left, split.right].includes(tab.id) && activeId !== tab.id) { activeId = tab.id; emit(); } });
   wc.on('page-title-updated', (_event, title) => { tab.title = title; if (/^https?:\/\//i.test(tab.url)) tab.lastExternalTitle = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
     tab.url = url; tab.error = null;
@@ -1332,6 +1430,13 @@ function navigate(tab, input, navigationOptions) {
   if (hostname.endsWith('.i2p') && tab.connectionMode !== 'i2p') {
     tab.url = url; tab.loading = false; tab.error = 'Endereços .i2p só podem ser abertos com a rede I2P ativa.'; layout(); emit(); return;
   }
+  const routeRule = !tab.private && tab.connectionMode === 'normal' && !url.startsWith('cypher://') && store.settings.routeRules.find(rule => hostname === rule.host || hostname.endsWith(`.${rule.host}`));
+  if (routeRule) {
+    const blank = !tab.view && tab.url === 'cypher://newtab';
+    addTab(url, false, routeRule.mode);
+    if (blank && tabs.length > 1) closeTab(tab.id);
+    return;
+  }
   tab.url = url; tab.error = null;
   if (url.startsWith('cypher://')) {
     tab.loading = false; tab.title = ({ newtab: 'Nova aba', settings: 'Configurações', security: 'Segurança', profile: 'Perfil', extensions: 'Extensões', bookmarks: 'Favoritos', history: 'Histórico', downloads: 'Downloads', mods: 'Mods', productivity:'Espaços e pesquisa' })[url.slice(9)];
@@ -1339,6 +1444,7 @@ function navigate(tab, input, navigationOptions) {
   }
   const view = tab.view || attachView(tab);
   tab.title = new URL(url).hostname; tab.loading = true;
+  bumpStat(tab.connectionMode);
   const ses = view.webContents.session;
   const routeReady = tab.connectionMode === 'normal'
     ? Promise.resolve()
@@ -1389,6 +1495,7 @@ async function clearSiteData() {
 }
 function setSettings(payload) {
   const previous = store.settings;
+  const previousShortcuts = JSON.stringify(previous.shortcuts || {});
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
@@ -1425,6 +1532,8 @@ function setSettings(payload) {
   const taskIds = new Set(taskWidgets.map(widget => widget.id));
   for (const id of Object.keys(store.homeData.tasksById)) if (!taskIds.has(id)) delete store.homeData.tasksById[id];
   for (const widget of taskWidgets) if (!store.homeData.tasksById[widget.id]) store.homeData.tasksById[widget.id] = [];
+  for (const id of [...panelViews.keys()]) if (!store.settings.webPanels.some(panel => panel.id === id)) { const view = panelViews.get(id); if (win && !win.isDestroyed()) win.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close(); panelViews.delete(id); if (openPanelId === id) openPanelId = ''; }
+  if (JSON.stringify(store.settings.shortcuts) !== previousShortcuts) installMenu();
   layout(); persist(); emit();
 }
 async function command(action, payload) {
@@ -1613,11 +1722,98 @@ async function command(action, payload) {
       removePopupRequest(request.id); emit(); break;
     }
     case 'popup:clear': popupRequests.length = 0; emit(); break;
-    case 'tab:new': return addTab(payload?.url, payload?.private, payload?.connectionMode);
+    case 'tab:new': return addTab(payload?.url, payload?.private, payload?.connectionMode, true, undefined, { containerId: payload?.containerId });
     case 'tab:select': selectTab(payload); break;
     case 'tab:close': closeTab(payload); break;
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
-    case 'tab:duplicate': { const target = tabs.find(t => t.id === payload); if (target) return addTab(target.url, target.private, target.connectionMode); break; }
+    case 'tab:duplicate': { const target = tabs.find(t => t.id === payload); if (target) return addTab(target.url, target.private, target.connectionMode, true, undefined, { containerId: target.containerId }); break; }
+    case 'tab:group': { const target = tabs.find(t => t.id === payload?.id); if (target) { target.group = String(payload.group || '').trim().slice(0, 50); persist(); emit(); } break; }
+    case 'split:toggle': {
+      if (split && [split.left, split.right].includes(activeId)) { split = null; layout(); emit(); break; }
+      const current = active();
+      if (!current || !/^https?:\/\//i.test(current.url)) throw new Error('Abra um site para dividir a tela.');
+      const visible = item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId;
+      const requested = typeof payload === 'string' ? tabs.find(item => item.id === payload) : null;
+      const partner = requested || tabs.filter(item => item.id !== current.id && visible(item) && /^https?:\/\//i.test(item.url)).sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))[0];
+      if (!partner || partner.id === current.id || !/^https?:\/\//i.test(partner.url)) throw new Error('Abra outro site em uma aba para dividir a tela.');
+      if (partner.suspended) restoreSuspendedTab(partner);
+      split = { left: current.id, right: partner.id, ratio: 0.5 }; layout(); emit(); break;
+    }
+    case 'split:ratio': if (split && Number.isFinite(payload)) { split.ratio = Math.max(0.2, Math.min(0.8, payload)); layout(); emit(); } break;
+    case 'split:swap': if (split) { split = { left: split.right, right: split.left, ratio: 1 - split.ratio }; layout(); emit(); } break;
+    case 'split:close': split = null; layout(); emit(); break;
+    case 'panel:toggle': {
+      const panel = store.settings.webPanels.find(item => item.id === payload);
+      if (!panel) break;
+      if (openPanelId === panel.id) openPanelId = ''; else { panelView(panel); openPanelId = panel.id; }
+      layout(); emit(); break;
+    }
+    case 'panel:add': {
+      if (store.settings.webPanels.length >= 8) throw new Error('Você já tem 8 painéis. Remova um para adicionar outro.');
+      const url = resolveAddress(String(payload?.url || ''), store.settings.searchEngine, store.settings.customSearchUrl);
+      if (!/^https:\/\//i.test(url)) throw new Error('Use um endereço HTTPS para o painel lateral.');
+      const id = randomUUID().slice(0, 8);
+      store.settings = sanitizeSettings({ webPanels: [...store.settings.webPanels, { id, url, title: String(payload?.title || new URL(url).hostname.replace(/^www\./, '')) }] }, store.settings);
+      panelView(store.settings.webPanels.find(item => item.id === id)); openPanelId = id; layout(); persist(); emit(); return id;
+    }
+    case 'panel:remove': {
+      const view = panelViews.get(payload);
+      if (view) { win.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close(); panelViews.delete(payload); }
+      if (openPanelId === payload) openPanelId = '';
+      store.settings = sanitizeSettings({ webPanels: store.settings.webPanels.filter(item => item.id !== payload) }, store.settings);
+      layout(); persist(); emit(); break;
+    }
+    case 'page:reader': {
+      const current = active();
+      if (!current?.view || !/^https?:\/\//i.test(current.url)) throw new Error('O modo leitura funciona em sites abertos em uma aba.');
+      const result = await current.view.webContents.executeJavaScript(readerScript);
+      if (result === 'on') await current.view.webContents.insertCSS(readerCss());
+      if (result === 'none') throw new Error('Não encontramos um texto principal nesta página.');
+      return result;
+    }
+    case 'page:capture': {
+      const current = active();
+      if (!current?.view || !/^https?:\/\//i.test(current.url) || current.error) throw new Error('Abra um site para capturar a tela.');
+      return (await current.view.webContents.capturePage()).toDataURL();
+    }
+    case 'capture:save': {
+      if (!validImageData(payload)) throw new Error('Imagem de captura inválida.');
+      const result = await dialog.showSaveDialog(win, { defaultPath: `cypher-captura-${localDay()}.png`, filters: [{ name: 'Imagem PNG', extensions: ['png'] }] });
+      if (result.canceled || !result.filePath) return false;
+      await fs.promises.writeFile(result.filePath, Buffer.from(payload.split(',')[1], 'base64')); return true;
+    }
+    case 'clipboard:image': {
+      if (!validImageData(payload)) throw new Error('Imagem de captura inválida.');
+      clipboard.writeImage(nativeImage.createFromDataURL(payload)); return true;
+    }
+    case 'page:theme-color': {
+      const current = active();
+      if (!current?.view || !/^https?:\/\//i.test(current.url)) throw new Error('Abra um site para usar as cores dele.');
+      const value = await current.view.webContents.executeJavaScript(`(() => { const meta = document.querySelector('meta[name="theme-color"]')?.content; const link = document.querySelector('header a, nav a, a'); const source = meta || (link && getComputedStyle(link).color) || getComputedStyle(document.body).color; const context = document.createElement('canvas').getContext('2d'); context.fillStyle = '#000000'; context.fillStyle = source; return context.fillStyle; })()`);
+      return typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+    }
+    case 'skin:import': {
+      const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Pele do Cypher', extensions: ['cypherskin', 'json'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      if ((await fs.promises.stat(result.filePaths[0])).size > 300_000) throw new Error('O arquivo da pele excede 300 KB.');
+      let parsed; try { parsed = JSON.parse(await fs.promises.readFile(result.filePaths[0], 'utf8')); } catch { throw new Error('O arquivo da pele não é um JSON válido.'); }
+      const skin = validateSkinPackage(parsed);
+      store.skins = [...store.skins, skin].slice(-50); persist(); emit(); return skin.id;
+    }
+    case 'skin:apply': {
+      const skin = store.skins.find(item => item.id === payload);
+      store.settings = sanitizeSettings(skin ? { skinPackage: skin.id, skin: skin.base, tokens: skin.tokens } : { skinPackage: '' }, store.settings);
+      persist(); emit(); break;
+    }
+    case 'skin:remove': store.skins = store.skins.filter(item => item.id !== payload); if (store.settings.skinPackage === payload) store.settings.skinPackage = ''; persist(); emit(); break;
+    case 'skin:export': {
+      const result = await dialog.showSaveDialog(win, { defaultPath: 'minha-pele.cypherskin', filters: [{ name: 'Pele do Cypher', extensions: ['cypherskin'] }] });
+      if (result.canceled || !result.filePath) return false;
+      const current = store.skins.find(item => item.id === store.settings.skinPackage);
+      const name = String(payload?.name || current?.name || 'Minha pele').slice(0, 64);
+      await fs.promises.writeFile(result.filePath, JSON.stringify({ schemaVersion: 1, type: 'cypher-skin', name, author: 'Cypher', description: 'Exportada do Cypher.', base: store.settings.skin, tokens: store.settings.tokens, css: [current?.css, store.settings.customCss].filter(Boolean).join('\n\n') }, null, 2));
+      return true;
+    }
     case 'tab:reload': { const target = tabs.find(t => t.id === payload); if (target?.view && !target.view.webContents.isDestroyed()) target.view.webContents.reload(); break; }
     case 'tab:close-others': {
       const keep = tabs.find(t => t.id === payload);
@@ -1671,7 +1867,9 @@ async function command(action, payload) {
     case 'stop': wc?.stop(); break;
     case 'viewport': {
       if (!payload || !['x','y','width','height'].every(k => Number.isFinite(payload[k]))) break;
-      viewport = payload; obscured = !!payload.obscured; layout(); break;
+      viewport = payload; obscured = !!payload.obscured;
+      panelBounds = payload.panel && ['x','y','width','height'].every(k => Number.isFinite(payload.panel[k])) ? payload.panel : null;
+      layout(); break;
     }
     case 'settings': setSettings(payload); break;
     case 'profile:sync:configure': {
@@ -1887,7 +2085,7 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, blockPopups: store.settings.blockPopups, popupExceptions: store.settings.popupExceptions, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, blockPopups: store.settings.blockPopups, popupExceptions: store.settings.popupExceptions, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false, customCss: store.settings.customCss, shortcuts: store.settings.shortcuts, routeRules: store.settings.routeRules, containers: store.settings.containers, webPanels: store.settings.webPanels, panelWidth: store.settings.panelWidth, blockCookieBanners: store.settings.blockCookieBanners }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;
@@ -1907,16 +2105,23 @@ async function command(action, payload) {
   }
 }
 function installMenu() {
-  const run = (action, payload) => () => { void command(action, payload).catch(console.error); };
+  const run = (action, payload) => () => { void command(action, payload).catch(error => { console.error(error); if (win && !win.isDestroyed()) win.webContents.send('cypher:shortcut', `error:${error.message}`); }); };
+  const key = action => store?.settings?.shortcuts?.[action] || shortcutActions[action];
+  const cycle = step => () => {
+    const visible = tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId);
+    const index = visible.findIndex(item => item.id === activeId);
+    if (visible.length) selectTab(visible[(index + step + visible.length) % visible.length].id);
+  };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Cypher', submenu: [
-      { label: 'Nova aba', accelerator: 'CmdOrCtrl+T', click: run('tab:new') },
-      { label: 'Nova aba privada', accelerator: 'CmdOrCtrl+Shift+N', click: run('tab:new', { private: true }) },
-      { label: 'Fechar aba', accelerator: 'CmdOrCtrl+W', click: () => closeTab(activeId) },
-      { label: 'Reabrir aba', accelerator: 'CmdOrCtrl+Shift+T', click: run('tab:restore') },
-      { label: 'Próxima aba', accelerator: 'Ctrl+Tab', click: () => selectTab(tabs[(tabs.findIndex(t => t.id === activeId) + 1) % tabs.length]?.id) },
-      { label: 'Aba anterior', accelerator: 'Ctrl+Shift+Tab', click: () => selectTab(tabs[(tabs.findIndex(t => t.id === activeId) - 1 + tabs.length) % tabs.length]?.id) },
-      { label: 'Pesquisar abas e comandos', accelerator: 'CmdOrCtrl+Shift+A', click: () => shortcut('palette') },
+      { label: 'Nova aba', accelerator: key('tab:new'), click: run('tab:new') },
+      { label: 'Nova aba privada', accelerator: key('tab:private'), click: run('tab:new', { private: true }) },
+      { label: 'Fechar aba', accelerator: key('tab:close'), click: () => closeTab(activeId) },
+      { label: 'Reabrir aba', accelerator: key('tab:restore'), click: run('tab:restore') },
+      { label: 'Próxima aba', accelerator: key('tab:next'), click: cycle(1) },
+      { label: 'Aba anterior', accelerator: key('tab:previous'), click: cycle(-1) },
+      { label: 'Pesquisar abas e comandos', accelerator: key('palette'), click: () => shortcut('palette') },
+      { label: 'Editar interface', accelerator: key('inspector'), click: () => shortcut('inspector') },
       ...Array.from({ length: 9 }, (_, index) => ({ label: index === 8 ? 'Última aba' : `Aba ${index + 1}`, accelerator: `CmdOrCtrl+${index + 1}`, click: () => {
         const visible = tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === store.activeWorkspaceId);
         const ordered = [...visible.filter(item => item.pinned), ...visible.filter(item => !item.pinned)];
@@ -1926,24 +2131,27 @@ function installMenu() {
       { type: 'separator' }, { role: 'quit', label: 'Sair' },
     ] },
     { label: 'Navegação', submenu: [
-      { label: 'Endereço', accelerator: 'CmdOrCtrl+L', click: () => shortcut('address') },
+      { label: 'Endereço', accelerator: key('address'), click: () => shortcut('address') },
       { label: 'Voltar', accelerator: 'Alt+Left', click: run('back') },
       { label: 'Avançar', accelerator: 'Alt+Right', click: run('forward') },
-      { label: 'Recarregar', accelerator: 'CmdOrCtrl+R', click: run('reload') },
+      { label: 'Recarregar', accelerator: key('reload'), click: run('reload') },
       { label: 'Recarregar página', accelerator: 'F5', click: run('reload') },
-      { label: 'Localizar', accelerator: 'CmdOrCtrl+F', click: () => shortcut('find') },
-      { label: 'Favoritar', accelerator: 'CmdOrCtrl+D', click: run('bookmark:toggle') },
-      { label: 'Histórico', accelerator: 'CmdOrCtrl+H', click: run('navigate', 'cypher://history') },
-      { label: 'Downloads', accelerator: 'CmdOrCtrl+J', click: run('navigate', 'cypher://downloads') },
-      { label: 'Imprimir', accelerator: 'CmdOrCtrl+P', click: run('print') },
-      { label: 'Salvar página', accelerator: 'CmdOrCtrl+S', click: run('save') },
+      { label: 'Localizar', accelerator: key('find'), click: () => shortcut('find') },
+      { label: 'Favoritar', accelerator: key('bookmark'), click: run('bookmark:toggle') },
+      { label: 'Histórico', accelerator: key('history'), click: run('navigate', 'cypher://history') },
+      { label: 'Downloads', accelerator: key('downloads'), click: run('navigate', 'cypher://downloads') },
+      { label: 'Modo leitura', accelerator: key('reader'), click: run('page:reader') },
+      { label: 'Capturar tela', accelerator: key('capture'), click: () => shortcut('capture') },
+      { label: 'Dividir tela', accelerator: key('split'), click: run('split:toggle') },
+      { label: 'Imprimir', accelerator: key('print'), click: run('print') },
+      { label: 'Salvar página', accelerator: key('save'), click: run('save') },
     ] },
     { label: 'Exibir', submenu: [
-      { label: 'Tela cheia', accelerator: 'F11', click: run('window:fullscreen') },
-      { label: 'Ampliar', accelerator: 'CmdOrCtrl+=', click: () => command('zoom', (active()?.zoom || 1) + 0.1) },
-      { label: 'Reduzir', accelerator: 'CmdOrCtrl+-', click: () => command('zoom', (active()?.zoom || 1) - 0.1) },
-      { label: 'Zoom original', accelerator: 'CmdOrCtrl+0', click: run('zoom', 1) },
-      { label: 'Ferramentas de desenvolvedor', accelerator: 'F12', click: run('devtools') },
+      { label: 'Tela cheia', accelerator: key('fullscreen'), click: run('window:fullscreen') },
+      { label: 'Ampliar', accelerator: key('zoom:in'), click: () => command('zoom', (active()?.zoom || 1) + 0.1) },
+      { label: 'Reduzir', accelerator: key('zoom:out'), click: () => command('zoom', (active()?.zoom || 1) - 0.1) },
+      { label: 'Zoom original', accelerator: key('zoom:reset'), click: run('zoom', 1) },
+      { label: 'Ferramentas de desenvolvedor', accelerator: key('devtools'), click: run('devtools') },
     ] },
     { label: 'Editar', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
   ]));
@@ -2010,11 +2218,12 @@ app.whenReady().then(async () => {
     for (const tab of [...tabs]) if (tab.view && !tab.view.webContents.isDestroyed()) tab.view.webContents.close();
   });
   installMenu();
+  nativeTheme.on('updated', () => emit());
   const homeFirstId = addTab('cypher://newtab', false, store.settings.connectionMode);
   const startupMode = store.settings.startupMode;
   if (startupMode === 'restore') {
     for (const savedTab of store.savedTabs.slice(0,50)) {
-      try { const id = addTab(savedTab.url, false, store.settings.connectionMode); const restored = tabs.find(t => t.id === id); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
+      try { const id = addTab(savedTab.url, false, store.settings.connectionMode, true, undefined, { containerId: savedTab.containerId }); const restored = tabs.find(t => t.id === id); if (restored) { restored.pinned = !!savedTab.pinned; restored.group = savedTab.group || ''; restored.workspaceId = savedTab.workspaceId || store.activeWorkspaceId; } } catch {}
     }
   } else if (startupMode === 'specific') {
     for (const url of store.settings.startupPages.slice(0,10)) { try { addTab(url, false, store.settings.connectionMode); } catch {} }

@@ -5,10 +5,12 @@ import {
   LayoutTemplate, LockKeyhole, MonitorCog, Palette, PanelLeft, PanelTop, RefreshCw,
   Moon, Puzzle, Search, Settings2, ShieldCheck, Sparkles, Sun, UserRound, Volume2,
 } from 'lucide-react';
-import type { ProfileSyncStatus, SavedPassword, Settings, Tab, TrackerProtectionStatus, UpdateStatus } from './types';
+import type { ProfileSyncStatus, SavedPassword, Settings, SkinPackage, Tab, TrackerProtectionStatus, UpdateStatus } from './types';
 import ConnectionSettings from './ConnectionSettings';
 import ProfileSyncPanel from './ProfileSyncPanel';
 import { type InternalPage, type SettingsSection } from './navigation';
+import { Panel, Row, Switch } from './settings-ui';
+import { ContainersPanel, CustomCssPanel, RoutesPanel, ShortcutsPanel, SkinsPanel, TokensPanel, ToolbarPanel, WebPanelsPanel } from './CustomizationSettings';
 
 type Category = SettingsSection;
 type Props = {
@@ -24,6 +26,7 @@ type Props = {
   onSettings: (patch: Partial<Settings>) => void;
   command: (action: string, payload?: unknown) => Promise<any>;
   navigate: (page: InternalPage, options?: { category?: SettingsSection; focusId?: string }) => void;
+  skins?: SkinPackage[];
 };
 
 const categories: { id: Category; label: string; group: string; icon: typeof Palette }[] = [
@@ -46,6 +49,14 @@ const categories: { id: Category; label: string; group: string; icon: typeof Pal
 
 const preferenceIndex: { id: string; title: string; detail: string; category: Category }[] = [
   { id: 'appearance-presets', title: 'Temas e cores', detail: 'Tema, destaque, superfícies e fundo do navegador', category: 'appearance' },
+  { id: 'appearance-tokens', title: 'Tokens de design', detail: 'Corte, altura da barra, densidade, bordas e fontes', category: 'appearance' },
+  { id: 'appearance-skins', title: 'Pacotes de pele', detail: 'Importe, exporte e aplique peles .cypherskin', category: 'appearance' },
+  { id: 'appearance-css', title: 'CSS personalizado', detail: 'Escreva CSS próprio para a interface', category: 'appearance' },
+  { id: 'tabs-toolbar', title: 'Barra de ferramentas', detail: 'Ordem, botões visíveis, posição, abas ocultas e trilho', category: 'tabs' },
+  { id: 'tabs-panels', title: 'Painéis laterais', detail: 'Sites fixos numa coluna ao lado da página', category: 'tabs' },
+  { id: 'connections-rules', title: 'Rota por site', detail: 'Abrir sites específicos sempre pelo Tor ou I2P', category: 'connections' },
+  { id: 'connections-containers', title: 'Contêineres', detail: 'Cookies e logins separados por aba', category: 'connections' },
+  { id: 'privacy-cookie-banners', title: 'Avisos de cookies', detail: 'Ocultar banners de consentimento', category: 'privacy' },
   { id: 'appearance-skin', title: 'Pele da interface', detail: 'Troque o formato da interface: Recorte ou Clássico', category: 'appearance' },
   { id: 'appearance-mode', title: 'Modo claro ou escuro', detail: 'Escolha uma interface clara ou escura para o navegador', category: 'appearance' },
   { id: 'appearance-shape', title: 'Cantos e tipografia', detail: 'Arredondamento, fonte e identidade visual', category: 'appearance' },
@@ -92,17 +103,6 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'profile-local', title: 'Perfil local', detail: 'Foto e dados salvos neste dispositivo', category: 'profile' },
 ];
 
-function Switch({ checked, label, onChange, disabled = false }: { checked: boolean; label: string; onChange: () => void; disabled?: boolean }) {
-  return <button type="button" className={`sc-switch ${checked ? 'is-on' : ''}`} role="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={onChange}><span /></button>;
-}
-
-function Row({ id, title, detail, children }: { id?: string; title: string; detail?: string; children: ReactNode }) {
-  return <div id={id} className="sc-row"><div className="sc-row-copy"><strong>{title}</strong>{detail && <small>{detail}</small>}</div><div className="sc-row-control">{children}</div></div>;
-}
-
-function Panel({ id, eyebrow, title, detail, icon: Icon, children }: { id?: string; eyebrow?: string; title: string; detail?: string; icon: typeof Palette; children: ReactNode }) {
-  return <section id={id} className="sc-panel"><div className="sc-panel-heading"><span className="sc-panel-icon"><Icon size={17} /></span><div><span className="sc-eyebrow">{eyebrow || 'PREFERÊNCIA'}</span><h2>{title}</h2>{detail && <p>{detail}</p>}</div></div><div className="sc-panel-content">{children}</div></section>;
-}
 
 const themePresets = [
   { id: 'recorte', name: 'Recorte Noite', accent: '#ff5436', surface: '#151310', background: '#0a0908' },
@@ -119,7 +119,7 @@ const languageOptions = [
   { code: 'it', label: 'italiano' }, { code: 'ja', label: 'japonês' }, { code: 'ko', label: 'coreano' }, { code: 'zh-CN', label: 'chinês (simplificado)' },
 ];
 
-export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, tabs, activeTabId, initialCategory, focusSettingId, onSettings, command, navigate }: Props) {
+export default function SettingsCenter({ settings: s, update, trackerProtection, profileSync, hardwareAccelerationPending, tabs, activeTabId, initialCategory, focusSettingId, onSettings, command, navigate, skins = [] }: Props) {
   const [category, setCategory] = useState<Category>(initialCategory);
   const [query, setQuery] = useState('');
   const [customSearchDraft, setCustomSearchDraft] = useState(s.customSearchUrl);
@@ -211,11 +211,16 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
                 <button type="button" className={`sc-choice-card ${s.skin === 'classic' ? 'chosen' : ''}`} onClick={() => onSettings({ skin: 'classic' })} aria-pressed={s.skin === 'classic'}><span className="sc-choice-icon"><svg width="18" height="15" viewBox="0 0 36 30" aria-hidden="true"><rect width="36" height="30" rx="9" fill="currentColor"/></svg></span><span><strong>Clássico</strong><small>Cantos suaves e o visual original.</small></span>{s.skin === 'classic' && <Check size={15}/>}</button>
               </div>
             </Panel>
+            <SkinsPanel settings={s} skins={skins} command={command} onSettings={onSettings}/>
+            <CustomCssPanel settings={s} onSettings={onSettings}/>
+            <TokensPanel settings={s} onSettings={onSettings}/>
             <Panel id="appearance-mode" eyebrow="MODO DE EXIBIÇÃO" title="Claro ou escuro" detail="Escolha o aspecto da interface do Cypher." icon={s.appearanceMode === 'light' ? Sun : Moon}>
               <div className="sc-choice-grid">
                 <button type="button" className={`sc-choice-card ${s.appearanceMode === 'light' ? 'chosen' : ''}`} onClick={() => chooseAppearanceMode('light')} aria-pressed={s.appearanceMode === 'light'}><span className="sc-choice-icon"><Sun size={16}/></span><span><strong>Claro</strong><small>Superfícies claras e texto escuro.</small></span>{s.appearanceMode === 'light' && <Check size={15}/>}</button>
                 <button type="button" className={`sc-choice-card ${s.appearanceMode === 'dark' ? 'chosen' : ''}`} onClick={() => chooseAppearanceMode('dark')} aria-pressed={s.appearanceMode === 'dark'}><span className="sc-choice-icon"><Moon size={16}/></span><span><strong>Escuro</strong><small>Superfícies escuras e texto claro.</small></span>{s.appearanceMode === 'dark' && <Check size={15}/>}</button>
+                <button type="button" className={`sc-choice-card ${s.appearanceMode === 'system' ? 'chosen' : ''}`} onClick={() => onSettings({ appearanceMode: 'system' })} aria-pressed={s.appearanceMode === 'system'}><span className="sc-choice-icon"><MonitorCog size={16}/></span><span><strong>Sistema</strong><small>Segue o modo claro ou escuro do Windows.</small></span>{s.appearanceMode === 'system' && <Check size={15}/>}</button>
               </div>
+              <Row title="Cor do espaço como destaque" detail="Cada Espaço usa a própria cor no navegador inteiro"><Switch checked={s.workspaceAccent} label="Cor do espaço como destaque" onChange={() => onSettings({ workspaceAccent: !s.workspaceAccent })}/></Row>
             </Panel>
             <Panel id="appearance-presets" eyebrow="IDENTIDADE VISUAL" title="Temas" detail="Comece por uma combinação de cores e depois ajuste cada detalhe." icon={Sparkles}>
               <div className="sc-theme-grid">{themePresets.map(theme => <button type="button" key={theme.id} className={`sc-theme ${s.accent.toLowerCase() === theme.accent ? 'chosen' : ''}`} onClick={() => chooseTheme(theme)} aria-pressed={s.accent.toLowerCase() === theme.accent}>
@@ -241,7 +246,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             </Panel>
           </>}
 
-          {category === 'tabs' && <Panel id="tabs-position" eyebrow="ESPAÇO DE NAVEGAÇÃO" title="Abas e navegação" detail="Mude a disposição e o comportamento das suas abas." icon={LayoutPanelLeft}>
+          {category === 'tabs' && <><Panel id="tabs-position" eyebrow="ESPAÇO DE NAVEGAÇÃO" title="Abas e navegação" detail="Mude a disposição e o comportamento das suas abas." icon={LayoutPanelLeft}>
             <div className="sc-choice-grid">
               <button type="button" className={`sc-choice-card ${s.tabPosition === 'side' ? 'chosen' : ''}`} aria-pressed={s.tabPosition === 'side'} onClick={() => onSettings({ tabPosition: 'side' })}><span className="sc-choice-icon"><PanelLeft size={18}/></span><span><strong>Abas laterais</strong><small>Lista vertical à esquerda da página</small></span>{s.tabPosition === 'side' && <Check size={15}/>}</button>
               <button type="button" className={`sc-choice-card ${s.tabPosition === 'top' ? 'chosen' : ''}`} aria-pressed={s.tabPosition === 'top'} onClick={() => onSettings({ tabPosition: 'top' })}><span className="sc-choice-icon"><PanelTop size={18}/></span><span><strong>Abas no topo</strong><small>Faixa horizontal acima da página</small></span>{s.tabPosition === 'top' && <Check size={15}/>}</button>
@@ -252,7 +257,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             <Row id="tabs-bookmark-bar" title="Mostrar barra de favoritos" detail="Exibe os primeiros favoritos logo abaixo da barra de endereço"><Switch label="Mostrar barra de favoritos" checked={s.showBookmarksBar} onChange={() => onSettings({ showBookmarksBar: !s.showBookmarksBar })}/></Row>
             <Row id="tabs-memory-saver" title="Suspender abas inativas" detail="Libera o processo de páginas normais sem atividade. A página recarrega quando você volta; abas com formulário alterado, áudio, mídia, privadas, Tor e I2P são preservadas."><Switch label="Economia de memória" checked={s.memorySaverEnabled} onChange={() => onSettings({ memorySaverEnabled: !s.memorySaverEnabled })}/></Row>
             {s.memorySaverEnabled && <Row title="Tempo até suspender" detail={`Aba sem uso por ${s.memorySaverMinutes} minutos`}><select className="sc-select" value={s.memorySaverMinutes} onChange={event => onSettings({ memorySaverMinutes:+event.target.value })}><option value={5}>5 minutos</option><option value={10}>10 minutos</option><option value={20}>20 minutos</option><option value={30}>30 minutos</option><option value={60}>1 hora</option><option value={120}>2 horas</option></select></Row>}
-          </Panel>}
+          </Panel><ToolbarPanel settings={s} onSettings={onSettings}/><WebPanelsPanel settings={s} command={command} onSettings={onSettings}/></>}
 
           {category === 'home' && <Panel id="home-editor" eyebrow="PÁGINA INICIAL" title="Uma tela feita por você" detail="Adicione widgets, arraste para organizar e abra as opções de cada um para personalizar o conteúdo e o design." icon={LayoutTemplate}>
             <div className="sc-home-card"><span className="sc-home-mark"><House size={22}/></span><div><strong>Editor livre da Home</strong><p>Redimensione widgets puxando as bordas, reposicione-os e personalize estilos, cores, imagens e conteúdo. A Home também aceita stickers, imagens e widgets com código próprio.</p><button className="sc-button sc-button-primary" onClick={() => navigate('newtab')}>Abrir página inicial <ArrowUpRight size={15}/></button></div></div>
@@ -287,6 +292,8 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
 
           {category === 'connections' && <>
             <div id="connection-routes"><ConnectionSettings settings={s} onSettings={onSettings} onConnection={mode => { void command('connection:select',mode); }}/></div>
+            <RoutesPanel settings={s} onSettings={onSettings}/>
+            <ContainersPanel settings={s} onSettings={onSettings}/>
           </>}
 
           {category === 'downloads' && <>
@@ -300,6 +307,9 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
           </>}
 
           {category === 'privacy' && <>
+            <Panel id="privacy-cookie-banners" eyebrow="NAVEGAÇÃO LIMPA" title="Avisos de cookies" detail="Esconde os banners de consentimento mais comuns. Sites que exigem uma escolha podem continuar pedindo." icon={ShieldCheck}>
+              <Row title="Ocultar avisos de cookies" detail="Aplicado em todas as abas e painéis"><Switch checked={s.blockCookieBanners} label="Ocultar avisos de cookies" onChange={() => onSettings({ blockCookieBanners: !s.blockCookieBanners })}/></Row>
+            </Panel>
             <Panel eyebrow="PRIVACIDADE" title="Controles da sessão" detail="Ajuste o que o navegador informa e gerencie os dados guardados." icon={ShieldCheck}>
               <Row id="privacy-ad-block" title="Bloquear anúncios" detail="Filtros de rede EasyList e domínios de publicidade conhecidos"><Switch label="Bloquear anúncios" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
               <Row id="privacy-tracker-block" title="Bloquear rastreadores" detail={trackerProtection.available
@@ -403,9 +413,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
             </Panel>
           </>}
 
-          {category === 'shortcuts' && <Panel id="shortcuts-list" eyebrow="TECLADO" title="Atalhos essenciais" detail="Os comandos padrão do Cypher para ações frequentes." icon={Keyboard}>
-            {[["Nova aba", 'Ctrl + T'], ['Nova aba privada', 'Ctrl + Shift + N'], ['Reabrir aba fechada', 'Ctrl + Shift + T'], ['Barra de endereço', 'Ctrl + L'], ['Localizar na página', 'Ctrl + F'], ['Alternar abas', 'Ctrl + Tab'], ['Favoritar página', 'Ctrl + D'], ['Histórico', 'Ctrl + H'], ['Downloads', 'Ctrl + J'], ['Ferramentas de desenvolvedor', 'F12']].map(([label, shortcut]) => <Row key={shortcut} title={label}><kbd className="sc-keycap">{shortcut}</kbd></Row>)}
-          </Panel>}
+          {category === 'shortcuts' && <ShortcutsPanel settings={s} onSettings={onSettings}/>}
 
           {category === 'mods' && <Panel id="mods-manage" eyebrow="APARÊNCIA DA COMUNIDADE" title="Mods" detail="Troque a paleta do Cypher ou compartilhe sua própria combinação." icon={Puzzle}>
             <div className="sc-home-card"><span className="sc-home-mark"><Sparkles size={21}/></span><div><strong>Uma coleção para começar</strong><p>Escolha temas prontos, personalize tudo e salve a sua versão como um mod compartilhável.</p><button className="sc-button sc-button-primary" onClick={() => navigate('mods')}>Explorar mods <ArrowUpRight size={14}/></button></div></div>
