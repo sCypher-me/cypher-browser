@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.7.28] - 2026-10-18
+- Modo edição (Ctrl E): clique em qualquer parte da interface, como barra, abas, trilho, área da página ou logo, e ajuste formato, posição, cores e fontes ali mesmo, com Desfazer.
+- Tokens de design: tamanho do corte, altura da barra, densidade, espessura das bordas e fontes de título e texto agora são ajustáveis.
+- Barra montável: reordene e oculte botões, coloque a barra na base da janela, esconda as abas até o ponteiro chegar à borda e oculte o trilho de atalhos.
+- Peles .cypherskin podem ser importadas e exportadas, e o CSS personalizado da interface é aplicado por último; ambos aceitam só CSS, sem scripts nem endereços externos.
+- O modo de exibição pode seguir o Windows, e cada Espaço pode usar a própria cor como destaque; dá para copiar a cor do site aberto.
+- Todos os atalhos de teclado podem ser redefinidos em Configurações → Atalhos, com aviso de conflito.
+- Tela dividida (Ctrl Shift D) mostra duas abas lado a lado, com divisória ajustável; painéis laterais deixam sites como WhatsApp ou Spotify fixos ao lado da página.
+- Atalhos de busca: digite !yt, !gh, !w, !maps e outros na barra para pesquisar direto no site.
+- Grupos de abas com cor e recolhimento, modo leitura (Ctrl Shift R) e captura de tela com caneta, marca-texto e retângulo (Ctrl Shift S).
+- Rota por site abre endereços escolhidos sempre pelo Tor ou I2P; contêineres separam cookies e logins por aba; avisos de cookies são ocultados; e Segurança ganhou um relatório de privacidade dos últimos 7 dias.
+
 ## [0.7.27] - 2026-10-18
 - Novo visual principal: a pele Recorte Noite traz silhuetas cortadas, tipografia condensada e uma barra superior única que reúne navegação, endereço, rotas e controles da janela.
 - O botão Pele, na barra, e Configurações → Aparência trocam a pele entre Recorte e Clássico sem mudar suas cores; o mod Cypher Original restaura o visual anterior completo.

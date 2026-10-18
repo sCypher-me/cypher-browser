@@ -8,7 +8,7 @@ const invokeActions = new Set([
   'reload','save','settings','site-data:clear','site-permission:clear','site-permission:remove','state','stop','system:default-browser','password:list','password:save','password:delete','password:fill','password:generate','clipboard:write',
   'workspace:list','workspace:create','workspace:rename','workspace:delete','workspace:switch','research:add','research:update','research:remove','tabs:organize','tabs:suggest-groups','profile:list','profile:create','profile:switch',
   'system:dns-settings','system:proxy','system:restart','tab:close','tab:move','tab:mute','tab:new','tab:pin',
-  'tab:restore','tab:select','tab:duplicate','tab:reload','tab:close-others','update:ack','update:check','update:dismiss','update:install','viewport','vpn:proton:account',
+  'tab:restore','tab:select','tab:duplicate','tab:reload','tab:close-others','tab:group','split:toggle','split:ratio','split:swap','split:close','panel:toggle','panel:add','panel:remove','page:reader','page:capture','capture:save','clipboard:image','page:theme-color','skin:import','skin:apply','skin:remove','skin:export','update:ack','update:check','update:dismiss','update:install','viewport','vpn:proton:account',
   'vpn:proton:open','vpn:proton:status','vpn:proton:verify','window:close','window:fullscreen','window:maximize','window:minimize','zoom',
 ]);
 contextBridge.exposeInMainWorld('cypher', {
