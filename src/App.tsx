@@ -12,6 +12,9 @@ import InspectorPanel, { type InspectTarget } from './InspectorPanel';
 import CaptureEditor from './CaptureEditor';
 import { defaultTokens } from './CustomizationSettings';
 import ModsStore from './ModsStore';
+import { BlockScreen, InstallScreen, ReadyNotice, UpdateChip } from './update/UpdateLayer';
+import Onboarding from './update/Onboarding';
+import './update/update.css';
 import { useModAudio } from './modAudio';
 import { browserPages, centralAlias, internalPageFromUrl, sectionFor, type InternalPage, type LegacySection, type SettingsSection } from './navigation';
 import './browser-features.css';
@@ -106,7 +109,10 @@ export default function App() {
   const visibleTabs = state.tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === state.activeWorkspaceId);
   const pageMedia = state.nowPlaying || null;
   // Qualquer camada da interface sobre a área da página precisa tirar a página nativa da frente.
-  const overlay = menu || !!tabMenu || addressFocus || palette || skinMenu || inspecting || !!captureImage || panelDraft !== null || trackerPanelOpen || popupPanelOpen;
+  const [installRequested, setInstallRequested] = useState(false);
+  const updateScreen = ['installing', 'restarting'].includes(state.update.state) || (installRequested && state.update.state === 'downloading');
+  const fullScreenLayer = updateScreen || !!state.update.blocked || !!state.onboarding;
+  const overlay = menu || !!tabMenu || addressFocus || palette || skinMenu || inspecting || !!captureImage || panelDraft !== null || trackerPanelOpen || popupPanelOpen || fullScreenLayer;
   const [pageSnapshot, setPageSnapshot] = useState<PageSnapshot[]>([]);
   useModAudio({ effects: state.modEffects, soundVolume: s.modSoundsVolume ?? 0.6, musicVolume: s.modMusicVolume ?? 0.5, tabCount: state.tabs.length, activeUrl: tab?.url || '', pageMediaPlaying: !!state.nowPlaying?.playing });
   const modSoundsOn = !!state.modEffects?.sounds;
@@ -126,6 +132,7 @@ export default function App() {
     else if (tab) void act('navigate', `cypher://${name}`);
     else void act('tab:new', { url: `cypher://${name}` });
   }
+  function requestInstall() { setInstallRequested(true); void act('update:install').then(() => { if (!['installing', 'restarting'].includes(state.update.state)) setTimeout(() => setInstallRequested(false), 4000); }); }
   function navigate(value: string) { setMenu(false); setTabMenu(null); setAddressFocus(false); addressRef.current?.blur(); void act('navigate', value); }
   const settings = (patch: Partial<Settings>) => {
     if (inspecting) setUndoStack(stack => [...stack.slice(-40), Object.fromEntries(Object.keys(patch).map(key => [key, s[key as keyof Settings]])) as Partial<Settings>]);
@@ -347,6 +354,7 @@ export default function App() {
             </div>}
           </span>}
           {toolbarShown('media') && <IconButton style={toolbarOrder('media')} label={pageMedia?.playing ? `Abrir miniplayer · ${pageMedia.title}` : 'Abrir miniplayer'} active={!!pageMedia?.playing || s.backgroundMusicEnabled} onClick={() => void act('media:window:toggle')}><Music2 size={17}/></IconButton>}
+          <UpdateChip update={state.update} onInstall={requestInstall}/>
           {toolbarShown('customize') && <IconButton style={toolbarOrder('customize')} label="Personalizar Cypher" onClick={() => openPage('settings')}><SlidersHorizontal size={18}/></IconButton>}<IconButton style={toolbarOrder('menu')} label="Menu do navegador" active={menu} onClick={() => { setMenu(!menu); setSkinMenu(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setAddressFocus(false); }}><MoreHorizontal size={21}/></IconButton>
         </div>
         {s.showBookmarksBar && <div className="bookmarks-bar" aria-label="Barra de favoritos"><div className="bookmarks-items">{state.bookmarks.length ? state.bookmarks.slice(0, 12).map(bookmark => <button type="button" className="bookmark-chip" key={bookmark.id} title={bookmark.url} onClick={() => navigate(bookmark.url)} onAuxClick={event => { if (event.button === 1) void act('tab:new', { url: bookmark.url }); }}><span>{bookmark.title.trim().slice(0, 1).toUpperCase() || <Globe2 size={13}/>}</span><strong>{bookmark.title || hostname(bookmark.url)}</strong></button>) : <button type="button" className="bookmarks-empty" onClick={() => openPage('bookmarks')}>Seus favoritos aparecerão aqui</button>}</div><button type="button" className="bookmark-manage" title="Gerenciar favoritos" onClick={() => openPage('bookmarks')}><MoreHorizontal size={16}/></button></div>}
@@ -395,29 +403,10 @@ export default function App() {
     {panelDraft !== null && <><div className="menu-backdrop" onClick={() => setPanelDraft(null)}/><form className="panel-draft browser-menu" onSubmit={event => { event.preventDefault(); if (!panelDraft.trim()) return; void act('panel:add', { url: panelDraft.trim() }).then(id => { if (id) setPanelDraft(null); }); }}><span className="eyebrow">NOVO PAINEL LATERAL</span><p>Fixe um site numa coluna ao lado da página, como WhatsApp, Spotify ou um tradutor.</p><input className="sc-input" autoFocus aria-label="Endereço do painel" placeholder="web.whatsapp.com" value={panelDraft} onChange={event => setPanelDraft(event.target.value)}/><div className="cz-actions"><button type="button" className="button secondary" onClick={() => setPanelDraft(null)}>Cancelar</button><button type="submit" className="button primary" disabled={!panelDraft.trim()}>Adicionar</button></div></form></>}
     {palette && <CommandPalette tabs={orderedTabs} activeId={state.activeId} bookmarks={state.bookmarks} history={state.history} commands={paletteCommands} onSelectTab={id => void act('tab:select', id)} onOpen={value => navigate(value)} onClose={() => setPalette(false)}/>}
     {toast && <div className="toast" role="status"><AlertCircle size={16}/><span>{toast}</span><button onClick={() => setToast('')} aria-label="Fechar aviso"><X size={15}/></button></div>}
-    {state.update.state === 'available' && <aside className="update-notice" role="status" aria-live="polite"><span className="update-notice-icon"><Sparkles size={18}/></span><div className="update-notice-copy"><strong>Uma nova versão do Cypher chegou</strong><small>Versão {state.update.version}{state.update.releaseNotes ? ` · ${state.update.releaseNotes}` : ''}</small></div><button className="update-install-button" onClick={() => void act('update:install')}>Instalar agora <ArrowRight size={14}/></button><button className="update-dismiss-button" aria-label="Lembrar depois" title="Lembrar depois" onClick={() => void act('update:dismiss')}><X size={16}/></button></aside>}
-    {state.update.state === 'complete' && <UpdateOnboarding version={state.update.version} releaseNotes={state.update.releaseNotes} onComplete={() => void act('update:ack')}/>}
-    {['downloading','restarting'].includes(state.update.state) && <div className="update-screen" role="dialog" aria-modal="true" aria-label="Atualização do Cypher"><div className="update-card"><div className="update-animation"><span className="update-orbit update-orbit-one"/><span className="update-orbit update-orbit-two"/><Logo/></div><span className="sc-eyebrow">CYPHER / ATUALIZAÇÃO</span><h2>{state.update.state === 'restarting' ? 'Aplicando a nova versão.' : 'Preparando sua nova versão.'}</h2><p>{state.update.message}</p>{state.update.state === 'downloading' && <div className="update-progress"><span><i style={{ width: `${state.update.progress}%` }}/></span><small>{state.update.progress ? `${state.update.progress}%` : 'Conectando ao canal seguro'}</small></div>}<div className="update-loader" aria-label="Atualização em andamento"><i/><i/><i/></div></div></div>}
-  </div>;
-}
-function UpdateOnboarding({ version, releaseNotes, onComplete }: { version: string; releaseNotes: string; onComplete: () => void }) {
-  const changes = releaseNotes.split(/\r?\n/).map(line => line.trim().replace(/^[-*•]\s*/, '')).filter(Boolean);
-  const steps = changes.length ? changes : ['A versão mais recente do Cypher está instalada e pronta para uso.'];
-  const [step, setStep] = useState(0);
-  const showingWelcome = step === 0;
-  const change = steps[step - 1];
-  const total = steps.length + 1;
-  const ChangeIcon = showingWelcome ? Sparkles : /bloqueador|rastreador|proteção|permissões|segurança/i.test(change || '') ? ShieldCheck : /texto|fonte|acessibilidade|configurações/i.test(change || '') ? SlidersHorizontal : Sparkles;
-  return <div className="update-screen update-onboarding-screen" role="dialog" aria-modal="true" aria-labelledby="update-onboarding-title">
-    <section className="update-onboarding-card">
-      <header className="update-onboarding-header"><div className="update-onboarding-brand"><Logo/><span>CYPHER</span><i/></div><button type="button" className="update-onboarding-skip" onClick={onComplete}>Pular apresentação</button></header>
-      <div className="update-onboarding-progress" role="progressbar" aria-label="Progresso das novidades" aria-valuemin={1} aria-valuemax={total} aria-valuenow={step + 1}>{Array.from({ length: total }, (_, index) => <i key={index} className={index <= step ? 'current' : ''}/>)}</div>
-      <div className="update-onboarding-content" key={step}>
-        <div className="update-onboarding-art" aria-hidden="true"><span className="update-onboarding-index">{String(step).padStart(2, '0')}</span><i className="update-onboarding-ring ring-one"/><i className="update-onboarding-ring ring-two"/><i className="update-onboarding-ring ring-three"/><span className="update-onboarding-art-icon"><ChangeIcon size={31}/></span><span className="update-onboarding-art-caption">{showingWelcome ? 'CYPHER / RELEASE' : `CYPHER / ${String(step).padStart(2, '0')}`}</span></div>
-        <div className="update-onboarding-copy"><span className="sc-eyebrow">{showingWelcome ? `VERSÃO ${version}` : `NOVIDADE ${step} DE ${steps.length}`}</span><h1 id="update-onboarding-title">{showingWelcome ? 'O Cypher evoluiu.' : 'O que mudou.'}</h1><p>{showingWelcome ? 'A atualização foi concluída. Veja as novidades antes de voltar à navegação.' : change}</p>{showingWelcome && <span className="update-onboarding-summary">{steps.length} {steps.length === 1 ? 'novidade para conhecer' : 'novidades para conhecer'}</span>}</div>
-      </div>
-      <footer className="update-onboarding-footer"><span>{showingWelcome ? 'BEM-VINDO DE VOLTA' : `${step} / ${steps.length}`}</span><div>{step > 0 && <button type="button" className="update-onboarding-back" onClick={() => setStep(step - 1)}><ArrowLeft size={15}/> Anterior</button>}<button type="button" className="update-onboarding-next" onClick={() => showingWelcome ? setStep(1) : step < steps.length ? setStep(step + 1) : onComplete()}>{showingWelcome ? 'Ver novidades' : step === steps.length ? 'Começar a navegar' : 'Próxima novidade'} <ArrowRight size={15}/></button></div></footer>
-    </section>
+    <ReadyNotice update={state.update} onInstall={requestInstall}/>
+    {state.onboarding && !state.update.blocked && !updateScreen && <Onboarding onboarding={state.onboarding} onDone={() => void act('update:ack')}/>}
+    {state.update.blocked && !updateScreen && <BlockScreen update={state.update} command={act} onInstall={requestInstall}/>}
+    {updateScreen && <InstallScreen update={state.update}/>}
   </div>;
 }
 function SkinGlyph({ skin }: { skin: Settings['skin'] }) { return skin === 'recorte' ? <svg width="16" height="13" viewBox="0 0 36 30" aria-hidden="true"><path d="M0 0h28l8 8v22H6L0 24Z" fill="currentColor"/></svg> : <svg width="16" height="13" viewBox="0 0 36 30" aria-hidden="true"><rect width="36" height="30" rx="9" fill="currentColor"/></svg>; }

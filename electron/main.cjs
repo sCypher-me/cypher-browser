@@ -5,6 +5,8 @@ const { pathToFileURL } = require('node:url');
 const { randomUUID, randomBytes } = require('node:crypto');
 const { defaults, resolveAddress, sanitizeSettings, validateMod, validateSkinPackage, shortcutActions } = require('./domain.cjs');
 const { createUpdater } = require('./updater.cjs');
+const { notesBetween } = require('./changelog.cjs');
+const { compareVersions: compareCypherVersions, parseVersion } = require('./versions.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { extractCypherPackage } = require('./cypher-package.cjs');
 const modPackage = require('./mod-package.cjs');
@@ -607,6 +609,7 @@ function snapshot() {
     trackerProtection: trackerList,
     popupProtection: { blockedCount: blockedPopupCount, pending: popupRequests.map(request => ({ ...request })) },
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
+    onboarding,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
@@ -804,6 +807,34 @@ function editMenuItems(params) {
   ];
   return String(params.selectionText || '').trim() ? [{ role: 'copy', label: 'Copiar' }] : [];
 }
+// ===== Atualização: bloqueio de versões antigas e novidades depois de atualizar =====
+const blockedActions = new Set(['navigate','tab:new','tab:duplicate','tab:restore','back','forward','reload','tab:reload','split:toggle','panel:toggle','panel:add','connection:select','page:reader','page:translate','password:fill']);
+function updateBlocked() { return updater?.getState().blocked === true; }
+const hadProfileAtLaunch = (() => { try { return fs.existsSync(path.join(app.getPath('userData'), 'cypher.json')); } catch { return false; } })();
+let onboarding = null;
+function versionFile() { return path.join(app.getPath('userData'), 'cypher-version.json'); }
+function writeLastRunVersion(version) { try { fs.writeFileSync(versionFile(), JSON.stringify({ lastRunVersion: version })); } catch {} }
+function bundledChangelog() {
+  try { const list = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../dist/changelog.json'), 'utf8')); return Array.isArray(list) ? list.filter(entry => parseVersion(entry?.version) && Array.isArray(entry.items)) : []; }
+  catch { return []; }
+}
+/** Mostra as novidades de todas as versões entre a última usada e a atual. */
+function prepareOnboarding() {
+  const current = app.getVersion();
+  if (!parseVersion(current)) return;
+  const entries = bundledChangelog();
+  let last = '';
+  try { last = JSON.parse(fs.readFileSync(versionFile(), 'utf8')).lastRunVersion || ''; } catch {}
+  if (!parseVersion(last)) {
+    // Primeira vez com este controle: quem já tinha perfil acabou de atualizar a partir da versão anterior.
+    const previous = entries.map(entry => entry.version).filter(version => compareCypherVersions(version, current) < 0).sort(compareCypherVersions).pop();
+    last = hadProfileAtLaunch && previous ? previous : current;
+  }
+  const versions = compareCypherVersions(current, last) > 0 ? notesBetween(entries, last, current) : [];
+  if (versions.length) onboarding = { from: last, to: current, versions };
+  else writeLastRunVersion(current);
+}
+function acknowledgeOnboarding() { onboarding = null; writeLastRunVersion(app.getVersion()); }
 function windowAlive() { return !!win && !win.isDestroyed(); }
 function shortcut(action) { if (windowAlive()) win.webContents.send('cypher:shortcut', action); }
 async function sendPageSnapshot() {
@@ -843,7 +874,7 @@ function layout() {
     tab.view.setBounds(tab.connectionMode === 'normal' ? tabBounds : letterboxBounds(tabBounds));
     const inWorkspace = tab.private || tab.connectionMode !== 'normal' || tab.workspaceId === store.activeWorkspaceId;
     const shown = splitActive ? tab.id === split.left || tab.id === split.right : tab.id === activeId;
-    tab.view.setVisible(shown && inWorkspace && !obscured && !tab.url.startsWith('cypher://') && !tab.error);
+    tab.view.setVisible(shown && inWorkspace && !obscured && !updateBlocked() && !tab.url.startsWith('cypher://') && !tab.error);
     try { tab.view.webContents.setBackgroundThrottling(store.settings.memorySaverEnabled && !shown); } catch {}
   }
   for (const [id, view] of panelViews) {
@@ -1714,6 +1745,7 @@ function setSettings(payload) {
   const previousShortcuts = JSON.stringify(previous.shortcuts || {});
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
   if (previous.sendErrorReports !== store.settings.sendErrorReports) syncInstallerConsent(store.settings.sendErrorReports);
+  if (previous.updateChannel !== store.settings.updateChannel) updater?.setChannel(store.settings.updateChannel);
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
     store.settings.wallpaperVideoName = previous.wallpaperVideoName || '';
@@ -1757,6 +1789,8 @@ function setSettings(payload) {
 }
 async function command(action, payload) {
   const tab = active(), wc = tab?.view?.webContents;
+  // Versão fora de circulação: só a interface, configurações e a própria atualização continuam.
+  if (updateBlocked() && blockedActions.has(action) && !(action === 'navigate' && /^cypher:\/\//i.test(String(payload || '')))) throw new Error('Esta versão do Cypher saiu de circulação. Atualize para continuar navegando.');
   switch (action) {
     case 'state': return snapshot();
     case 'password:list': return passwordVaultSnapshot();
@@ -2269,9 +2303,9 @@ async function command(action, payload) {
       return { opened: true };
     }
     case 'update:check': return updater.check();
-    case 'update:install': return updater.downloadAndInstall();
+    case 'update:install': return updater.installNow();
     case 'update:dismiss': return updater.dismiss();
-    case 'update:ack': return updater.finishAnimation();
+    case 'update:ack': acknowledgeOnboarding(); emit(); return true;
     case 'connection:check': {
       const mode = payload === 'tor' || payload === 'i2p' ? payload : 'normal';
       if (mode === 'normal') return { mode, available: true, port: null };
@@ -2541,7 +2575,8 @@ app.whenReady().then(async () => {
   }, 1500);
   setInterval(suspendIdleTabs, 60_000);
   await loadStoredExtensions();
-  updater = createUpdater({ app, publish: () => emit(), scheduleQuit: () => setTimeout(() => app.quit(), 1300) });
+  updater = createUpdater({ app, publish: () => { layout(); emit(); }, scheduleQuit: () => setTimeout(() => app.quit(), 1300), getChannel: () => store?.settings.updateChannel || 'stable' });
+  prepareOnboarding();
   if (process.platform === 'win32' && store.settings.startWithWindows) {
     try { app.setLoginItemSettings({ openAtLogin: true, path: process.execPath, args: app.isPackaged ? [] : [app.getAppPath()] }); }
     catch (error) { console.error('Não foi possível aplicar a inicialização com o Windows:', error.message); }
@@ -2606,10 +2641,11 @@ app.whenReady().then(async () => {
   profileSyncReady = true;
   if (store.profileSync.endpoint) setTimeout(() => void syncProfile().catch(error => console.warn('Sincronização inicial do perfil:', error.message)), 1800);
   profileSyncInterval = setInterval(() => { if (store?.profileSync?.endpoint) void syncProfile().catch(error => console.warn('Sincronização periódica do perfil:', error.message)); }, 5 * 60 * 1000);
-  updater.acknowledgeStartup();
-  updater.start();
+  void updater.start();
 });
 app.on('window-all-closed', () => app.quit());
+// Atualização pronta e o usuário fechou o Cypher: instala em silêncio, sem reabrir.
+app.on('will-quit', () => { try { updater?.installOnQuit(); } catch (error) { console.error('Não foi possível instalar a atualização ao fechar:', error.message); } });
 app.on('before-quit', event => {
   if (mediaTimer) { clearInterval(mediaTimer); mediaTimer = null; }
   if (profileSyncInterval) { clearInterval(profileSyncInterval); profileSyncInterval = null; }

@@ -246,3 +246,7 @@
 .app[data-appearance="light"] .central :is(strong, h2, h3, b, label > span > strong) { color: var(--text); }
 .app[data-appearance="light"] .central :is(small, .connection-option-copy span, .connection-note p) { color: var(--muted); }
 .app[data-appearance="light"] .central .sc-block :is(input, select, textarea) { background: #fff; color: var(--text); }
+
+/* Novidades da versão pronta */
+.central .sc-update-notes { margin: 8px 0 0; padding: 0; list-style: none; }
+.central .sc-update-notes li { padding: 3px 0; font-size: var(--ui-font-12, 12px); }

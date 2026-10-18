@@ -20,7 +20,7 @@ export default function Overview({ settings: s, privacyStats, trackerProtection,
   const week = weekTotals(privacyStats);
   const profileName = profiles.find(profile => profile.id === profileId)?.name || 'Pessoal';
   const protections = [s.blockAds, s.blockTrackers && trackerProtection.available, s.blockPopups, s.blockCookieBanners].filter(Boolean).length;
-  const installable = ['available', 'dismissed'].includes(update.state);
+  const installable = update.state === 'ready';
 
   return <>
     <button type="button" className="sc-panel sc-tile" onClick={() => goSection('privacy')} data-toc="Proteção">
