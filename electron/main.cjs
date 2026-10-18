@@ -67,8 +67,9 @@ const proxyReady = new WeakMap();
 const sitePermissionTypes = new Set(['media','geolocation','notifications','fullscreen','clipboard-sanitized-write']);
 let privatePartition = `cypher-private-${randomUUID()}`;
 const builtInMods = [
-  { id: 'cypher-original', name: 'Cypher Original', author: 'Cypher', description: 'Grafite profundo. Verde elétrico. Seu ponto de partida.', settings: { ...defaults } },
-  { id: 'ultraviolet', name: 'Ultraviolet', author: 'Cypher', description: 'Uma frequência diferente. Roxo, sombras e órbitas.', settings: { ...defaults, accent: '#b5a0ff', surface: '#15121d', background: '#0b0910' } },
+  { id: 'recorte-noite', name: 'Recorte Noite', author: 'Cypher', description: 'Silhuetas cortadas, tipografia condensada e um laranja que corta a noite.', settings: { ...defaults } },
+  { id: 'cypher-original', name: 'Cypher Original', author: 'Cypher', description: 'Grafite profundo. Verde elétrico. O visual clássico.', settings: { ...defaults, skin: 'classic', sidebarWidth: 248, accent: '#b6f36a', surface: '#111513', background: '#090c0b', wallpaper: 'orbital' } },
+  { id: 'ultraviolet', name: 'Ultraviolet', author: 'Cypher', description: 'Uma frequência diferente. Roxo, sombras e órbitas.', settings: { ...defaults, accent: '#b5a0ff', surface: '#15121d', background: '#0b0910', wallpaper: 'orbital' } },
   { id: 'ember', name: 'Ember', author: 'Cypher', description: 'Tons de carvão e um brilho que não se apaga.', settings: { ...defaults, accent: '#ff9b6a', surface: '#1b1412', background: '#100b09', wallpaper: 'grid' } },
   { id: 'arctic', name: 'Arctic Signal', author: 'Cypher', description: 'Azul glacial, linhas precisas e silêncio visual.', settings: { ...defaults, accent: '#78d9ee', surface: '#10191e', background: '#080e12', radius: 6, font: 'mono', wallpaper: 'grid' } },
 ];

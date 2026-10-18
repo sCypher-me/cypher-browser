@@ -21,6 +21,8 @@
     "test:smoke": "node scripts/run-smoke.cjs"
   },
   "dependencies": {
+    "@fontsource/big-shoulders-display": "^5.3.0",
+    "@fontsource/work-sans": "^5.3.0",
     "@ghostery/adblocker": "2.18.2",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",

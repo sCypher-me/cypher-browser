@@ -1,11 +1,11 @@
 const INTERNAL = new Set(['newtab', 'settings', 'security', 'profile', 'extensions', 'bookmarks', 'history', 'downloads', 'mods', 'productivity']);
 const { defaultHome, sanitizeHome } = require('./home-layout.mjs');
 const defaults = {
-  tabPosition: 'side', sidebarWidth: 248, appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513',
-  background: '#090c0b', radius: 14, font: 'system', wallpaper: 'orbital', wallpaperImageData: '', wallpaperVideoPath: '', wallpaperVideoName: '',
+  skin: 'recorte', tabPosition: 'side', sidebarWidth: 206, appearanceMode: 'dark', accent: '#ff5436', surface: '#151310',
+  background: '#0a0908', radius: 14, font: 'system', wallpaper: 'none', wallpaperImageData: '', wallpaperVideoPath: '', wallpaperVideoName: '',
   buttonShape: 'soft', interfaceEffect: 'signal', soundEffectsEnabled: false, soundTheme: 'cypher',
   backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false,
-  motion: true, compact: false, interfaceTextScale: 1.2, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'cypher-original',
+  motion: true, compact: false, interfaceTextScale: 1.2, searchEngine: 'duckduckgo', customSearchUrl: '', activeMod: 'recorte-noite',
   connectionMode: 'normal', torSocksPort: 9050, i2pHttpPort: 4444, profilePhoto: '',
   restoreSession: false, startupMode: 'home', startupPages: [], showHomeFirst: false,
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
@@ -51,7 +51,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   if (!input || typeof input !== 'object') input = {};
   const output = { ...base };
   for (const key of ['accent', 'surface', 'background']) if (/^#[\da-f]{6}$/i.test(input[key])) output[key] = input[key];
-  for (const [key, values] of Object.entries({ tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
+  for (const [key, values] of Object.entries({ skin: ['recorte','classic'], tabPosition: ['side','top'], appearanceMode: ['dark','light'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
   for (const key of ['motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
