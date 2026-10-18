@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, nativeTheme, protocol, net, safeStorage, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, ClipboardItem, nativeTheme, protocol, net, safeStorage, screen, nativeImage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -792,6 +792,16 @@ function refreshMediaInfo(tab, started = false) {
   }).catch(() => {});
 }
 // Eventos de páginas e abas podem chegar depois de a janela ser destruída ao fechar o Cypher.
+/** Itens de edição do menu do botão direito, com os rótulos em português e o estado de cada ação. */
+function editMenuItems(params) {
+  const flags = params.editFlags || {};
+  if (params.isEditable) return [
+    { role: 'undo', label: 'Desfazer', enabled: !!flags.canUndo }, { role: 'redo', label: 'Refazer', enabled: !!flags.canRedo }, { type: 'separator' },
+    { role: 'cut', label: 'Recortar', enabled: !!flags.canCut }, { role: 'copy', label: 'Copiar', enabled: !!flags.canCopy },
+    { role: 'paste', label: 'Colar', enabled: !!flags.canPaste }, { role: 'selectAll', label: 'Selecionar tudo', enabled: !!flags.canSelectAll },
+  ];
+  return String(params.selectionText || '').trim() ? [{ role: 'copy', label: 'Copiar' }] : [];
+}
 function windowAlive() { return !!win && !win.isDestroyed(); }
 function shortcut(action) { if (windowAlive()) win.webContents.send('cypher:shortcut', action); }
 async function sendPageSnapshot() {
@@ -1608,9 +1618,9 @@ function attachView(tab) {
   wc.on('context-menu', (_event, params) => {
     const template = [];
     if (store.settings.translationEnabled && tab.connectionMode === 'normal' && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
-    if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, { label: 'Copiar endereço do link', click: () => clipboard.writeText(params.linkURL) }, { type: 'separator' });
-    if (params.isEditable) template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' });
-    else if (params.selectionText) template.push({ role: 'copy' }, { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
+    if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, { label: 'Copiar endereço do link', click: () => void clipboard.writeText(params.linkURL) }, { type: 'separator' });
+    if (params.isEditable) template.push(...editMenuItems(params), { type: 'separator' });
+    else if (params.selectionText) template.push({ role: 'copy', label: 'Copiar' }, { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
     template.push({ label: 'Voltar', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Avançar', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Recarregar', click: () => wc.reload() }, { type: 'separator' }, { label: 'Salvar página…', click: () => savePage(tab) }, { label: 'Imprimir…', click: () => wc.print({}) }, { label: 'Inspecionar elemento', click: () => wc.inspectElement(params.x, params.y) });
     Menu.buildFromTemplate(template).popup({ window: win });
   });
@@ -1749,7 +1759,7 @@ async function command(action, payload) {
     case 'password:generate': return generatePassword(payload?.length);
     case 'clipboard:write': {
       if (typeof payload !== 'string' || payload.length > 8192) throw new Error('Texto inválido para a área de transferência.');
-      clipboard.writeText(payload); return true;
+      await clipboard.writeText(payload); return true;
     }
     case 'password:save': {
       const origin = normalizePasswordOrigin(payload?.origin);
@@ -2087,7 +2097,9 @@ async function command(action, payload) {
     }
     case 'clipboard:image': {
       if (!validImageData(payload)) throw new Error('Imagem de captura inválida.');
-      clipboard.writeImage(nativeImage.createFromDataURL(payload)); return true;
+      // Electron 44 trocou writeImage pela API assíncrona no padrão da web.
+      const png = nativeImage.createFromDataURL(payload).toPNG();
+      await clipboard.write([new ClipboardItem({ 'image/png': new Blob([png], { type: 'image/png' }) })]); return true;
     }
     case 'page:theme-color': {
       const current = active();
@@ -2535,6 +2547,11 @@ app.whenReady().then(async () => {
   const devURL = process.env.CYPHER_DEV_URL;
   const trustedURL = devURL || 'cypher-ui://app/index.html';
   rendererUrl = trustedURL + (devURL ? '/' : '');
+  // Barra de endereço, busca da Home e demais campos da interface: menu do botão direito com copiar e colar.
+  win.webContents.on('context-menu', (_event, params) => {
+    const items = editMenuItems(params);
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
+  });
   ipcMain.handle('cypher:command', (event, action, payload) => {
     if (event.sender === win.webContents) {
       if (event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== rendererUrl) throw new Error('Origem não autorizada.');

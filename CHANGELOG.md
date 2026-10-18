@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.34] - 2026-10-18
+- O botão direito na barra de endereço, na busca da Home e em todos os campos do Cypher abre um menu com Desfazer, Refazer, Recortar, Copiar, Colar e Selecionar tudo.
+- No menu do botão direito dos sites, as opções de edição aparecem em português e ficam desativadas quando não se aplicam.
+- Copiar a captura de tela para a área de transferência voltou a funcionar.
+
 ## [0.7.33] - 2026-10-18
 - O bloqueio de anúncios voltou a funcionar: a lista EasyList empacotada nas versões 0.7.30 a 0.7.32 tinha sido gerada para uma versão anterior do bloqueador e era ignorada. A publicação agora confere as listas antes de gerar o instalador.
 - Fechar o Cypher não gera mais um erro interno quando uma aba termina de fechar depois da janela.
