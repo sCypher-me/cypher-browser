@@ -37,7 +37,8 @@ function updateConfig() {
 }
 // O instalador grava a escolha de relatórios de erro no registro; ela é importada uma única vez.
 function importInstallerConsent() {
-  if (process.platform !== 'win32' || store.errorReportConsentImported) return;
+  // Só o app instalado conversa com o registro do instalador; execuções de desenvolvimento e testes não.
+  if (process.platform !== 'win32' || !app.isPackaged || store.errorReportConsentImported) return;
   store.errorReportConsentImported = true; persist();
   execFile('reg', ['query', 'HKCU\\Software\\Cypher', '/v', 'SendErrorReports'], { windowsHide: true, timeout: 4000 }, (error, stdout) => {
     if (error || !/SendErrorReports\s+REG_DWORD\s+0x1\b/i.test(String(stdout))) return;
@@ -45,7 +46,7 @@ function importInstallerConsent() {
   });
 }
 function syncInstallerConsent(enabled) {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32' || !app.isPackaged) return;
   execFile('reg', ['add', 'HKCU\\Software\\Cypher', '/v', 'SendErrorReports', '/t', 'REG_DWORD', '/d', enabled ? '1' : '0', '/f'], { windowsHide: true, timeout: 4000 }, () => {});
 }
 try {
@@ -600,7 +601,7 @@ function snapshot() {
     history: store.history, downloads: store.downloads, extensions: store.extensions.map(({ id, name, version, enabled, source, packageId, error }) => ({ id, name, version, enabled, source, packageId, error })),
     sitePermissions: store.sitePermissions, mods: [...builtInMods, ...store.mods], workspaces:store.workspaces, activeWorkspaceId:store.activeWorkspaceId,
     researchItems:store.researchItems, profileId:activeProfileId, profiles:profileRegistry.map(item => ({ ...item, active:item.id === activeProfileId })),
-    profileSync: profileSyncSnapshot(), maximized: win?.isMaximized() || false,
+    profileSync: profileSyncSnapshot(), maximized: windowAlive() ? win.isMaximized() : false,
     trackerProtection: trackerList,
     popupProtection: { blockedCount: blockedPopupCount, pending: popupRequests.map(request => ({ ...request })) },
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
@@ -790,7 +791,9 @@ function refreshMediaInfo(tab, started = false) {
     }
   }).catch(() => {});
 }
-function shortcut(action) { win.webContents.send('cypher:shortcut', action); }
+// Eventos de páginas e abas podem chegar depois de a janela ser destruída ao fechar o Cypher.
+function windowAlive() { return !!win && !win.isDestroyed(); }
+function shortcut(action) { if (windowAlive()) win.webContents.send('cypher:shortcut', action); }
 async function sendPageSnapshot() {
   if (!win || win.isDestroyed()) return;
   const views = win.contentView.children.filter(view => view.webContents && !view.webContents.isDestroyed() && (typeof view.getVisible !== 'function' || view.getVisible()));
@@ -803,8 +806,8 @@ async function sendPageSnapshot() {
   };
   try {
     const shots = await Promise.race([Promise.all(views.map(capture)), new Promise(resolve => setTimeout(() => resolve([]), 300))]);
-    win.webContents.send('cypher:page-snapshot', shots.filter(Boolean));
-  } catch { win.webContents.send('cypher:page-snapshot', []); }
+    if (windowAlive()) win.webContents.send('cypher:page-snapshot', shots.filter(Boolean));
+  } catch { if (windowAlive()) win.webContents.send('cypher:page-snapshot', []); }
 }
 function layout() {
   if (!win || win.isDestroyed()) return;
@@ -1592,15 +1595,15 @@ function attachView(tab) {
     const result = await dialog.showMessageBox(win, { type: 'question', message: 'Esta página pode ter alterações não salvas. Sair mesmo assim?', buttons: ['Ficar na página','Sair'], defaultId: 0, cancelId: 0 });
     if (result.response === 1) { wc.removeAllListeners('will-prevent-unload'); wc.close(); }
   });
-  wc.on('enter-html-full-screen', () => { win.setFullScreen(true); shortcut('page-fullscreen'); });
-  wc.on('leave-html-full-screen', () => { win.setFullScreen(false); shortcut('leave-fullscreen'); });
+  wc.on('enter-html-full-screen', () => { if (windowAlive()) win.setFullScreen(true); shortcut('page-fullscreen'); });
+  wc.on('leave-html-full-screen', () => { if (windowAlive()) win.setFullScreen(false); shortcut('leave-fullscreen'); });
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     if (input.key === 'Escape') { shortcut('escape'); return; }
     if ((input.control || input.meta) && input.key.toLowerCase() === 'l') { event.preventDefault(); shortcut('address'); }
   });
   wc.on('found-in-page', (_event, result) => {
-    if (tab.id === activeId && result.finalUpdate) win.webContents.send('cypher:find-result', { matches: result.matches, active: result.activeMatchOrdinal });
+    if (tab.id === activeId && result.finalUpdate && windowAlive()) win.webContents.send('cypher:find-result', { matches: result.matches, active: result.activeMatchOrdinal });
   });
   wc.on('context-menu', (_event, params) => {
     const template = [];
