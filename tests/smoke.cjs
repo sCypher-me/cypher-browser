@@ -110,6 +110,14 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(await view.webContents.executeJavaScript('typeof require'), 'undefined');
     assert.equal(await view.webContents.executeJavaScript('typeof window.cypher'), 'undefined');
     assert.ok(view.getBounds().x > 200);
+    // Área de transferência (Electron 44 tornou a API assíncrona e removeu writeImage).
+    const { clipboard } = require('electron');
+    assert.equal(await invoke('clipboard:write', 'copiado pelo Cypher'), true);
+    assert.equal(await clipboard.readText(), 'copiado pelo Cypher');
+    const onePixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    assert.equal(await invoke('clipboard:image', onePixel), true);
+    assert.ok(await clipboard.has('image/png'), 'captura copiada como imagem');
+    assert.ok(win.webContents.listenerCount('context-menu') > 0, 'interface tem menu do botão direito para copiar e colar');
     // Popovers da barra precisam ficar por cima da página: ela sai da frente e vira uma imagem.
     for (const selector of ['.tracker-toolbar-button', '.popup-toolbar-button']) {
       await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click()`);
