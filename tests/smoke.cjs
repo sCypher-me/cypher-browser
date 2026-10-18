@@ -109,6 +109,13 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(await view.webContents.executeJavaScript('typeof require'), 'undefined');
     assert.equal(await view.webContents.executeJavaScript('typeof window.cypher'), 'undefined');
     assert.ok(view.getBounds().x > 200);
+    // Popovers da barra precisam ficar por cima da página: ela sai da frente e vira uma imagem.
+    for (const selector of ['.tracker-toolbar-button', '.popup-toolbar-button']) {
+      await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click()`);
+      await until(async () => !view.getVisible() && await win.webContents.executeJavaScript('document.querySelectorAll(".page-snapshot img").length > 0'), `page hidden under ${selector}`);
+      await win.webContents.executeJavaScript('document.querySelector(".tabs-heading, .titlebar").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }))');
+      await until(() => view.getVisible(), `page back after closing ${selector}`);
+    }
     await invoke('media:window:toggle');
     await until(() => BrowserWindow.getAllWindows().length === 2, 'floating miniplayer');
     const miniPlayer = BrowserWindow.getAllWindows().find(window => window !== win);

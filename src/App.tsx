@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Search, Star, Download, Clock3, SlidersHorizontal, Home, Puzzle, PanelLeftClose, PanelLeftOpen, Shield, ShieldCheck, Globe2, ChevronRight, ChevronDown, MoreHorizontal, ArrowUpRight, Pin, Volume2, VolumeX, Trash2, Upload, Check, ExternalLink, FolderOpen, Pause, Play, ScanLine, Command, LockKeyhole, Sparkles, Monitor, LayoutList, Grid2X2, Maximize, Printer, Code2, Save, CheckCircle2, AlertCircle, Headphones, MessageCircle, Music2, Ban, Layers3, Copy, CopyPlus, Undo2, ZoomIn, ListX, Link2, VenetianMask, Waypoints, BookOpen, Camera, Columns2, Boxes, PanelRight, PenTool, Tag, ArrowLeftRight, Pipette } from 'lucide-react';
-import type { BrowserState, ConnectionMode, Settings, Tab, ToolbarItem, TrackerProtectionStatus } from './types';
+import type { BrowserState, PageSnapshot, ConnectionMode, Settings, Tab, ToolbarItem, TrackerProtectionStatus } from './types';
 import { cn } from './lib/cn';
 import { defaultHome } from '../electron/home-layout.mjs';
 import HomePage from './HomePage';
@@ -105,7 +105,9 @@ export default function App() {
   const activeWorkspace = state.workspaces.find(workspace => workspace.id === state.activeWorkspaceId);
   const visibleTabs = state.tabs.filter(item => item.private || item.connectionMode !== 'normal' || item.workspaceId === state.activeWorkspaceId);
   const pageMedia = state.nowPlaying || null;
-  const overlay = menu || !!tabMenu || addressFocus || palette || skinMenu || inspecting || !!captureImage || panelDraft !== null;
+  // Qualquer camada da interface sobre a área da página precisa tirar a página nativa da frente.
+  const overlay = menu || !!tabMenu || addressFocus || palette || skinMenu || inspecting || !!captureImage || panelDraft !== null || trackerPanelOpen || popupPanelOpen;
+  const [pageSnapshot, setPageSnapshot] = useState<PageSnapshot[]>([]);
   useModAudio({ effects: state.modEffects, soundVolume: s.modSoundsVolume ?? 0.6, musicVolume: s.modMusicVolume ?? 0.5, tabCount: state.tabs.length, activeUrl: tab?.url || '', pageMediaPlaying: !!state.nowPlaying?.playing });
   const modSoundsOn = !!state.modEffects?.sounds;
   function notify(message: string) { setToast(message); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4500); }
@@ -142,6 +144,18 @@ export default function App() {
   }, []);
   useEffect(() => { setAddress(tab?.url === 'cypher://newtab' ? '' : tab?.url || ''); setFind(false); setQuery(''); setFilter(''); setFindResult(null); }, [tab?.id, tab?.url]);
   useEffect(() => window.cypher?.onFindResult?.(setFindResult), []);
+  useEffect(() => window.cypher?.onPageSnapshot?.(setPageSnapshot), []);
+  // Popovers presos à barra fecham com um clique fora deles ou do botão que os abriu.
+  useEffect(() => {
+    if (!trackerPanelOpen && !popupPanelOpen && !skinMenu) return;
+    const listener = (event: PointerEvent) => {
+      if ((event.target as Element | null)?.closest('.toolbar-popover-anchor, .skin-anchor')) return;
+      setTrackerPanelOpen(false); setPopupPanelOpen(false); setSkinMenu(false);
+    };
+    document.addEventListener('pointerdown', listener, true);
+    return () => document.removeEventListener('pointerdown', listener, true);
+  }, [trackerPanelOpen, popupPanelOpen, skinMenu]);
+  useEffect(() => { if (!overlay) setPageSnapshot([]); }, [overlay]);
   useLayoutEffect(() => {
     if (!addressFocus) return;
     const measure = () => { const rect = addressFormRef.current?.getBoundingClientRect(); if (rect) setAddressRect({ left: rect.left, top: rect.bottom + 8, bottom: window.innerHeight - rect.top + 8, width: rect.width }); };
@@ -156,14 +170,14 @@ export default function App() {
       if (action === 'inspector') toggleInspector();
       if (action === 'capture') void startCapture();
       if (action.startsWith('error:')) notify(action.slice(6).replace(/^Error: /, ''));
-      if (action === 'escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); void act('find', { text: '' }); }
+      if (action === 'escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setAddressFocus(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setFind(false); void act('find', { text: '' }); }
       if (action === 'page-fullscreen') setPageFullscreen(true);
       if (action === 'leave-fullscreen') setPageFullscreen(false);
     });
   }, []);
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setInspecting(false); setPanelDraft(null); setAddressFocus(false); setTrackerPanelOpen(false); setFind(false); addressRef.current?.blur(); void act('find', { text: '' }); }
+      if (event.key === 'Escape') { setMenu(false); setTabMenu(null); setPalette(false); setSkinMenu(false); setInspecting(false); setPanelDraft(null); setAddressFocus(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setFind(false); addressRef.current?.blur(); void act('find', { text: '' }); }
     };
     window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener);
   }, []);
@@ -303,11 +317,11 @@ export default function App() {
             {zoomPercent !== 100 && !page && <button type="button" className="zoom-badge" title="Redefinir zoom · Ctrl 0" aria-label={`Zoom em ${zoomPercent}%. Redefinir para 100%`} onClick={() => act('zoom', 1)}><ZoomIn size={13}/>{zoomPercent}%</button>}
             {tab?.private && <span className="private-badge"><Shield size={12}/> Privada</span>}
             <span className="toolbar-popover-anchor">
-              <button type="button" className={`tracker-toolbar-button ${s.blockAds || s.blockTrackers ? 'is-active' : ''}`} aria-label="Proteção contra anúncios e rastreadores" aria-expanded={trackerPanelOpen} onClick={() => { setTrackerPanelOpen(!trackerPanelOpen); setPopupPanelOpen(false); setAddressFocus(false); }} title="Proteção de navegação"><ShieldCheck size={15}/>{blockedCount > 0 && <span className="tracker-toolbar-count">{blockedCount > 999 ? `${Math.floor(blockedCount / 1000)}k` : blockedCount}</span>}</button>
+              <button type="button" className={`tracker-toolbar-button ${s.blockAds || s.blockTrackers ? 'is-active' : ''}`} aria-label="Proteção contra anúncios e rastreadores" aria-expanded={trackerPanelOpen} onClick={() => { setTrackerPanelOpen(!trackerPanelOpen); setPopupPanelOpen(false); setSkinMenu(false); setMenu(false); setAddressFocus(false); }} title="Proteção de navegação"><ShieldCheck size={15}/>{blockedCount > 0 && <span className="tracker-toolbar-count">{blockedCount > 999 ? `${Math.floor(blockedCount / 1000)}k` : blockedCount}</span>}</button>
               {trackerPanelOpen && <div className="tracker-panel-row"><TrackerProtectionPanel settings={s} status={state.trackerProtection} tab={tab} onSettings={settings} onClose={() => setTrackerPanelOpen(false)} onConfigure={() => openPage(browserPages.settings, { category: 'privacy', focusId: 'privacy-ad-block' })} onClearSite={origin => { if (window.confirm(`Limpar cookies, dados locais e permissões de ${origin}? Isso pode desconectar você do site.`)) void act('site-data:clear',{ origin }).then(() => notify('Dados e permissões do site removidos.')); }}/></div>}
             </span>
             <span className="toolbar-popover-anchor">
-              <button type="button" className={`popup-toolbar-button ${s.blockPopups ? 'is-active' : ''}`} aria-label={`Bloqueador de pop-ups, ${state.popupProtection.pending.length} solicitações aguardando`} aria-expanded={popupPanelOpen} onClick={() => { setPopupPanelOpen(!popupPanelOpen); setTrackerPanelOpen(false); setAddressFocus(false); }} title="Bloqueador de pop-ups"><Ban size={15}/>{state.popupProtection.pending.length > 0 && <span className="popup-toolbar-count">{state.popupProtection.pending.length > 99 ? '99+' : state.popupProtection.pending.length}</span>}</button>
+              <button type="button" className={`popup-toolbar-button ${s.blockPopups ? 'is-active' : ''}`} aria-label={`Bloqueador de pop-ups, ${state.popupProtection.pending.length} solicitações aguardando`} aria-expanded={popupPanelOpen} onClick={() => { setPopupPanelOpen(!popupPanelOpen); setTrackerPanelOpen(false); setSkinMenu(false); setMenu(false); setAddressFocus(false); }} title="Bloqueador de pop-ups"><Ban size={15}/>{state.popupProtection.pending.length > 0 && <span className="popup-toolbar-count">{state.popupProtection.pending.length > 99 ? '99+' : state.popupProtection.pending.length}</span>}</button>
               {popupPanelOpen && <div className="popup-panel-row"><PopupProtectionPanel settings={s} status={state.popupProtection} tab={tab} onSettings={settings} onClose={() => setPopupPanelOpen(false)} onAction={(id,action) => { void act('popup:action',{ id, action }); }} onClear={() => { void act('popup:clear'); }} onConfigure={() => openPage(browserPages.settings, { category: 'privacy', focusId: 'privacy-popups' })}/></div>}
             </span>
             {external && <>
@@ -323,7 +337,7 @@ export default function App() {
             <button type="button" className={(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'active' : ''} aria-pressed={(tab?.connectionMode || s.connectionMode) === 'i2p'} onClick={() => { setAddressFocus(false); void act('connection:select',(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'normal' : 'i2p'); }} title="Iniciar I2P · Todas as abas serão movidas para essa rota"><Waypoints size={14}/><span>{(tab?.connectionMode || s.connectionMode) === 'i2p' ? 'I2P ativo' : 'Iniciar I2P'}</span></button>
           </div>}
           {toolbarShown('skin') && <span className="toolbar-popover-anchor skin-anchor" style={toolbarOrder('skin')}>
-            <button type="button" className="skin-chip" aria-haspopup="menu" aria-expanded={skinMenu} title="Trocar a pele da interface" onClick={() => { setSkinMenu(!skinMenu); setMenu(false); setAddressFocus(false); }}><SkinGlyph skin={s.skin}/><span>Pele: {s.skin === 'recorte' ? 'Recorte' : 'Clássico'}</span><ChevronDown size={13}/></button>
+            <button type="button" className="skin-chip" aria-haspopup="menu" aria-expanded={skinMenu} title="Trocar a pele da interface" onClick={() => { setSkinMenu(!skinMenu); setMenu(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setAddressFocus(false); }}><SkinGlyph skin={s.skin}/><span>Pele: {s.skin === 'recorte' ? 'Recorte' : 'Clássico'}</span><ChevronDown size={13}/></button>
             {skinMenu && <div className="skin-menu" role="menu" aria-label="Pele da interface">
               <span className="eyebrow">PELE DA INTERFACE</span>
               {([['recorte', 'Recorte', 'Silhuetas cortadas e tipografia condensada'], ['classic', 'Clássico', 'Cantos suaves e o visual original']] as const).map(([value, title, detail]) => <button type="button" role="menuitemradio" aria-checked={s.skin === value} key={value} className={s.skin === value ? 'chosen' : ''} onClick={() => { settings({ skin: value }); setSkinMenu(false); }}><SkinGlyph skin={value}/><span><strong>{title}</strong><small>{detail}</small></span>{s.skin === value && <Check size={15}/>}</button>)}
@@ -333,7 +347,7 @@ export default function App() {
             </div>}
           </span>}
           {toolbarShown('media') && <IconButton style={toolbarOrder('media')} label={pageMedia?.playing ? `Abrir miniplayer · ${pageMedia.title}` : 'Abrir miniplayer'} active={!!pageMedia?.playing || s.backgroundMusicEnabled} onClick={() => void act('media:window:toggle')}><Music2 size={17}/></IconButton>}
-          {toolbarShown('customize') && <IconButton style={toolbarOrder('customize')} label="Personalizar Cypher" onClick={() => openPage('settings')}><SlidersHorizontal size={18}/></IconButton>}<IconButton style={toolbarOrder('menu')} label="Menu do navegador" active={menu} onClick={() => { setMenu(!menu); setAddressFocus(false); }}><MoreHorizontal size={21}/></IconButton>
+          {toolbarShown('customize') && <IconButton style={toolbarOrder('customize')} label="Personalizar Cypher" onClick={() => openPage('settings')}><SlidersHorizontal size={18}/></IconButton>}<IconButton style={toolbarOrder('menu')} label="Menu do navegador" active={menu} onClick={() => { setMenu(!menu); setSkinMenu(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setAddressFocus(false); }}><MoreHorizontal size={21}/></IconButton>
         </div>
         {s.showBookmarksBar && <div className="bookmarks-bar" aria-label="Barra de favoritos"><div className="bookmarks-items">{state.bookmarks.length ? state.bookmarks.slice(0, 12).map(bookmark => <button type="button" className="bookmark-chip" key={bookmark.id} title={bookmark.url} onClick={() => navigate(bookmark.url)} onAuxClick={event => { if (event.button === 1) void act('tab:new', { url: bookmark.url }); }}><span>{bookmark.title.trim().slice(0, 1).toUpperCase() || <Globe2 size={13}/>}</span><strong>{bookmark.title || hostname(bookmark.url)}</strong></button>) : <button type="button" className="bookmarks-empty" onClick={() => openPage('bookmarks')}>Seus favoritos aparecerão aqui</button>}</div><button type="button" className="bookmark-manage" title="Gerenciar favoritos" onClick={() => openPage('bookmarks')}><MoreHorizontal size={16}/></button></div>}
         {find && <form className="findbar" onSubmit={event => { event.preventDefault(); void act('find', { text: query }); }}><Search size={15}/><input ref={findRef} placeholder="Localizar nesta página" aria-label="Localizar nesta página" value={query} onChange={event => { setQuery(event.target.value); if (!event.target.value) setFindResult(null); void act('find', { text: event.target.value }); }} onKeyDown={event => { if (event.key === 'Enter' && event.shiftKey) { event.preventDefault(); void act('find', { text: query, forward: false }); } }}/><span className={cn('find-count', query && findResult?.matches === 0 && 'empty')} aria-live="polite">{query && findResult ? findResult.matches ? `${findResult.active} de ${findResult.matches}` : 'Nenhum resultado' : ''}</span><IconButton label="Resultado anterior" onClick={() => act('find', { text: query, forward: false })}><ArrowLeft size={15}/></IconButton><IconButton label="Próximo resultado" onClick={() => act('find', { text: query })}><ArrowRight size={15}/></IconButton><IconButton label="Fechar pesquisa" onClick={() => { setFind(false); void act('find', { text: '' }); }}><X size={15}/></IconButton></form>}
@@ -350,7 +364,8 @@ export default function App() {
             {page === 'downloads' && <><div className="collection-toolbar"><span>{state.downloads.length} ARQUIVOS</span><span className="muted-text">Os arquivos são salvos na pasta escolhida no download.</span></div><div className="link-list">{state.downloads.map(item => <div className="download-row" key={item.id}><div className="link-avatar"><Download size={19}/></div><div className="download-details"><strong>{item.name}</strong><small>{({ progressing: 'Baixando', paused: 'Pausado', completed: 'Concluído', cancelled: 'Cancelado', interrupted: 'Interrompido' } as Record<string,string>)[item.state] || item.state} · {size(item.received)}{item.total ? ` / ${size(item.total)}` : ''}{item.private ? ' · Privado' : ''}</small>{['progressing','paused'].includes(item.state) && <progress value={item.received} max={item.total || 1}/>}</div>{item.state === 'completed' && <IconButton label="Mostrar na pasta" onClick={() => act('download:action', { id: item.id, action: 'show' })}><FolderOpen size={18}/></IconButton>}{['progressing','paused'].includes(item.state) ? <><IconButton label={item.state === 'paused' ? 'Continuar' : 'Pausar'} onClick={() => act('download:action', { id: item.id, action: item.state === 'paused' ? 'resume' : 'pause' })}>{item.state === 'paused' ? <Play size={16}/> : <Pause size={16}/>}</IconButton><IconButton label="Cancelar download" onClick={() => act('download:action', { id: item.id, action: 'cancel' })}><X size={17}/></IconButton></> : <IconButton label="Remover da lista" onClick={() => act('download:action', { id: item.id, action: 'remove' })}><Trash2 size={16}/></IconButton>}</div>)}</div>{!state.downloads.length && <Empty icon={<Download/>} title="Tudo pronto para o próximo download." description="Acompanhe o progresso e encontre seus arquivos por aqui."/>}</>}
           </div>}
           {tab?.error && <div className="error-page"><AlertCircle size={40}/><h1>Não chegamos a esse lugar.</h1><p>Confira o endereço e sua conexão, depois tente novamente.</p><code>{tab.error}</code><button className="button primary" onClick={() => act('reload')}><RotateCw size={16}/> Tentar novamente</button></div>}
-          {!page && !tab?.error && overlay && <div className="obscured-page"><Globe2 size={32}/><span>{tab?.title}</span><small>{inspecting ? 'Modo edição · clique na interface para mudá-la' : 'A página continua aberta'}</small></div>}
+          {overlay && pageSnapshot.length > 0 && <div className="page-snapshot" aria-hidden="true">{pageSnapshot.map(shot => <img key={`${shot.x}-${shot.y}`} src={shot.dataUrl} alt="" style={{ left: shot.x, top: shot.y, width: shot.width, height: shot.height }}/>)}</div>}
+          {!page && !tab?.error && overlay && !pageSnapshot.length && <div className="obscured-page"><Globe2 size={32}/><span>{tab?.title}</span><small>{inspecting ? 'Modo edição · clique na interface para mudá-la' : 'A página continua aberta'}</small></div>}
         </div>
         {openPanel && <aside className="web-panel" aria-label={`Painel ${openPanel.title}`}><header><strong>{openPanel.title}</strong><IconButton label="Abrir em uma aba" onClick={() => void act('tab:new', { url: openPanel.url })}><ExternalLink size={14}/></IconButton><IconButton label="Fechar painel" onClick={() => void act('panel:toggle', openPanel.id)}><X size={15}/></IconButton></header><div className="web-panel-view" ref={panelRef}>{overlay && <div className="obscured-page"><PanelRight size={24}/><small>{openPanel.title}</small></div>}</div></aside>}
         </div>
