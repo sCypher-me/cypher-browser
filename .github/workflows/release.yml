@@ -36,6 +36,8 @@ jobs:
       - name: Bloquear publicação com vulnerabilidades altas conhecidas
         run: npm audit --audit-level=high
       - name: Baixar e verificar Tor e i2pd nativos
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm run prepare:privacy-runtime
       - name: Validar versão e configurar canal público
         env:
@@ -75,8 +77,8 @@ jobs:
           $installerHashBytes = [Convert]::FromHexString($installerHash)
           $changeLog = Get-Content CHANGELOG.md -Raw
           $versionHeading = [regex]::Escape($version)
-          $changeLogMatch = [regex]::Match($changeLog, "(?ms)^## \[$versionHeading\]\s*(.*?)(?=^## \[|\z)")
-          if (-not $changeLogMatch.Success) { $changeLogMatch = [regex]::Match($changeLog, '(?ms)^## \[Unreleased\]\s*(.*?)(?=^## \[|\z)') }
+          $changeLogMatch = [regex]::Match($changeLog, "(?ms)^## \[$versionHeading\][^\r\n]*\r?\n(.*?)(?=^## \[|\z)")
+          if (-not $changeLogMatch.Success) { $changeLogMatch = [regex]::Match($changeLog, '(?ms)^## \[Unreleased\][^\r\n]*\r?\n(.*?)(?=^## \[|\z)') }
           $releaseNotes = if ($changeLogMatch.Success) { $changeLogMatch.Groups[1].Value.Trim() } else { '' }
           if ([string]::IsNullOrWhiteSpace($releaseNotes)) { $releaseNotes = "Cypher $version — versão mais recente do navegador." }
           if ($releaseNotes.Length -gt 3000) { throw 'O changelog da versão excede 3.000 caracteres.' }
