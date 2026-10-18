@@ -8,3 +8,5 @@ vendor/privacy-runtime/
 electron/resources/easyprivacy.bin
 electron/resources/easyprivacy.json
 electron/resources/easyprivacy.download.txt
+
+.superpowers/
