@@ -7,6 +7,7 @@ const { defaults, resolveAddress, sanitizeSettings, validateMod, validateSkinPac
 const { createUpdater } = require('./updater.cjs');
 const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { extractCypherPackage } = require('./cypher-package.cjs');
+const modPackage = require('./mod-package.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -16,7 +17,8 @@ app.setName('Cypher');
 // Prevent speculative hostname lookups from bypassing anonymous proxies.
 app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
-protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }, { scheme: 'cypher-wallpaper', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+function applyNativeTheme() { nativeTheme.themeSource = store?.settings.appearanceMode === 'system' ? 'system' : 'dark'; }
+protocol.registerSchemesAsPrivileged([{ scheme: 'cypher-ui', privileges: { standard: true, secure: true } }, { scheme: 'cypher-wallpaper', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }, { scheme: 'cypher-mod', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 let win, playerWindow, rendererUrl = '', store, storePath, activeId, activeProfileId = 'default', profileRegistry = [{ id:'default', name:'Pessoal' }], profileSwitching = false, nowPlayingTabId = null, saveTimer, profileSyncTimer, profileSyncInterval, profileSyncReady = false, profileSyncBusy = false, updater, closing = false, closePromptOpen = false, allowWindowClose = false, quitting = false, exitCleanupStarted = false, privacyShutdownStarted = false, privacyShutdownComplete = false;
 let hardwareAccelerationAtLaunch = true, mediaTimer = null;
 const protonExtensionId = 'jplgfhpmjnbigmhklmmbgecoobifkmpa';
@@ -93,6 +95,164 @@ function persistProfileRegistry() {
   fs.mkdirSync(path.dirname(file), { recursive:true });
   fs.writeFileSync(file, JSON.stringify({ activeProfileId, profiles:profileRegistry.filter(item => item.id !== 'default') }, null, 2));
 }
+const builtinModRoot = path.join(__dirname, 'builtin-mods');
+const builtinMods = new Map();
+const modComponents = ['theme', 'wallpaper', 'sounds', 'music', 'pageStyles', 'shader', 'fonts', 'interfaceCss'];
+let pickedModFiles = new Map();
+function loadBuiltinMods() {
+  builtinMods.clear();
+  let folders = [];
+  try { folders = fs.readdirSync(builtinModRoot, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name); } catch { return; }
+  for (const folder of folders) {
+    const root = path.join(builtinModRoot, folder);
+    try {
+      const manifest = modPackage.validateModManifest(JSON.parse(fs.readFileSync(path.join(root, modPackage.MANIFEST), 'utf8')));
+      builtinMods.set(manifest.id, { root, manifest });
+    } catch (error) { console.warn(`Mod embutido ignorado (${folder}):`, error.message); }
+  }
+}
+function installedModsRoot() { return path.resolve(app.getPath('userData'), 'mods'); }
+function modRoot(record) {
+  if (!record) return '';
+  if (record.source === 'builtin') return builtinMods.get(record.id)?.root || '';
+  const root = path.resolve(installedModsRoot(), record.id);
+  return root.startsWith(installedModsRoot() + path.sep) ? root : '';
+}
+function sanitizeModRecord(item) {
+  if (!item || typeof item.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/.test(item.id)) return null;
+  try {
+    const manifest = item.source === 'builtin' && builtinMods.has(item.id) ? builtinMods.get(item.id).manifest : modPackage.validateModManifest(item.manifest);
+    const toggles = Object.fromEntries(modComponents.map(key => [key, item.toggles?.[key] !== false]));
+    const css = { pageStyles: Array.isArray(item.css?.pageStyles) ? item.css.pageStyles.slice(0, 40).flatMap(entry => entry && Array.isArray(entry.matches) ? [{ matches: entry.matches.filter(host => typeof host === 'string').slice(0, 20), css: modPackage.sanitizeCss(entry.css) }] : []) : [], interfaceCss: modPackage.sanitizeCss(item.css?.interfaceCss || '') };
+    const previous = item.previousTheme && typeof item.previousTheme === 'object' ? sanitizeSettings(item.previousTheme, defaults) : null;
+    return { id: manifest.id, source: ['builtin', 'catalog', 'file'].includes(item.source) ? item.source : 'file', manifest, enabled: item.enabled === true, toggles, css,
+      previousTheme: previous ? { accent: previous.accent, surface: previous.surface, background: previous.background, skin: previous.skin, appearanceMode: previous.appearanceMode, tokens: previous.tokens } : null,
+      installedAt: Number.isFinite(item.installedAt) ? item.installedAt : Date.now() };
+  } catch { return null; }
+}
+function modRecord(id) { return store.modPackages.find(item => item.id === id); }
+function modFileUrl(id, file) { return `cypher-mod://${encodeURIComponent(id)}/${file.split('/').map(encodeURIComponent).join('/')}`; }
+function modEffects() {
+  const enabled = (store.modPackages || []).filter(item => item.enabled);
+  const last = component => [...enabled].reverse().find(item => item.toggles[component] && item.manifest.components[component]);
+  const wallpaper = last('wallpaper'), sounds = last('sounds'), music = last('music'), shader = last('shader');
+  const fonts = {};
+  for (const item of enabled) if (item.toggles.fonts) for (const font of item.manifest.components.fonts || []) fonts[font.use] = { family: `${font.family} ${item.id}`, url: modFileUrl(item.id, font.file) };
+  return {
+    wallpaper: wallpaper ? { url: modFileUrl(wallpaper.id, wallpaper.manifest.components.wallpaper.file), type: wallpaper.manifest.components.wallpaper.type, dim: wallpaper.manifest.components.wallpaper.dim, modId: wallpaper.id } : null,
+    sounds: sounds && store.settings.modSoundsEnabled ? { volume: sounds.manifest.components.sounds.volume, files: Object.fromEntries(modPackage.soundKeys.filter(key => sounds.manifest.components.sounds[key]).map(key => [key, modFileUrl(sounds.id, sounds.manifest.components.sounds[key])])) } : null,
+    music: music && store.settings.modMusicEnabled ? { base: modFileUrl(music.id, music.manifest.components.music.base), active: music.manifest.components.music.active ? modFileUrl(music.id, music.manifest.components.music.active) : '', volume: music.manifest.components.music.volume, modId: music.id } : null,
+    shader: shader ? shader.manifest.components.shader : null,
+    fonts,
+    interfaceCss: enabled.filter(item => item.toggles.interfaceCss && item.css.interfaceCss).map(item => item.css.interfaceCss).join('\n\n'),
+  };
+}
+const shaderCss = (preset, intensity) => {
+  const i = Math.max(0.1, Math.min(1, intensity || 0.6));
+  const overlay = background => `html::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2147483647;${background}}`;
+  return ({
+    crt: `html{filter:contrast(${1 + 0.1 * i}) saturate(${1 + 0.15 * i})!important}${overlay(`background:repeating-linear-gradient(to bottom,rgba(0,0,0,${0.22 * i}) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 60%,rgba(0,0,0,${0.45 * i}));`)}`,
+    sepia: `html{filter:sepia(${i})!important}`,
+    neon: `html{filter:saturate(${1 + 0.9 * i}) contrast(${1 + 0.12 * i}) hue-rotate(${-8 * i}deg)!important}`,
+    noir: `html{filter:grayscale(${i}) contrast(${1 + 0.2 * i})!important}`,
+    warm: `html{filter:sepia(${0.25 * i}) saturate(${1 + 0.1 * i}) brightness(${1 - 0.03 * i})!important}`,
+    cool: `html{filter:hue-rotate(${-14 * i}deg) saturate(${1 + 0.1 * i})!important}`,
+    vignette: overlay(`background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,${0.6 * i}));`),
+    dream: `html{filter:saturate(${1 + 0.3 * i}) brightness(${1 + 0.04 * i}) contrast(${1 - 0.06 * i})!important}`,
+  })[preset] || '';
+};
+function hostMatches(host, pattern) { const clean = pattern.replace(/^\*\./, ''); return host === clean || host.endsWith(`.${clean}`); }
+function pageModCss(url) {
+  if (!store?.settings.modPageEffects) return '';
+  let host = '';
+  try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) return ''; host = parsed.hostname.toLowerCase(); } catch { return ''; }
+  const parts = [];
+  for (const item of store.modPackages.filter(record => record.enabled && record.toggles.pageStyles)) for (const style of item.css.pageStyles) if (style.matches.some(pattern => hostMatches(host, pattern))) parts.push(style.css);
+  const effects = modEffects();
+  if (effects.shader) parts.push(shaderCss(effects.shader.preset, effects.shader.intensity));
+  return parts.join('\n');
+}
+async function applyPageMods(tab) {
+  const wc = tab.view?.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  if (tab.modCssKey) { const key = tab.modCssKey; tab.modCssKey = ''; await wc.removeInsertedCSS(key).catch(() => {}); }
+  const css = pageModCss(wc.getURL());
+  if (css) tab.modCssKey = await wc.insertCSS(css).catch(() => '');
+}
+function refreshPageMods() { for (const tab of tabs) void applyPageMods(tab); }
+function applyModTheme(record) {
+  const theme = record.manifest.components.theme;
+  if (!theme) return;
+  const current = store.settings;
+  record.previousTheme = { accent: current.accent, surface: current.surface, background: current.background, skin: current.skin, appearanceMode: current.appearanceMode, tokens: current.tokens };
+  store.settings = sanitizeSettings({ ...theme, tokens: { ...current.tokens, ...(theme.tokens || {}) } }, store.settings);
+  store.settings.activeMod = '';
+}
+function restoreModTheme(record) {
+  if (!record.previousTheme) return;
+  store.settings = sanitizeSettings(record.previousTheme, store.settings);
+  record.previousTheme = null;
+}
+function setModEnabled(record, enabled) {
+  if (record.enabled === enabled) return;
+  record.enabled = enabled;
+  if (record.toggles.theme) { if (enabled) applyModTheme(record); else restoreModTheme(record); }
+}
+async function installModFolder(root, source) {
+  const manifest = await modPackage.readModFolder(root);
+  const css = await modPackage.readModCss(root, manifest);
+  const existing = modRecord(manifest.id);
+  if (existing) { setModEnabled(existing, false); store.modPackages = store.modPackages.filter(item => item.id !== manifest.id); }
+  const record = { id: manifest.id, source, manifest, enabled: false, toggles: Object.fromEntries(modComponents.map(key => [key, true])), css, previousTheme: null, installedAt: Date.now() };
+  store.modPackages.push(record);
+  setModEnabled(record, true);
+  return record;
+}
+async function installModPackageFile(file, source) {
+  const staging = path.resolve(installedModsRoot(), `.staging-${randomUUID()}`);
+  await fs.promises.mkdir(installedModsRoot(), { recursive: true });
+  const manifest = await modPackage.extractModPackage(file, staging);
+  if (builtinMods.has(manifest.id)) { await fs.promises.rm(staging, { recursive: true, force: true }); throw new Error('Este mod já vem embutido no Cypher.'); }
+  const target = path.resolve(installedModsRoot(), manifest.id);
+  if (!target.startsWith(installedModsRoot() + path.sep)) throw new Error('ID de mod inválido.');
+  const existing = modRecord(manifest.id);
+  if (existing) setModEnabled(existing, false);
+  await fs.promises.rm(target, { recursive: true, force: true });
+  await fs.promises.rename(staging, target);
+  const record = await installModFolder(target, source);
+  persist(); refreshPageMods(); emit();
+  return record.id;
+}
+function modCatalogBase() {
+  try { const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'update-config.json'), 'utf8')); return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repository || '') ? { url: `https://github.com/${config.repository}/releases/download/mods-catalog/`, key: String(config.updateSigningPublicKey || '').trim() } : null; } catch { return null; }
+}
+async function fetchLimited(url, limit) {
+  const response = await net.fetch(url, { redirect: 'follow' });
+  if (!response.ok) throw new Error(`O catálogo respondeu ${response.status}.`);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > limit) throw new Error('O arquivo do catálogo excede o tamanho permitido.');
+  return buffer;
+}
+let modCatalogCache = null;
+async function modCatalog() {
+  const builtin = [...builtinMods.values()].map(({ manifest, root }) => ({ id: manifest.id, name: manifest.name, version: manifest.version, author: manifest.author, description: manifest.description, tags: manifest.tags, components: Object.keys(manifest.components), preview: manifest.preview ? modFileUrlForBuiltin(manifest.id, manifest.preview) : '', source: 'builtin' }));
+  const base = modCatalogBase();
+  if (!base || !base.key) return { mods: builtin, remote: false, message: 'Esta versão do Cypher mostra só os mods embutidos.' };
+  try {
+    if (!modCatalogCache || Date.now() - modCatalogCache.at > 15 * 60 * 1000) {
+      const index = modPackage.verifySignedJson(JSON.parse((await fetchLimited(base.url + 'index.json', 4 * 1024 * 1024)).toString('utf8')), base.key);
+      if (index.schemaVersion !== 1 || !Array.isArray(index.mods)) throw new Error('Formato de catálogo desconhecido.');
+      modCatalogCache = { at: Date.now(), mods: index.mods.slice(0, 500).flatMap(entry => entry && typeof entry.id === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/.test(entry.id) && typeof entry.package === 'string' && /^[a-z0-9.-]+\.cyphermod$/.test(entry.package) && typeof entry.sha512 === 'string' ? [{
+        id: entry.id, name: String(entry.name || entry.id).slice(0, 64), version: String(entry.version || ''), author: String(entry.author || '').slice(0, 64), description: String(entry.description || '').slice(0, 400),
+        tags: Array.isArray(entry.tags) ? entry.tags.filter(tag => typeof tag === 'string').slice(0, 6) : [], components: Array.isArray(entry.components) ? entry.components.filter(key => modComponents.includes(key)) : [],
+        preview: typeof entry.preview === 'string' && /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[\dA-Za-z+/=]+$/.test(entry.preview) && entry.preview.length < 400_000 ? entry.preview : '',
+        package: entry.package, sha512: entry.sha512, size: Number(entry.size) || 0, source: 'catalog' }] : []) };
+    }
+    const ids = new Set(builtin.map(item => item.id));
+    return { mods: [...builtin, ...modCatalogCache.mods.filter(item => !ids.has(item.id))], remote: true, message: '' };
+  } catch (error) { return { mods: builtin, remote: false, message: `Não foi possível carregar o catálogo online: ${error.message}` }; }
+}
+function modFileUrlForBuiltin(id, file) { return modFileUrl(id, file); }
 function loadStore(profileId = activeProfileId) {
   activeProfileId = profileId;
   storePath = profileStorePath(profileId);
@@ -140,6 +300,7 @@ function loadStore(profileId = activeProfileId) {
   }
   for (const id of taskWidgets) if (!store.homeData.tasksById[id]) store.homeData.tasksById[id] = [];
   for (const key of ['bookmarks','history','downloads','mods']) if (Array.isArray(saved[key])) store[key] = saved[key];
+  store.modPackages = Array.isArray(saved.modPackages) ? saved.modPackages.slice(0, 100).map(sanitizeModRecord).filter(Boolean).filter((item, index, list) => list.findIndex(other => other.id === item.id) === index) : [];
   store.skins = Array.isArray(saved.skins) ? saved.skins.slice(0,50).flatMap(item => {
     try { const skin = validateSkinPackage({ ...item, schemaVersion:1, type:'cypher-skin' }); return [{ ...skin, id: typeof item.id === 'string' && /^skin-[a-f\d-]{36}$/.test(item.id) ? item.id : skin.id }]; } catch { return []; }
   }) : [];
@@ -425,7 +586,9 @@ function snapshot() {
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
-    split, openPanelId, systemDark: nativeTheme.shouldUseDarkColors };
+    split, openPanelId, systemDark: nativeTheme.shouldUseDarkColors,
+    modPackages: store.modPackages.map(({ id, source, manifest, enabled, toggles, installedAt }) => ({ id, source, enabled, toggles, installedAt, name: manifest.name, version: manifest.version, author: manifest.author, description: manifest.description, tags: manifest.tags, components: Object.keys(manifest.components), preview: manifest.preview ? modFileUrl(id, manifest.preview) : '', shader: manifest.components.shader?.preset || '' })),
+    modEffects: modEffects() };
 }
 function emit() {
   const state = snapshot();
@@ -1360,7 +1523,7 @@ function attachView(tab) {
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
-  wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); });
+  wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); tab.modCssKey = ''; void applyPageMods(tab); });
   wc.on('focus', () => { if (split && [split.left, split.right].includes(tab.id) && activeId !== tab.id) { activeId = tab.id; emit(); } });
   wc.on('page-title-updated', (_event, title) => { tab.title = title; if (/^https?:\/\//i.test(tab.url)) tab.lastExternalTitle = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
@@ -1534,6 +1697,8 @@ function setSettings(payload) {
   for (const widget of taskWidgets) if (!store.homeData.tasksById[widget.id]) store.homeData.tasksById[widget.id] = [];
   for (const id of [...panelViews.keys()]) if (!store.settings.webPanels.some(panel => panel.id === id)) { const view = panelViews.get(id); if (win && !win.isDestroyed()) win.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close(); panelViews.delete(id); if (openPanelId === id) openPanelId = ''; }
   if (JSON.stringify(store.settings.shortcuts) !== previousShortcuts) installMenu();
+  applyNativeTheme();
+  if (previous.modPageEffects !== store.settings.modPageEffects) refreshPageMods();
   layout(); persist(); emit();
 }
 async function command(action, payload) {
@@ -1727,6 +1892,104 @@ async function command(action, payload) {
     case 'tab:close': closeTab(payload); break;
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
     case 'tab:duplicate': { const target = tabs.find(t => t.id === payload); if (target) return addTab(target.url, target.private, target.connectionMode, true, undefined, { containerId: target.containerId }); break; }
+    case 'modpkg:catalog': return modCatalog();
+    case 'modpkg:install-builtin': {
+      const builtin = builtinMods.get(payload);
+      if (!builtin) throw new Error('Mod embutido não encontrado.');
+      const existing = modRecord(builtin.manifest.id);
+      if (existing) { setModEnabled(existing, true); persist(); refreshPageMods(); emit(); return existing.id; }
+      await installModFolder(builtin.root, 'builtin'); persist(); refreshPageMods(); emit(); return builtin.manifest.id;
+    }
+    case 'modpkg:install-catalog': {
+      const base = modCatalogBase();
+      const catalog = await modCatalog();
+      const entry = catalog.mods.find(item => item.id === payload && item.source === 'catalog');
+      if (!base || !entry) throw new Error('Este mod não está no catálogo verificado.');
+      const buffer = await fetchLimited(base.url + entry.package, 60 * 1024 * 1024);
+      if (modPackage.sha512(buffer) !== entry.sha512) throw new Error('O pacote baixado não corresponde ao catálogo assinado.');
+      const temp = path.join(app.getPath('temp'), `cypher-mod-${randomUUID()}.cyphermod`);
+      await fs.promises.writeFile(temp, buffer);
+      try { return await installModPackageFile(temp, 'catalog'); } finally { await fs.promises.rm(temp, { force: true }); }
+    }
+    case 'modpkg:import': {
+      const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Mod do Cypher', extensions: ['cyphermod'] }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      return installModPackageFile(result.filePaths[0], 'file');
+    }
+    case 'modpkg:toggle': {
+      const record = modRecord(payload?.id);
+      if (!record) break;
+      setModEnabled(record, payload.enabled === true); persist(); refreshPageMods(); emit(); break;
+    }
+    case 'modpkg:component': {
+      const record = modRecord(payload?.id);
+      if (!record || !modComponents.includes(payload.component)) break;
+      const enabled = payload.enabled === true;
+      if (payload.component === 'theme' && record.enabled && record.toggles.theme !== enabled) { if (enabled) applyModTheme(record); else restoreModTheme(record); }
+      record.toggles[payload.component] = enabled; persist(); refreshPageMods(); emit(); break;
+    }
+    case 'modpkg:move': {
+      const index = store.modPackages.findIndex(item => item.id === payload?.id);
+      const target = index + (payload?.direction === 'up' ? 1 : -1);
+      if (index < 0 || target < 0 || target >= store.modPackages.length) break;
+      [store.modPackages[index], store.modPackages[target]] = [store.modPackages[target], store.modPackages[index]];
+      persist(); refreshPageMods(); emit(); break;
+    }
+    case 'modpkg:remove': {
+      const record = modRecord(payload);
+      if (!record) break;
+      setModEnabled(record, false);
+      store.modPackages = store.modPackages.filter(item => item.id !== record.id);
+      if (record.source !== 'builtin') { const root = modRoot(record); if (root) await fs.promises.rm(root, { recursive: true, force: true }); }
+      persist(); refreshPageMods(); emit(); break;
+    }
+    case 'modpkg:pick-file': {
+      const kind = payload?.kind;
+      if (!['audio', 'image', 'video', 'font'].includes(kind)) throw new Error('Tipo de arquivo inválido.');
+      const result = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: [{ name: 'Arquivo do mod', extensions: modPackage.allowedFiles[kind].map(ext => ext.slice(1)) }] });
+      if (result.canceled || !result.filePaths[0]) return null;
+      const stat = await fs.promises.stat(result.filePaths[0]);
+      if (stat.size > (kind === 'video' ? 40 : 15) * 1024 * 1024) throw new Error(`O arquivo excede ${kind === 'video' ? 40 : 15} MB.`);
+      const token = randomUUID();
+      pickedModFiles.set(token, { file: result.filePaths[0], kind });
+      return { token, name: path.basename(result.filePaths[0]) };
+    }
+    case 'modpkg:create': {
+      const spec = payload || {};
+      const id = String(spec.id || '').toLowerCase();
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)+$/.test(id)) throw new Error('Use um ID no formato com.seunome.meu-mod.');
+      const files = [];
+      const components = {};
+      const take = (token, kind, folder, name) => {
+        const picked = pickedModFiles.get(token);
+        if (!picked || picked.kind !== kind) return '';
+        const relative = `${folder}/${name}${path.extname(picked.file).toLowerCase()}`;
+        files.push({ name: relative, source: picked.file });
+        return relative;
+      };
+      if (spec.theme) components.theme = { accent: store.settings.accent, surface: store.settings.surface, background: store.settings.background, skin: store.settings.skin, appearanceMode: store.settings.appearanceMode === 'light' ? 'light' : 'dark', tokens: store.settings.tokens };
+      if (spec.wallpaper?.token) { const file = take(spec.wallpaper.token, pickedModFiles.get(spec.wallpaper.token)?.kind === 'video' ? 'video' : 'image', 'wallpaper', 'wallpaper'); if (file) components.wallpaper = { file, dim: 0.3 }; }
+      else if (spec.wallpaper?.current && store.settings.wallpaper === 'custom' && store.settings.wallpaperImageData) {
+        const match = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(store.settings.wallpaperImageData);
+        if (match) { const name = `wallpaper/wallpaper.${match[1] === 'jpeg' ? 'jpg' : match[1]}`; files.push({ name, data: Buffer.from(match[2], 'base64') }); components.wallpaper = { file: name, dim: 0.3 }; }
+      }
+      if (spec.sounds && typeof spec.sounds === 'object') { const sounds = { volume: 0.6 }; for (const key of modPackage.soundKeys) { const file = spec.sounds[key] && take(spec.sounds[key], 'audio', 'sounds', key); if (file) sounds[key] = file; } if (Object.keys(sounds).length > 1) components.sounds = sounds; }
+      if (spec.music?.base) { const base = take(spec.music.base, 'audio', 'music', 'base'); const activeLayer = spec.music.active ? take(spec.music.active, 'audio', 'music', 'active') : ''; if (base) components.music = { base, active: activeLayer, volume: 0.45 }; }
+      if (Array.isArray(spec.pageStyles)) components.pageStyles = spec.pageStyles.slice(0, 20).flatMap((style, index) => { const css = modPackage.sanitizeCss(String(style?.css || '')); const matches = String(style?.matches || '').split(/[\s,]+/).map(host => host.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(host => /^(?:\*\.)?[a-z\d-]+(?:\.[a-z\d-]+)+$/.test(host)); if (!css || !matches.length) return []; const name = `pages/estilo-${index + 1}.css`; files.push({ name, data: Buffer.from(css, 'utf8') }); return [{ matches, css: name }]; });
+      if (spec.shader && modPackage.shaderPresets.includes(spec.shader) && spec.shader !== 'none') components.shader = { preset: spec.shader, intensity: Number.isFinite(spec.shaderIntensity) ? spec.shaderIntensity : 0.6 };
+      if (spec.interfaceCss && store.settings.customCss) { files.push({ name: 'interface.css', data: Buffer.from(store.settings.customCss, 'utf8') }); components.interfaceCss = 'interface.css'; }
+      const manifest = { format: 'cypher-mod', formatVersion: 1, id, name: String(spec.name || '').trim().slice(0, 64), version: /^\d+\.\d+\.\d+$/.test(spec.version || '') ? spec.version : '1.0.0', author: String(spec.author || 'Eu').slice(0, 64), description: String(spec.description || '').slice(0, 400), minCypherVersion: app.getVersion(), components };
+      const entries = [{ name: modPackage.MANIFEST, data: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8') }];
+      for (const file of files) entries.push({ name: file.name, data: file.data || await fs.promises.readFile(file.source) });
+      modPackage.validateModManifest(manifest, new Set(entries.map(entry => entry.name.toLowerCase())));
+      const buffer = modPackage.writeZip(entries);
+      const result = await dialog.showSaveDialog(win, { defaultPath: `${id}.cyphermod`, filters: [{ name: 'Mod do Cypher', extensions: ['cyphermod'] }] });
+      if (result.canceled || !result.filePath) return null;
+      await fs.promises.writeFile(result.filePath, buffer);
+      if (spec.install) { const temp = path.join(app.getPath('temp'), `cypher-mod-${randomUUID()}.cyphermod`); await fs.promises.writeFile(temp, buffer); try { await installModPackageFile(temp, 'file'); } finally { await fs.promises.rm(temp, { force: true }); } }
+      pickedModFiles = new Map();
+      return result.filePath;
+    }
     case 'tab:group': { const target = tabs.find(t => t.id === payload?.id); if (target) { target.group = String(payload.group || '').trim().slice(0, 50); persist(); emit(); } break; }
     case 'split:toggle': {
       if (split && [split.left, split.right].includes(activeId)) { split = null; layout(); emit(); break; }
@@ -2085,7 +2348,7 @@ async function command(action, payload) {
       if (payload.action === 'remove' && !item) { store.downloads = store.downloads.filter(d => d.id !== record.id); persist(); emit(); }
       break;
     }
-    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, blockPopups: store.settings.blockPopups, popupExceptions: store.settings.popupExceptions, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false, customCss: store.settings.customCss, shortcuts: store.settings.shortcuts, routeRules: store.settings.routeRules, containers: store.settings.containers, webPanels: store.settings.webPanels, panelWidth: store.settings.panelWidth, blockCookieBanners: store.settings.blockCookieBanners }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
+    case 'mod:apply': { const mod = [...builtInMods, ...store.mods].find(m => m.id === payload); if (mod) { const personal = { connectionMode: store.settings.connectionMode, torSocksPort: store.settings.torSocksPort, i2pHttpPort: store.settings.i2pHttpPort, restoreSession: store.settings.restoreSession, startupMode: store.settings.startupMode, startupPages: store.settings.startupPages, showHomeFirst: store.settings.showHomeFirst, openLinksInNewTab: store.settings.openLinksInNewTab, showSearchSuggestions: store.settings.showSearchSuggestions, showBookmarksBar: store.settings.showBookmarksBar, suggestBookmarks: store.settings.suggestBookmarks, suggestHistory: store.settings.suggestHistory, clearDataOnExit: store.settings.clearDataOnExit, clearHistoryOnExit: store.settings.clearHistoryOnExit, confirmCloseWithMultipleTabs: store.settings.confirmCloseWithMultipleTabs, sendDoNotTrack: store.settings.sendDoNotTrack, blockAds: store.settings.blockAds, blockTrackers: store.settings.blockTrackers, blockThirdPartyCookies: store.settings.blockThirdPartyCookies, blockPopups: store.settings.blockPopups, popupExceptions: store.settings.popupExceptions, trackingExceptions: store.settings.trackingExceptions, passwordAutofillEnabled: store.settings.passwordAutofillEnabled, preferredLanguages: store.settings.preferredLanguages, spellCheckEnabled: store.settings.spellCheckEnabled, spellCheckLanguages: store.settings.spellCheckLanguages, translationEnabled: store.settings.translationEnabled, hardwareAcceleration: store.settings.hardwareAcceleration, webrtcPolicy: store.settings.webrtcPolicy, interfaceTextScale: store.settings.interfaceTextScale, defaultZoom: store.settings.defaultZoom, downloadDirectory: store.settings.downloadDirectory, startWithWindows: store.settings.startWithWindows, searchEngine: store.settings.searchEngine, customSearchUrl: store.settings.customSearchUrl, backgroundMusicEnabled: false, customCss: store.settings.customCss, shortcuts: store.settings.shortcuts, routeRules: store.settings.routeRules, containers: store.settings.containers, webPanels: store.settings.webPanels, panelWidth: store.settings.panelWidth, blockCookieBanners: store.settings.blockCookieBanners, modSoundsEnabled: store.settings.modSoundsEnabled, modSoundsVolume: store.settings.modSoundsVolume, modMusicEnabled: store.settings.modMusicEnabled, modMusicVolume: store.settings.modMusicVolume, modPageEffects: store.settings.modPageEffects }; store.settings = { ...sanitizeSettings(mod.settings, store.settings), ...personal }; store.settings.activeMod = mod.id; persist(); emit(); } break; }
     case 'mod:import': {
       const result = await dialog.showOpenDialog(win, { title: 'Importar mod do Cypher', properties: ['openFile'], filters: [{ name: 'Mod Cypher', extensions: ['json'] }] });
       if (result.canceled) break;
@@ -2158,6 +2421,26 @@ function installMenu() {
 }
 app.whenReady().then(async () => {
   if (!hasInstanceLock) return;
+  protocol.handle('cypher-mod', async request => {
+    if (!['GET', 'HEAD'].includes(request.method)) return new Response('Not allowed', { status: 405 });
+    try {
+      const url = new URL(request.url);
+      const id = decodeURIComponent(url.hostname);
+      const record = modRecord(id) || (builtinMods.has(id) ? { id, source: 'builtin' } : null);
+      const root = modRoot(record);
+      if (!root) return new Response('Not found', { status: 404 });
+      const relative = url.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
+      const kind = modPackage.kindOf(relative);
+      if (!kind || kind === 'css') return new Response('Not found', { status: 404 });
+      const file = path.resolve(root, ...relative.split('/'));
+      if (!file.startsWith(path.resolve(root) + path.sep)) return new Response('Not found', { status: 404 });
+      const response = await net.fetch(pathToFileURL(file).href, { headers: request.headers });
+      const headers = new Headers(response.headers);
+      headers.set('X-Content-Type-Options', 'nosniff');
+      if (relative.toLowerCase().endsWith('.svg')) { headers.set('Content-Type', 'image/svg+xml'); headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'"); }
+      return new Response(response.body, { status: response.status, headers });
+    } catch { return new Response('Not found', { status: 404 }); }
+  });
   protocol.handle('cypher-wallpaper', request => {
     const url = new URL(request.url);
     if (!['GET','HEAD'].includes(request.method) || url.hostname !== 'wallpaper' || url.pathname !== '/current') return new Response('Not found', { status: 404 });
@@ -2168,7 +2451,9 @@ app.whenReady().then(async () => {
   protocol.registerSource('cypher-ui', { routes: [{ match: { host: 'app' }, source: { type: 'directory', root: path.resolve(__dirname, '../dist'), index: 'index.html', headers: { 'X-Content-Type-Options': 'nosniff' } } }] });
   loadTrackerEngine();
   loadProfileRegistry();
+  loadBuiltinMods();
   loadStore();
+  applyNativeTheme();
   registerProtonIpcBridge();
   await loadBuiltInProtonVpn();
   mediaTimer = setInterval(() => {

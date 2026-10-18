@@ -1,0 +1,40 @@
+{
+  "format": "cypher-mod",
+  "formatVersion": 1,
+  "id": "com.cypher.recorte-noite",
+  "name": "Recorte Noite",
+  "version": "1.0.0",
+  "author": "Cypher",
+  "description": "O visual padrão do Cypher como mod: laranja que corta a noite e cliques secos.",
+  "minCypherVersion": "0.7.29",
+  "preview": "preview.svg",
+  "tags": [
+    "padrão",
+    "escuro"
+  ],
+  "components": {
+    "theme": {
+      "accent": "#ff5436",
+      "surface": "#151310",
+      "background": "#0a0908",
+      "skin": "recorte",
+      "appearanceMode": "dark",
+      "tokens": {
+        "cut": 12
+      }
+    },
+    "wallpaper": {
+      "file": "wallpaper.svg",
+      "dim": 0.3
+    },
+    "sounds": {
+      "volume": 0.6,
+      "click": "sounds/click.wav",
+      "hover": "sounds/hover.wav",
+      "tabOpen": "sounds/tabOpen.wav",
+      "tabClose": "sounds/tabClose.wav",
+      "typing": "sounds/typing.wav",
+      "navigate": "sounds/navigate.wav"
+    }
+  }
+}

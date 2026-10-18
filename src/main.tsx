@@ -17,4 +17,5 @@ import './appearance-theme.css';
 import './polish.css';
 import './skin-recorte.css';
 import './personalization.css';
+import './mods.css';
 createRoot(document.getElementById('root')!).render(<React.StrictMode>{window.location.hash === '#mini-player' ? <MediaPlayerWindow /> : <App />}</React.StrictMode>);

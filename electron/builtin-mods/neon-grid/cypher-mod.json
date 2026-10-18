@@ -1,0 +1,57 @@
+{
+  "format": "cypher-mod",
+  "formatVersion": 1,
+  "id": "com.cypher.neon-grid",
+  "name": "Neon Grid",
+  "version": "1.0.0",
+  "author": "Cypher",
+  "description": "Synthwave: grade em perspectiva, sol magenta, música que acelera quando você navega.",
+  "minCypherVersion": "0.7.29",
+  "preview": "preview.svg",
+  "tags": [
+    "synthwave",
+    "música"
+  ],
+  "components": {
+    "theme": {
+      "accent": "#39e0ff",
+      "surface": "#0e1226",
+      "background": "#05070f",
+      "skin": "recorte",
+      "appearanceMode": "dark",
+      "tokens": {
+        "cut": 6
+      }
+    },
+    "wallpaper": {
+      "file": "wallpaper.svg",
+      "dim": 0.3
+    },
+    "sounds": {
+      "volume": 0.6,
+      "click": "sounds/click.wav",
+      "hover": "sounds/hover.wav",
+      "tabOpen": "sounds/tabOpen.wav",
+      "tabClose": "sounds/tabClose.wav",
+      "typing": "sounds/typing.wav",
+      "navigate": "sounds/navigate.wav"
+    },
+    "music": {
+      "base": "music/base.wav",
+      "active": "music/active.wav",
+      "volume": 0.4
+    },
+    "shader": {
+      "preset": "neon",
+      "intensity": 0.35
+    },
+    "pageStyles": [
+      {
+        "matches": [
+          "wikipedia.org"
+        ],
+        "css": "pages/wikipedia.css"
+      }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ interface Props {
   navigate: (url: string) => void; openSettings: () => void;
   save: (home: HomeConfig) => Promise<unknown>;
   command: (action: string,payload?: unknown) => Promise<unknown>;
+  modWallpaper?: { url: string; type: 'image' | 'video'; dim: number } | null;
 }
 const icons = { welcome: Sparkles, search: Search, shortcuts: LayoutGrid, clock: Clock3, notes: StickyNote, bookmarks: Star, focus: Timer, text: Type, sticker: Smile, image: ImageIcon, custom: Code2, calendar: CalendarDays, tasks: ListTodo, countdown: CalendarClock, calculator: CalculatorIcon };
 const linkIcons = { youtube: Youtube, github: Github, chat: MessageCircle, music: Headphones, globe: Globe2 };
@@ -25,7 +26,7 @@ function customWidgetDocument(widget: HomeWidget) {
 function SmallButton({ label,children,onClick,disabled }: { label: string; children: ReactNode; onClick: () => void; disabled?: boolean }) {
   return <button type="button" className="home-small-button" aria-label={label} title={label} onClick={onClick} disabled={disabled}>{children}</button>;
 }
-export default function HomePage({ settings,data = emptyData,bookmarks,isPrivate,navigate,save,command,openSettings }: Props) {
+export default function HomePage({ settings,data = emptyData,bookmarks,isPrivate,navigate,save,command,openSettings,modWallpaper }: Props) {
   const [editing,setEditing] = useState(false);
   const [draft,setDraft] = useState<HomeConfig>(() => clone(settings.home));
   const [panel,setPanel] = useState<'widgets' | 'appearance' | 'content'>('widgets');
@@ -151,11 +152,13 @@ export default function HomePage({ settings,data = emptyData,bookmarks,isPrivate
     const widgetBookmarks = bookmarks.slice(0,widget.bookmarkLimit);
     return <div className="bookmarks-widget"><div className="widget-title"><span><Star size={14}/>{title}</span><span>{bookmarks.length}</span></div><div className="widget-bookmarks-list">{widgetBookmarks.map(link => <button key={link.id} disabled={editing} onClick={() => navigate(link.url)} title={link.url}>{widget.showBookmarkIcons && <Globe2 size={15}/>}<span>{link.title}</span><ArrowUpRight size={13}/></button>)}</div>{!bookmarks.length && <p className="widget-empty">Clique na estrela da barra de endereço para guardar seus sites aqui.</p>}</div>;
   }
-  return <div className={cn('home-page','home-customizable',`wallpaper-${settings.wallpaper}`,editing && 'home-editing')} style={style}>
-    {settings.wallpaper === 'video' && settings.wallpaperVideoPath && <video className="home-wallpaper-video" src="cypher-wallpaper://wallpaper/current" muted autoPlay loop playsInline preload="metadata" aria-hidden="true"/>}
+  return <div className={cn('home-page','home-customizable',modWallpaper ? 'wallpaper-mod' : `wallpaper-${settings.wallpaper}`,editing && 'home-editing')} style={modWallpaper ? { ...style, backgroundImage: undefined } : style}>
+    {modWallpaper && (modWallpaper.type === 'video' ? <video className="home-wallpaper-video home-mod-wallpaper" src={modWallpaper.url} muted autoPlay loop playsInline aria-hidden="true"/> : <div className="home-mod-wallpaper" style={{ backgroundImage: `url("${modWallpaper.url}")` }} aria-hidden="true"/>)}
+    {modWallpaper && modWallpaper.dim > 0 && <div className="home-mod-wallpaper-dim" style={{ opacity: modWallpaper.dim }} aria-hidden="true"/>}
+    {!modWallpaper && settings.wallpaper === 'video' && settings.wallpaperVideoPath && <video className="home-wallpaper-video" src="cypher-wallpaper://wallpaper/current" muted autoPlay loop playsInline preload="metadata" aria-hidden="true"/>}
     <div className="home-workspace">
       <div className="home-canvas-header"><span className="home-coordinate"><LayoutGrid size={14}/> ESPAÇO PESSOAL <span className="home-coordinate-divider">/</span> {editing ? 'SEU LAYOUT' : 'NOVA ABA'}</span><button className={cn('button',editing ? 'secondary' : 'home-edit-trigger')} onClick={editing ? () => setPanel('widgets') : begin}><Settings2 size={15}/>{editing ? 'Editando Home' : 'Editar Home'}</button></div>
-      {home.showArt && <OrbitalArt/>}
+      {home.showArt && !modWallpaper && <OrbitalArt/>}
       <div className={cn('home-widget-stage',stacked && 'home-widget-stage-stacked')} style={stacked ? undefined : { width: home.canvasWidth*canvasScale,height: canvasHeight*canvasScale }}><div className={cn('home-widget-grid',`widget-style-${home.widgetStyle}`,stacked && 'home-widget-grid-stacked')} ref={gridRef} style={stacked ? undefined : { width: home.canvasWidth,height: canvasHeight,transform: `scale(${canvasScale})`,'--text-boost': Math.min(1.35,Math.max(1,1/canvasScale)) } as CSSProperties}>
         {(stacked ? [...home.widgets].sort((a,b) => a.y-b.y || a.x-b.x) : home.widgets).map(widget => <section key={widget.id} className={cn('home-widget',`widget-${widget.type}`,`widget-background-${widget.background}`,`widget-design-${widget.type === 'clock' ? widget.clockDesign : widget.designVariant}`,editing && widget.id === selectedId && 'widget-selected',`widget-shape-${widget.width > widget.height * 2.2 ? 'wide' : widget.height > widget.width * 1.35 ? 'tall' : 'balanced'}`)} data-widget-id={widget.id} data-widget-type={widget.type} aria-label={widget.title || widgetDefinitions[widget.type].label} onClick={() => { if (editing) { setSelectedId(widget.id); setPanel('content'); setWidgetTab('content'); } }} style={{ ...(stacked ? { height:widget.height,maxWidth:widget.width } as CSSProperties : { left:widget.x,top:widget.y,width:widget.width,height:widget.height } as CSSProperties),transform:`rotate(${widget.widgetRotation}deg)`,'--widget-padding':`${widget.type === 'image' ? 0 : widget.widgetPadding}px`,'--widget-color':widget.backgroundColor,'--widget-text-color':settings.appearanceMode === 'light' && widget.textColor.toLowerCase() === '#e4ebdf' ? undefined : widget.textColor,'--widget-alpha':`${widget.opacity}%`,'--widget-radius':`${widget.cornerRadius}px` } as CSSProperties}>
           {editing && <div className="widget-edit-bar"><button type="button" className="widget-drag-handle" onPointerDown={event => beginGesture(event,widget,'move')} onPointerMove={continueGesture} onPointerUp={endGesture} onPointerCancel={endGesture} aria-label={`Mover ${widgetDefinitions[widget.type].label}`} title="Arraste para posicionar"><Grip size={13}/><span>{widgetDefinitions[widget.type].label}</span></button><SmallButton label={`Remover ${widgetDefinitions[widget.type].label}`} onClick={() => remove(widget.id)}><X size={13}/></SmallButton></div>}

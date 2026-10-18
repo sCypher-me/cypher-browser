@@ -1,0 +1,46 @@
+{
+  "format": "cypher-mod",
+  "formatVersion": 1,
+  "id": "com.cypher.fita-k7",
+  "name": "Fita K7",
+  "version": "1.0.0",
+  "author": "Cypher",
+  "description": "Anos 80 em fita cassete: tons quentes, linhas de CRT nas páginas e um lo-fi que ganha batida.",
+  "minCypherVersion": "0.7.29",
+  "preview": "preview.svg",
+  "tags": [
+    "retrô",
+    "lo-fi"
+  ],
+  "components": {
+    "theme": {
+      "accent": "#ffb347",
+      "surface": "#1c1410",
+      "background": "#120c09",
+      "skin": "classic",
+      "appearanceMode": "dark"
+    },
+    "wallpaper": {
+      "file": "wallpaper.svg",
+      "dim": 0.3
+    },
+    "sounds": {
+      "volume": 0.6,
+      "click": "sounds/click.wav",
+      "hover": "sounds/hover.wav",
+      "tabOpen": "sounds/tabOpen.wav",
+      "tabClose": "sounds/tabClose.wav",
+      "typing": "sounds/typing.wav",
+      "navigate": "sounds/navigate.wav"
+    },
+    "music": {
+      "base": "music/base.wav",
+      "active": "music/active.wav",
+      "volume": 0.4
+    },
+    "shader": {
+      "preset": "crt",
+      "intensity": 0.5
+    }
+  }
+}

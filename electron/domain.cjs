@@ -23,6 +23,7 @@ const defaults = {
   toolbarOrder: ['navigation','address','routes','skin','media','customize','menu'], toolbarHidden: [], toolbarPosition: 'top',
   tabsAutoHide: false, showRail: true, workspaceAccent: false, customCss: '', skinPackage: '',
   shortcuts: {}, routeRules: [], containers: [], blockCookieBanners: true, webPanels: [], panelWidth: 380,
+  modSoundsEnabled: true, modSoundsVolume: 0.6, modMusicEnabled: true, modMusicVolume: 0.5, modPageEffects: true,
 };
 const toolbarItems = ['navigation','address','routes','skin','media','customize','menu'];
 const hideableToolbarItems = ['navigation','routes','skin','media','customize'];
@@ -102,7 +103,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   for (const [key, values] of Object.entries({ skin: ['recorte','classic'], tabPosition: ['side','top'], appearanceMode: ['dark','light','system'], toolbarPosition: ['top','bottom'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['tabsAutoHide','showRail','workspaceAccent','blockCookieBanners','motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['modSoundsEnabled','modMusicEnabled','modPageEffects','tabsAutoHide','showRail','workspaceAccent','blockCookieBanners','motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
   if (Number.isFinite(input.memorySaverMinutes)) output.memorySaverMinutes = Math.max(5, Math.min(120, Math.round(input.memorySaverMinutes)));
   if (Array.isArray(input.trackingExceptions)) output.trackingExceptions = [...new Set(input.trackingExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
   if (Array.isArray(input.popupExceptions)) output.popupExceptions = [...new Set(input.popupExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
@@ -157,6 +158,7 @@ function sanitizeSettings(input = {}, base = defaults) {
     try { const url = new URL(item.url); return url.protocol === 'https:' ? [{ id: item.id, url: url.href, title: String(item.title || url.hostname).slice(0, 48) }] : []; } catch { return []; }
   });
   else output.webPanels = base.webPanels || [];
+  for (const key of ['modSoundsVolume','modMusicVolume']) if (Number.isFinite(input[key])) output[key] = Math.round(Math.max(0, Math.min(1, input[key])) * 100) / 100;
   if (Number.isFinite(input.panelWidth)) output.panelWidth = Math.round(Math.max(280, Math.min(560, input.panelWidth)));
   return output;
 }
