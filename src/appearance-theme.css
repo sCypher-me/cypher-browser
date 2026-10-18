@@ -2,7 +2,7 @@
   color-scheme: light;
   --border: #263c2a1d;
   --hairline: #263c2a16;
-  --muted: #667368;
+  --muted: #4f5b52;
   --text: #273229;
   --raised: color-mix(in srgb,var(--surface) 88%,#000 12%);
   color: var(--text);

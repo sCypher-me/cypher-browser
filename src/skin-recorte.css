@@ -110,7 +110,7 @@
 [data-skin="recorte"] .link-day { font-family: var(--display); font-size: 15px; font-weight: 800; letter-spacing: 2px; }
 
 /* Floating surfaces: square with an accent edge */
-[data-skin="recorte"] :is(.browser-menu, .skin-menu, .command-palette, .tracker-popover, .popup-popover, .address-suggestions, .toast, .update-notice) { border-radius: 0; border-top: 2px solid var(--accent); }
+[data-skin="recorte"] :is(.browser-menu, .skin-menu, .command-palette, .tracker-popover, .popup-popover, .address-suggestions, .toast) { border-radius: 0; border-top: 2px solid var(--accent); }
 [data-skin="recorte"] :is(.browser-menu, .skin-menu, .address-suggestions) > button, [data-skin="recorte"] .palette-results > button, [data-skin="recorte"] .palette-icon { border-radius: 0; }
 [data-skin="recorte"] .palette-group { font-family: var(--display); font-weight: 700; font-size: 13px; letter-spacing: 2px; }
 

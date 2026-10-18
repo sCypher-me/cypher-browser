@@ -27,7 +27,7 @@ const date = (value: number) => new Date(value).toLocaleString('pt-BR', { day: '
 function hostname(url: string) { try { return new URL(url).hostname; } catch { return url; } }
 
 function IconButton({ label, children, onClick, active, disabled, className = '', style }: { label: string; children: ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean; className?: string; style?: CSSProperties }) {
-  return <button type="button" className={cn("icon-button", active && "active", className)} title={label} aria-label={label} onClick={onClick} disabled={disabled} style={style}>{children}</button>;
+  return <button type="button" className={cn("icon-button", active && "active", className)} title={label} aria-label={label} onClick={onClick} disabled={disabled} style={style} tabIndex={/window-control/.test(className) ? -1 : undefined}>{children}</button>;
 }
 const fontStacks = { 'big-shoulders': '"Big Shoulders Display", "Arial Narrow", sans-serif', 'work-sans': '"Work Sans", "Segoe UI", sans-serif', system: '"Segoe UI Variable Text", "Segoe UI", sans-serif', serif: 'Georgia, "Times New Roman", serif', mono: 'Consolas, "Cascadia Mono", monospace' } as const;
 const groupPalette = ['#ff5436', '#5aa9ff', '#3ddc84', '#ffbf1f', '#c4b3ff', '#ff7ab6', '#7ce0d3'];
@@ -223,7 +223,7 @@ export default function App() {
   const sidebarSize = s.tabsAutoHide && !sidebarPeek ? 10 : s.compact ? 68 : Math.max(180, s.sidebarWidth - 18);
   const effectiveMode = s.appearanceMode === 'system' ? (state.systemDark === false ? 'light' : 'dark') : s.appearanceMode;
   const systemPalette = s.appearanceMode === 'system' && effectiveMode === 'light' && !isLightColor(s.background)
-    ? (s.skin === 'recorte' ? { accent: '#d2401f', surface: '#ffffff', base: '#efe9dc' } : { accent: '#587b35', surface: '#ffffff', base: '#f0f3ee' })
+    ? (s.skin === 'recorte' ? { accent: '#d2401f', surface: '#ffffff', base: '#efe9dc' } : { accent: '#46662a', surface: '#ffffff', base: '#f0f3ee' })
     : s.appearanceMode === 'system' && effectiveMode === 'dark' && isLightColor(s.background)
       ? (s.skin === 'recorte' ? { accent: '#ff5436', surface: '#151310', base: '#0a0908' } : { accent: '#b6f36a', surface: '#111513', base: '#090c0b' })
       : { accent: s.accent, surface: s.surface, base: s.background };
@@ -301,7 +301,7 @@ export default function App() {
     { id: 'fullscreen', title: 'Tela cheia', hint: 'F11', icon: <Maximize size={16}/>, run: () => void act('window:fullscreen') },
     { id: 'compact', title: s.compact ? 'Expandir barra de abas' : 'Recolher barra de abas', icon: s.compact ? <PanelLeftOpen size={16}/> : <PanelLeftClose size={16}/>, keywords: 'sidebar lateral', run: () => settings({ compact: !s.compact }) },
     { id: 'bookmarks-bar', title: s.showBookmarksBar ? 'Ocultar barra de favoritos' : 'Mostrar barra de favoritos', icon: <Star size={16}/>, run: () => settings({ showBookmarksBar: !s.showBookmarksBar }) },
-    { id: 'appearance', title: s.appearanceMode === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', icon: <Monitor size={16}/>, keywords: 'modo claro escuro tema', run: () => settings(s.appearanceMode === 'dark' ? { appearanceMode: 'light', accent: '#587b35', surface: '#ffffff', background: '#f0f3ee' } : { appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513', background: '#090c0b' }) },
+    { id: 'appearance', title: s.appearanceMode === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', icon: <Monitor size={16}/>, keywords: 'modo claro escuro tema', run: () => settings(s.appearanceMode === 'dark' ? { appearanceMode: 'light', accent: '#46662a', surface: '#ffffff', background: '#f0f3ee' } : { appearanceMode: 'dark', accent: '#b6f36a', surface: '#111513', background: '#090c0b' }) },
   ];
   const nav: { key: InternalPage; icon: typeof Home; title: string }[] = [{ key: browserPages.home, icon: Home, title: 'Home' }, { key: browserPages.productivity, icon: Layers3, title: 'Espaços e pesquisa' }, { key: browserPages.bookmarks, icon: Star, title: 'Favoritos' }, { key: browserPages.history, icon: Clock3, title: 'Histórico' }, { key: browserPages.downloads, icon: Download, title: 'Downloads' }, { key: browserPages.extensions, icon: Puzzle, title: 'Extensões' }, { key: browserPages.mods, icon: Sparkles, title: 'Mods' }];
   return <div className={`app ${isSide ? 'side-tabs' : 'top-tabs'} ${s.compact ? 'compact' : ''} ${!s.motion ? 'no-motion' : ''} ${pageFullscreen ? 'page-fullscreen' : ''} ${inspecting ? 'inspecting' : ''}`} data-appearance={effectiveMode} data-skin={s.skin} data-toolbar-position={s.toolbarPosition} data-autohide={s.tabsAutoHide ? (sidebarPeek ? 'peek' : 'hidden') : undefined} data-rail={s.showRail ? 'on' : 'off'}
