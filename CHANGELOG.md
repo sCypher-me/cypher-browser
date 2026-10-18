@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.31] - 2026-10-18
+- Configurações viraram uma central única, com sete seções em abas: Visão geral, Aparência, Navegação, Privacidade e segurança, Perfil e dados, Extensões e Sistema.
+- Segurança, Perfil e Extensões agora moram dentro da central; links e endereços antigos (cypher://security, cypher://profile, cypher://extensions) abrem direto na seção certa.
+- Nova Visão geral mostra os bloqueios da semana, a rota padrão, o perfil ativo e a versão, com ações rápidas.
+- Cada seção tem um sumário lateral que acompanha a rolagem, e a busca procura em todas as seções e leva até a opção.
+- Todas as páginas internas ganharam o mesmo visual: cabeçalho compacto, blocos cortados lado a lado, interruptores e botões padronizados e estados vazios menores.
+- Corrigido o bloco de perfis espremido, com nomes cortados e texto uma palavra por linha.
+- O gráfico do relatório de privacidade só aparece quando há bloqueios para mostrar.
+
 ## [0.7.30] - 2026-10-18
 - Novo instalador autoral no visual Recorte Noite, em seis etapas: boas-vindas, termos de uso, pasta, preferências, instalação e conclusão.
 - Os termos de uso e o aviso de privacidade precisam ser aceitos antes de instalar; uma cópia fica salva na pasta do Cypher.

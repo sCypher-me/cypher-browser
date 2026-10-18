@@ -18,9 +18,9 @@ export default function PrivacyReport({ stats = {}, protection }: { stats?: Reco
       <div><strong>{total.trackers.toLocaleString('pt-BR')}</strong><span>rastreadores</span></div>
       <div><strong>{total.ads.toLocaleString('pt-BR')}</strong><span>anúncios</span></div>
     </div>
-    <div className="pr-chart" role="img" aria-label={`Bloqueios por dia: ${days.map(day => `${day.date.toLocaleDateString('pt-BR', { weekday: 'short' })} ${day.value.requests}`).join(', ')}`}>
+    {total.requests > 0 && <div className="pr-chart" role="img" aria-label={`Bloqueios por dia: ${days.map(day => `${day.date.toLocaleDateString('pt-BR', { weekday: 'short' })} ${day.value.requests}`).join(', ')}`}>
       {days.map(day => <div key={dayKey(day.date)} className="pr-bar"><i style={{ height: `${Math.max(2, day.value.requests / peak * 100)}%` }}/><small>{day.date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '')}</small></div>)}
-    </div>
+    </div>}
     <div className="pr-columns">
       <div><h3>Rotas usadas</h3>{routes ? (['normal', 'tor', 'i2p'] as const).map(mode => <div className="pr-route" key={mode}><span>{mode === 'normal' ? 'Normal' : mode.toUpperCase()}</span><span className="pr-meter"><i style={{ width: `${total[mode] / routes * 100}%` }}/></span><small>{Math.round(total[mode] / routes * 100)}%</small></div>) : <p className="cz-empty">Nenhuma navegação registrada ainda.</p>}</div>
       <div><h3>Sites que mais tentaram rastrear (sessão)</h3>{topSites.length ? <ol className="pr-sites">{topSites.map(([site, counts]) => <li key={site}><span>{site}</span><strong>{counts.blockedRequests}</strong></li>)}</ol> : <p className="cz-empty">Navegue um pouco para ver quem tenta rastrear você.</p>}</div>

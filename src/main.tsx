@@ -18,6 +18,8 @@ import './polish.css';
 import './skin-recorte.css';
 import './personalization.css';
 import './mods.css';
+import './central.css';
+import './internal-pages.css';
 // Erros da interface entram nos relatórios opcionais; o processo principal descarta tudo se o usuário não consentiu.
 const reportInterfaceError = (message: unknown, stack: unknown) => { try { void window.cypher?.invoke('diagnostics:report', { message: String(message || '').slice(0, 2000), stack: String(stack || '').slice(0, 8000) }).catch(() => {}); } catch {} };
 window.addEventListener('error', event => reportInterfaceError(event.message, event.error?.stack));

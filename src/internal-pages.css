@@ -1,0 +1,37 @@
+/* ===== Páginas internas (Mods, Histórico, Favoritos, Downloads, Espaços) =====
+   Cabeçalho compacto igual ao da Central e listas no mesmo sistema de blocos. */
+
+.app .internal-page:not(.settings-internal) { padding: 22px clamp(18px, 3vw, 44px) 48px; }
+.app .internal-page .page-heading { display: grid; grid-template-columns: auto 1fr; align-items: end; column-gap: 18px; margin: 0 0 18px; padding: 0 0 14px; border-bottom: 1px solid color-mix(in srgb, var(--text) 9%, transparent); }
+.app .internal-page .page-heading > .eyebrow { grid-column: 1 / -1; color: var(--accent); font-family: var(--display, inherit); font-size: var(--ui-font-11, 11px); font-weight: 700; letter-spacing: .12em; }
+.app .internal-page .page-heading h1 { margin: 2px 0 0; font-family: var(--display, inherit); font-size: clamp(28px, 3vw, 38px); font-weight: 900; line-height: .95; letter-spacing: .01em; text-transform: uppercase; }
+.app .internal-page .page-heading p { margin: 0 0 3px; color: var(--muted); font-size: var(--ui-font-12, 12px); line-height: 1.45; }
+[data-skin="classic"] .internal-page .page-heading h1 { font-family: inherit; font-weight: 600; text-transform: none; }
+
+/* Barra de ferramentas das listas */
+.app .internal-page .collection-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; color: var(--muted); font-size: var(--ui-font-11, 11px); }
+.app .internal-page .filter-input { display: flex; align-items: center; gap: 8px; width: min(420px, 100%); height: 36px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--text) 9%, transparent); border-radius: 0; background: color-mix(in srgb, var(--text) 3.5%, var(--surface)); }
+
+/* Listas como um bloco cortado */
+.app .internal-page .link-list { border: 1px solid color-mix(in srgb, var(--text) 9%, transparent); background: color-mix(in srgb, var(--text) 3.5%, var(--surface)); }
+.app .internal-page .link-list:empty { display: none; }
+[data-skin="recorte"] .internal-page .link-list { clip-path: polygon(var(--cut, 12px) 0, 100% 0, 100% calc(100% - var(--cut, 12px)), calc(100% - var(--cut, 12px)) 100%, 0 100%, 0 var(--cut, 12px)); }
+.app .internal-page :is(.link-row, .download-row) { padding: 10px 14px; }
+.app .internal-page .link-day { margin: 0; padding: 12px 14px 4px; color: var(--accent); font-family: var(--display, inherit); font-size: var(--ui-font-12, 12px); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+/* Estado vazio compacto */
+.app .internal-page .empty-state { display: flex; align-items: center; gap: 14px; padding: 18px; margin: 0; border: 1px dashed color-mix(in srgb, var(--text) 14%, transparent); text-align: left; }
+.app .internal-page .empty-state > div { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border: 0; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.app .internal-page .empty-state > div svg { width: 18px; height: 18px; }
+.app .internal-page .empty-state h2 { margin: 0; font-size: var(--ui-font-13, 13px); font-weight: 600; }
+.app .internal-page .empty-state p { margin: 2px 0 0; color: var(--muted); font-size: var(--ui-font-12, 12px); }
+.app .internal-page .empty-state h2 + p { grid-column: 2; }
+.app .internal-page .empty-state { display: grid; grid-template-columns: auto 1fr; column-gap: 14px; align-items: center; }
+.app .internal-page .empty-state > div { grid-row: span 2; }
+
+/* Espaços e pesquisa: blocos no mesmo sistema */
+[data-skin="recorte"] .internal-page.page-productivity :is(section, .pc-hero, .pc-card, article) { border-radius: 0; }
+[data-skin="recorte"] .internal-page.page-productivity :is(button, input) { border-radius: 0; }
+
+/* Mods: cabeçalho compacto mantém o "frequência" em destaque */
+.app .internal-page.page-mods .page-heading h1 em { font-style: normal; color: var(--accent); }
