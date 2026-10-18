@@ -20,7 +20,7 @@ function Choice({ chosen, onClick, icon, title, detail }: { chosen: boolean; onC
 export default function Appearance({ settings: s, onSettings, command, navigate, skins = [] }: SectionProps) {
   const chooseTheme = (theme: typeof themePresets[number]) => onSettings({ appearanceMode: 'dark', accent: theme.accent, surface: theme.surface, background: theme.background });
   const chooseAppearanceMode = (mode: Settings['appearanceMode']) => onSettings(mode === 'light'
-    ? { appearanceMode: mode, accent: '#587b35', surface: '#ffffff', background: '#f0f3ee' }
+    ? { appearanceMode: mode, accent: '#46662a', surface: '#ffffff', background: '#f0f3ee' }
     : s.skin === 'recorte' ? { appearanceMode: mode, accent: '#ff5436', surface: '#151310', background: '#0a0908' } : { appearanceMode: mode, accent: '#b6f36a', surface: '#111513', background: '#090c0b' });
   const wallpaperName = s.wallpaper === 'video' ? s.wallpaperVideoName || 'vídeo' : s.wallpaper === 'custom' ? 'imagem pessoal' : s.wallpaper === 'none' ? 'minimal' : s.wallpaper === 'grid' ? 'grade' : 'orbital';
 
@@ -50,13 +50,13 @@ export default function Appearance({ settings: s, onSettings, command, navigate,
     <Panel id="appearance-shape" eyebrow="ACABAMENTO" title="Cores, cantos e fonte" icon={Palette}>
       <div className="sc-color-grid">{[{ key: 'accent', label: 'Destaque' }, { key: 'surface', label: 'Superfícies' }, { key: 'background', label: 'Fundo' }].map(({ key, label }) => <label className="sc-color-choice" key={key}><span className="sc-color-swatch"><input type="color" aria-label={label} value={s[key as 'accent']} onChange={event => onSettings({ [key]: event.target.value })}/></span><span><strong>{label}</strong><small>{s[key as 'accent'].toUpperCase()}</small></span></label>)}</div>
       <Row id="appearance-radius" title="Cantos" detail={`${s.radius} px na pele Clássico`}><input className="sc-range" aria-label="Arredondamento dos cantos" type="range" min="0" max="24" value={s.radius} onChange={event => onSettings({ radius: +event.target.value })}/><span className="sc-value">{s.radius}px</span></Row>
-      <Row id="appearance-font" title="Tipografia da moldura"><select className="sc-select" value={s.font} onChange={event => onSettings({ font: event.target.value as Settings['font'] })}><option value="system">Sistema</option><option value="mono">Monoespaçada</option></select></Row>
+      <Row id="appearance-font" title="Tipografia da moldura"><select className="sc-select" aria-label="Tipografia da moldura" value={s.font} onChange={event => onSettings({ font: event.target.value as Settings['font'] })}><option value="system">Sistema</option><option value="mono">Monoespaçada</option></select></Row>
       <Row id="appearance-motion" title="Animações da interface"><Switch label="Animações da interface" checked={s.motion} onChange={() => onSettings({ motion: !s.motion })}/></Row>
     </Panel>
 
     <Panel id="appearance-controls" eyebrow="IDENTIDADE" title="Controles e efeitos" icon={Sparkles}>
-      <Row title="Forma dos botões" detail="Barra, painéis e ações"><select className="sc-select" value={s.buttonShape} onChange={event => onSettings({ buttonShape: event.target.value as Settings['buttonShape'] })}><option value="soft">Suave</option><option value="square">Angular</option><option value="pill">Pílula</option></select></Row>
-      <Row title="Efeito de interface"><select className="sc-select" value={s.interfaceEffect} onChange={event => onSettings({ interfaceEffect: event.target.value as Settings['interfaceEffect'] })}><option value="signal">Sinal Cypher</option><option value="glow">Brilho</option><option value="scanline">Linhas de varredura</option><option value="none">Sem efeito</option></select></Row>
+      <Row title="Forma dos botões" detail="Barra, painéis e ações"><select className="sc-select" aria-label="Forma dos botões" value={s.buttonShape} onChange={event => onSettings({ buttonShape: event.target.value as Settings['buttonShape'] })}><option value="soft">Suave</option><option value="square">Angular</option><option value="pill">Pílula</option></select></Row>
+      <Row title="Efeito de interface"><select className="sc-select" aria-label="Efeito de interface" value={s.interfaceEffect} onChange={event => onSettings({ interfaceEffect: event.target.value as Settings['interfaceEffect'] })}><option value="signal">Sinal Cypher</option><option value="glow">Brilho</option><option value="scanline">Linhas de varredura</option><option value="none">Sem efeito</option></select></Row>
     </Panel>
 
     <TokensPanel settings={s} onSettings={onSettings}/>
@@ -74,7 +74,7 @@ export default function Appearance({ settings: s, onSettings, command, navigate,
     <ToolbarPanel settings={s} onSettings={onSettings}/>
 
     <Panel id="home-editor" eyebrow="PÁGINA INICIAL" title="Home e papel de parede" icon={House}>
-      <Row id="appearance-wallpaper" title="Fundo da Home" detail={`Atual: ${wallpaperName}`}><select className="sc-select" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option>{s.wallpaper === 'custom' && <option value="custom">Imagem pessoal</option>}{s.wallpaper === 'video' && <option value="video">Vídeo pessoal</option>}</select></Row>
+      <Row id="appearance-wallpaper" title="Fundo da Home" detail={`Atual: ${wallpaperName}`}><select className="sc-select" aria-label="Fundo da Home" value={s.wallpaper} onChange={event => onSettings({ wallpaper: event.target.value as Settings['wallpaper'] })}><option value="orbital">Orbital</option><option value="grid">Grade</option><option value="none">Minimal</option>{s.wallpaper === 'custom' && <option value="custom">Imagem pessoal</option>}{s.wallpaper === 'video' && <option value="video">Vídeo pessoal</option>}</select></Row>
       <div className="sc-action-row">
         <button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper:select'); if (result?.dataUrl) onSettings({ wallpaper: 'custom', wallpaperImageData: result.dataUrl, wallpaperVideoPath: '', wallpaperVideoName: '' }); }}>Escolher imagem</button>
         <button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:wallpaper-video:select'); if (result?.path) onSettings({ wallpaper: 'video', wallpaperVideoPath: result.path, wallpaperVideoName: result.name, wallpaperImageData: '' }); }}>Escolher vídeo</button>
@@ -92,7 +92,7 @@ export default function Appearance({ settings: s, onSettings, command, navigate,
 
     <Panel id="appearance-sounds" eyebrow="ATMOSFERA" title="Sons e música" icon={Volume2}>
       <Row title="Sons dos controles" detail="Tons sintetizados ao acionar botões"><Switch label="Sons dos controles" checked={s.soundEffectsEnabled} onChange={() => onSettings({ soundEffectsEnabled: !s.soundEffectsEnabled })}/></Row>
-      <Row title="Tema de som"><select className="sc-select" value={s.soundTheme} onChange={event => onSettings({ soundTheme: event.target.value as Settings['soundTheme'] })}><option value="cypher">Sinal</option><option value="soft">Suave</option><option value="arcade">Arcade</option></select></Row>
+      <Row title="Tema de som"><select className="sc-select" aria-label="Tema de som" value={s.soundTheme} onChange={event => onSettings({ soundTheme: event.target.value as Settings['soundTheme'] })}><option value="cypher">Sinal</option><option value="soft">Suave</option><option value="arcade">Arcade</option></select></Row>
       <Row title="Música de fundo" detail={s.backgroundMusicName || 'Pode ser incluída ao exportar um tema'}><div className="sc-control-stack"><button className="sc-button sc-button-subtle" onClick={async () => { const result = await command('appearance:music:select'); if (result?.dataUrl) onSettings({ backgroundMusicData: result.dataUrl, backgroundMusicName: result.name, backgroundMusicEnabled: false }); }}>Escolher áudio</button>{s.backgroundMusicData && <button className="sc-button sc-button-subtle" onClick={() => onSettings({ backgroundMusicData: '', backgroundMusicName: '', backgroundMusicEnabled: false })}>Remover</button>}</div></Row>
       <div className="sc-info-strip"><ShieldCheck size={15}/><span>Imagens e músicas ficam no perfil local.</span></div>
     </Panel>

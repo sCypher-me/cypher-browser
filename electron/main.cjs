@@ -2582,7 +2582,7 @@ app.whenReady().then(async () => {
     catch (error) { console.error('Não foi possível aplicar a inicialização com o Windows:', error.message); }
   }
   win = new BrowserWindow({ width: 1440, height: 940, minWidth: 960, minHeight: 650, frame: false, backgroundColor: '#090c0b', show: false, icon: path.join(__dirname,'../build/icon.png'),
-    webPreferences: { preload: path.join(__dirname,'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
+    webPreferences: { preload: path.join(__dirname,'preload.cjs'), minimumFontSize: 11, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   const devURL = process.env.CYPHER_DEV_URL;
   const trustedURL = devURL || 'cypher-ui://app/index.html';
   rendererUrl = trustedURL + (devURL ? '/' : '');

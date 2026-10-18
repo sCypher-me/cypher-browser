@@ -1,0 +1,25 @@
+/* ===== Usabilidade e acessibilidade =====
+   Corrige o que a auditoria apontou: foco invisível pelo teclado, alvos de clique pequenos
+   e textos com pouco contraste. Carregado por último. */
+
+/* Foco do teclado: o CSS base tirava o contorno de todos os botões e campos. */
+.app :is(button, a[href], [role="button"], [role="switch"], [role="tab"], [role="menuitem"], select, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+/* Na pele Recorte os cortes (clip-path) escondem o que fica do lado de fora: o anel vai para dentro. */
+[data-skin="recorte"] :is(button, a[href], [role="button"], [role="tab"], [role="menuitem"], select, summary):focus-visible {
+  outline: 2px solid currentColor; outline-offset: -4px;
+}
+.app .sc-switch:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--text); }
+.app :is(.addressbar, .home-search, .filter-input, .central-search, .palette-input):focus-within { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* Alvos de clique: no mínimo 24 px de altura. */
+.app .home-canvas-footer :is(button, a) { min-height: 28px; padding-block: 4px; }
+
+/* Contraste no modo claro (texto secundário e teclas de atalho). */
+.app[data-appearance="light"] :is(.sc-keycap, .cz-keycap) { color: var(--text); border-color: color-mix(in srgb, var(--text) 30%, transparent); }
+.app[data-appearance="light"] .profile-sync-heading p, .app[data-appearance="light"] .profile-sync-panel :is(p, small, label) { color: var(--muted); }
+.app[data-appearance="light"] :is(.link-details small, .search-hint, .muted-text, .clock-date, .home-label, .widget-eyebrow) { color: var(--muted); }
+.app[data-appearance="light"] :is(.home-page kbd, .search-hint kbd) { color: var(--text); border-color: color-mix(in srgb, var(--text) 28%, transparent); }
+.app[data-appearance="light"] .extension-limit-note :is(span, p) { color: #5a4310; }
+.app[data-appearance="light"] .widget-shortcuts .widget-title span:last-child, .app[data-appearance="light"] .widget-title span:last-child { color: var(--muted); }

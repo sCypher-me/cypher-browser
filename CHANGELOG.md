@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.37] - 2026-10-18
+- [Melhorado★] Navegar pelo teclado: botões, abas, interruptores e menus mostram com clareza onde está o foco ao usar Tab. {configuracoes}
+- [Melhorado] Interruptores maiores e mais fáceis de acertar com o mouse em todas as páginas.
+- [Melhorado] Nenhum texto da interface fica abaixo de 11 px, e as caixas de seleção das Configurações anunciam o nome para leitores de tela.
+- [Corrigido] Contraste do modo claro: textos secundários, teclas de atalho, descrições e avisos ficaram legíveis.
+- [Corrigido] A tecla Tab não passa mais pelos botões de minimizar, maximizar e fechar a janela, evitando fechar o Cypher sem querer.
+- [Melhorado] Electron 44.9 com as correções de segurança mais recentes do Chromium, e React 19.3.1.
+
 ## [0.7.36] - 2026-10-18
 - [Novo★] Canal Preview: experimente as próximas versões antes de todo mundo. Liga e desliga em Configurações → Sistema; ao sair, você fica na sua versão até a oficial chegar nela. {preview}
 - [Melhorado★] Atualiza em segundo plano: o Cypher baixa a versão nova sozinho, avisa quando está pronta e instala quando você reiniciar ou fechar o navegador. {atualizacao}

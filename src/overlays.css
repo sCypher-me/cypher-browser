@@ -16,7 +16,7 @@
   animation: layer-in .16s cubic-bezier(.2, .8, .2, 1);
 }
 @keyframes layer-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
-.app.no-motion :is(.browser-menu, .skin-menu, .tracker-popover, .popup-popover, .command-palette, .address-suggestions, .toast, .update-notice), .app.no-motion .page-snapshot img { animation: none; }
+.app.no-motion :is(.browser-menu, .skin-menu, .tracker-popover, .popup-popover, .command-palette, .address-suggestions, .toast), .app.no-motion .page-snapshot img { animation: none; }
 
 /* Pele Recorte: cantos cortados e linha de destaque no topo */
 [data-skin="recorte"] :is(.browser-menu, .skin-menu, .tracker-popover, .popup-popover, .command-palette, .address-suggestions) {
@@ -41,10 +41,9 @@
 .app :is(.tracker-panel-row, .popup-panel-row) { z-index: 95; }
 
 /* Avisos (toast e atualização) no mesmo sistema */
-.app :is(.toast, .update-notice) { border: 1px solid var(--layer-line); background: var(--layer-bg); color: var(--text); box-shadow: 0 18px 50px #00000080; animation: toast-in .2s cubic-bezier(.2, .8, .2, 1); }
-[data-skin="recorte"] :is(.toast, .update-notice) { border-radius: 0; border-left: 3px solid var(--accent); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%); }
+.app :is(.toast) { border: 1px solid var(--layer-line); background: var(--layer-bg); color: var(--text); box-shadow: 0 18px 50px #00000080; animation: toast-in .2s cubic-bezier(.2, .8, .2, 1); }
+[data-skin="recorte"] :is(.toast) { border-radius: 0; border-left: 3px solid var(--accent); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
 
 /* Modais de tela cheia (atualização, novidades, captura) */
-[data-skin="recorte"] :is(.update-onboarding-card, .update-screen > section, .capture-screen > div) { border-radius: 0; }
-.app .update-screen { backdrop-filter: blur(3px); }
+[data-skin="recorte"] :is(.capture-screen > div) { border-radius: 0; }
