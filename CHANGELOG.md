@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.7.38] - 2026-10-18
+- [Novo★] Importar de outro navegador: traga favoritos e histórico do Chrome, Edge, Brave, Vivaldi, Opera ou Firefox em um clique, em Configurações → Perfil e dados. {configuracoes}
+- [Novo★] Salvar senha ao entrar: depois do login, o Cypher pergunta se quer guardar a senha no cofre local, e oferece atualizar quando ela muda. {privacidade}
+- [Novo★] Telas de erro novas: avisos claros para site não encontrado, sem internet, conexão recusada e certificado inválido, com o que fazer em cada caso. {generico}
+- [Novo] Modo HTTPS: o Cypher tenta a versão segura dos sites primeiro; no modo Somente HTTPS, avisa antes de abrir uma página sem criptografia.
+- [Novo] Importar senhas por CSV: arquivos exportados pelo Chrome, Edge, Firefox, Brave, Bitwarden e 1Password.
+- [Novo] Aviso de senhas vazadas (opcional): confere no Have I Been Pwned sem enviar a senha e marca as repetidas entre sites.
+- [Melhorado] A barra de endereço mostra “Não seguro” quando o certificado do site não é confiável.
+
 ## [0.7.37] - 2026-10-18
 - [Melhorado★] Navegar pelo teclado: botões, abas, interruptores e menus mostram com clareza onde está o foco ao usar Tab. {configuracoes}
 - [Melhorado] Interruptores maiores e mais fáceis de acertar com o mouse em todas as páginas.

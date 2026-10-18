@@ -3,8 +3,9 @@ import { Block, Panel } from '../settings-ui';
 import ProfileManager from '../ProfileManager';
 import ProfileSyncPanel from '../ProfileSyncPanel';
 import type { SectionProps } from './types';
+import { ImportPanel } from './ImportPanel';
 
-export default function Profile({ settings: s, onSettings, profiles, profileId, profileSync, command, onChooseProfilePhoto }: SectionProps) {
+export default function Profile({ settings: s, onSettings, profiles, profileId, profileSync, command, onChooseProfilePhoto, goSection }: SectionProps) {
   const name = profiles.find(profile => profile.id === profileId)?.name || 'Pessoal';
   return <>
     <Panel id="profile-local" eyebrow="PERFIL ATIVO" title={name} detail="Preferências, favoritos, histórico, senhas e sessões ficam separados por perfil neste dispositivo." icon={UserRound} wide>
@@ -16,6 +17,7 @@ export default function Profile({ settings: s, onSettings, profiles, profileId, 
         </div>
       </div>
     </Panel>
+    <ImportPanel command={command} goPasswords={() => goSection('privacy', 'privacy-password-import')}/>
     <Block id="profile-manager" title="Perfis e visitante" wide><ProfileManager profiles={profiles} profileId={profileId} command={command}/></Block>
     <Block id="profile-sync" title="Sincronização" wide><ProfileSyncPanel sync={profileSync} command={command}/></Block>
   </>;

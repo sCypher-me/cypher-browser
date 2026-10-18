@@ -41,6 +41,12 @@ server.listen(0,'127.0.0.1', async () => {
     await until(async () => (await invoke('state')).update.channel === 'preview', 'canal Preview');
     await invoke('settings', { updateChannel: 'stable' });
     assert.equal(await invoke('update:ack'), true);
+    // Trocar é fácil: HTTPS primeiro por padrão, pedido de senha ligado, importação disponível.
+    assert.equal(state.settings.httpsMode, 'upgrade');
+    assert.equal(state.settings.passwordSavePrompt, true);
+    assert.equal(state.passwordPrompt, null);
+    assert.ok(Array.isArray(await invoke('import:detect')));
+    assert.deepEqual(await invoke('password:never:list'), []);
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-home.png'), (await win.webContents.capturePage()).toPNG());

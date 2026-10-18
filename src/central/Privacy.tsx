@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Clock3, Eraser, Globe2, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Clock3, Eraser, FileUp, Globe2, LockKeyhole, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { SavedPassword } from '../types';
 import { Block, Panel, Row, Switch } from '../settings-ui';
 import ConnectionSettings from '../ConnectionSettings';
@@ -16,7 +16,25 @@ function Passwords({ tabs, activeTabId, command, settings: s, onSettings }: Sect
   const [password, setPassword] = useState('');
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
-  const refresh = async () => { const entries = await command('password:list'); setSaved(Array.isArray(entries) ? entries : []); };
+  const [never, setNever] = useState<string[]>([]);
+  const [checkState, setCheckState] = useState('');
+  const refresh = async () => {
+    const entries = await command('password:list'); setSaved(Array.isArray(entries) ? entries : []);
+    const blocked = await command('password:never:list'); setNever(Array.isArray(blocked) ? blocked : []);
+  };
+  const checkLeaks = async () => {
+    setCheckState('Verificando…');
+    const result = await command('password:check');
+    setCheckState(result ? (result.leaked ? `${result.leaked} ${result.leaked === 1 ? 'senha apareceu' : 'senhas apareceram'} em vazamentos.` : 'Nenhuma senha apareceu em vazamentos conhecidos.') + (result.reused ? ` ${result.reused} usadas em mais de um site.` : '') : '');
+    await refresh();
+  };
+  const importCsv = async () => {
+    const result = await command('password:import');
+    if (!result) return;
+    setCheckState(`Importação: ${result.added} novas, ${result.updated} atualizadas${result.unchanged ? `, ${result.unchanged} iguais` : ''}${result.skipped ? `, ${result.skipped} ignoradas` : ''}. Apague o arquivo CSV: ele guarda as senhas sem proteção.`);
+    await refresh();
+  };
+  const leakedCount = saved.filter(entry => entry.leaked > 0).length;
   useEffect(() => {
     void refresh().catch(() => setSaved([]));
     const current = tabs.find(tab => tab.id === activeTabId && /^https?:\/\//i.test(tab.url)) || [...tabs].reverse().find(tab => !tab.private && tab.connectionMode === 'normal' && /^https?:\/\//i.test(tab.url));
@@ -26,7 +44,10 @@ function Passwords({ tabs, activeTabId, command, settings: s, onSettings }: Sect
   const preferredTab = normalTabs.find(tab => tab.id === activeTabId)?.id;
 
   return <Panel id="privacy-passwords" eyebrow="COFRE LOCAL" title="Senhas" detail="Criptografadas pelo Windows e preenchidas só no mesmo site. Nunca entram na sincronização." icon={LockKeyhole} wide>
+    <Row id="privacy-password-offer" title="Oferecer para salvar ao entrar" detail="Pergunta depois que você faz login num site"><Switch label="Oferecer para salvar senhas" checked={s.passwordSavePrompt} onChange={() => onSettings({ passwordSavePrompt: !s.passwordSavePrompt })}/></Row>
     <Row title="Preencher logins salvos ao visitar" detail="Preenche campos vazios; nunca envia o formulário"><Switch label="Preenchimento automático de senhas" checked={s.passwordAutofillEnabled} onChange={() => onSettings({ passwordAutofillEnabled: !s.passwordAutofillEnabled })}/></Row>
+    <Row id="privacy-password-leaks" title="Avisar sobre senhas vazadas" detail="Consulta o Have I Been Pwned sem enviar a senha: só 5 letras do hash saem do computador"><Switch label="Avisar sobre senhas vazadas" checked={s.passwordLeakCheck} onChange={() => { const next = !s.passwordLeakCheck; onSettings({ passwordLeakCheck: next }); if (next && saved.length) void checkLeaks(); }}/></Row>
+    <Row id="privacy-password-import" title="Trazer senhas de outro navegador" detail="Arquivo CSV exportado pelo Chrome, Edge, Firefox, Brave, Bitwarden ou 1Password"><button type="button" className="sc-button sc-button-subtle" onClick={() => void importCsv()}>Importar CSV <FileUp size={13}/></button></Row>
     <form className="sc-password-form" onSubmit={async event => {
       event.preventDefault();
       if (!origin || !username.trim() || !password) return;
@@ -45,11 +66,17 @@ function Passwords({ tabs, activeTabId, command, settings: s, onSettings }: Sect
         <button className="sc-button sc-button-primary" disabled={busy}>{busy ? 'Salvando…' : 'Salvar senha'} <LockKeyhole size={13}/></button>
       </div>
     </form>
-    <div className="sc-password-list-heading"><strong>Logins guardados</strong><span>{saved.length}</span></div>
+    {checkState && <div className="sc-info-strip" role="status"><ShieldCheck size={15}/><span>{checkState}</span></div>}
+    <div className="sc-password-list-heading"><strong>Logins guardados</strong><span>{saved.length}</span>{s.passwordLeakCheck && saved.length > 0 && <button type="button" className="sc-button sc-button-subtle sc-password-check" onClick={() => void checkLeaks()}>Verificar agora</button>}</div>
+    {leakedCount > 0 && <div className="sc-info-strip sc-warning-strip"><ShieldAlert size={15}/><span>{leakedCount === 1 ? 'Uma senha salva apareceu' : `${leakedCount} senhas salvas apareceram`} em vazamentos. Troque nos sites marcados e salve a nova aqui.</span></div>}
     {saved.length ? <div className="sc-password-list">{saved.map(entry => {
       const matching = normalTabs.filter(tab => { try { return new URL(tab.url).origin === entry.origin; } catch { return false; } });
-      return <div className="sc-password-entry" key={entry.id}><span className="sc-password-site"><strong>{entry.origin}</strong><small>{entry.username}</small></span><div className="sc-password-actions">{matching.length > 0 && <button className="sc-button sc-button-subtle" type="button" onClick={() => void command('password:fill', { id: entry.id, tabId: matching.find(tab => tab.id === preferredTab)?.id || matching[0].id })}>Preencher na aba</button>}<button className="sc-button sc-button-subtle" type="button" onClick={async () => { await command('password:delete', entry.id); await refresh(); }}>Remover</button></div></div>;
+      return <div className="sc-password-entry" key={entry.id}><span className="sc-password-site"><strong>{entry.origin}</strong><small>{entry.username}{entry.leaked > 0 && <em className="sc-password-flag is-leaked">Vazada</em>}{entry.reused && <em className="sc-password-flag">Repetida</em>}</small></span><div className="sc-password-actions">{matching.length > 0 && <button className="sc-button sc-button-subtle" type="button" onClick={() => void command('password:fill', { id: entry.id, tabId: matching.find(tab => tab.id === preferredTab)?.id || matching[0].id })}>Preencher na aba</button>}<button className="sc-button sc-button-subtle" type="button" onClick={async () => { await command('password:delete', entry.id); await refresh(); }}>Remover</button></div></div>;
     })}</div> : <div className="sc-empty-line">Nenhuma senha salva ainda.</div>}
+    {never.length > 0 && <>
+      <div className="sc-password-list-heading"><strong>Nunca salvar em</strong><span>{never.length}</span></div>
+      <div className="sc-password-list">{never.map(site => <div className="sc-password-entry" key={site}><span className="sc-password-site"><strong>{site}</strong></span><div className="sc-password-actions"><button className="sc-button sc-button-subtle" type="button" onClick={async () => { const left = await command('password:never:remove', site); if (Array.isArray(left)) setNever(left); }}>Voltar a oferecer</button></div></div>)}</div>
+    </>}
   </Panel>;
 }
 
@@ -66,6 +93,12 @@ export default function Privacy(props: SectionProps) {
       <Row id="privacy-cookie-banners" title="Avisos de cookies" detail="Esconde os banners de consentimento mais comuns"><Switch checked={s.blockCookieBanners} label="Ocultar avisos de cookies" onChange={() => onSettings({ blockCookieBanners: !s.blockCookieBanners })}/></Row>
       <Row id="privacy-do-not-track" title="Sinal Não rastrear" detail="Cada site decide se respeita"><Switch label="Enviar sinal Não rastrear" checked={s.sendDoNotTrack} onChange={() => onSettings({ sendDoNotTrack: !s.sendDoNotTrack })}/></Row>
       {!trackerProtection.adsAvailable && <div className="sc-info-strip sc-warning-strip"><ShieldCheck size={15}/><span>Esta compilação não trouxe a lista EasyList; só os domínios locais de anúncios estão bloqueados.</span></div>}
+    </Panel>
+
+    <Panel id="privacy-https" eyebrow="CONEXÃO" title="HTTPS" detail="Endereços da rede local e IPs ficam de fora." icon={LockKeyhole}>
+      <div className="sc-radio-list" role="radiogroup" aria-label="Modo HTTPS">
+        {([['upgrade', 'Tentar HTTPS primeiro', 'Usa a versão segura quando existe e volta para HTTP em silêncio quando não existe.'], ['strict', 'Somente HTTPS', 'Avisa antes de abrir qualquer página sem criptografia.'], ['off', 'Desligado', 'Abre os endereços exatamente como foram digitados.']] as const).map(([value, title, detail]) => <label className="sc-radio-option" key={value}><input type="radio" name="https-mode" checked={s.httpsMode === value} onChange={() => onSettings({ httpsMode: value })}/><span><strong>{title}</strong><small>{detail}</small></span></label>)}
+      </div>
     </Panel>
 
     <Panel id="privacy-data" eyebrow="LIMPEZA" title="Dados de navegação" icon={Eraser}>
