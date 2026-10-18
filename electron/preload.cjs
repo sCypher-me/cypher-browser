@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const invokeActions = new Set([
   'appearance:music:select','appearance:wallpaper:select','appearance:wallpaper-video:select','back','bookmark:add','bookmark:remove','bookmark:toggle',
-  'connection:check','connection:select','data:clear','devtools','download:action','download:directory:clear',
+  'connection:check','connection:select','data:clear','devtools','diagnostics:clear','diagnostics:issue','diagnostics:list','diagnostics:report','download:action','download:directory:clear',
   'download:directory:open','download:directory:select','extension:install','extension:install-cypher','extension:install-webstore','extension:remove',
   'extension:toggle','find','forward','history:clear','history:remove','home:focus','home:image:select','home:note',
   'home:tasks','media:background:set','media:control','media:select','media:window:close','media:window:show-tab','media:window:toggle','mod:apply','mod:export','mod:import','mod:remove','navigate','page:translate','popup:action','popup:clear','print','profile:photo:select','profile:sync:configure','profile:sync:run','profile:sync:disconnect',

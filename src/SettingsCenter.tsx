@@ -10,6 +10,7 @@ import ConnectionSettings from './ConnectionSettings';
 import ProfileSyncPanel from './ProfileSyncPanel';
 import { type InternalPage, type SettingsSection } from './navigation';
 import { Panel, Row, Switch } from './settings-ui';
+import { DiagnosticsPanel } from './DiagnosticsPanel';
 import { ContainersPanel, CustomCssPanel, RoutesPanel, ShortcutsPanel, SkinsPanel, TokensPanel, ToolbarPanel, WebPanelsPanel } from './CustomizationSettings';
 
 type Category = SettingsSection;
@@ -75,6 +76,7 @@ const preferenceIndex: { id: string; title: string; detail: string; category: Ca
   { id: 'search-suggestions', title: 'Sugestões de pesquisa', detail: 'Controle sugestões e escolha entre histórico e favoritos', category: 'search' },
   { id: 'connection-routes', title: 'Rotas de conexão', detail: 'Conexão normal, Tor, I2P e portas locais', category: 'connections' },
   { id: 'download-location', title: 'Local dos downloads', detail: 'Pasta padrão ou perguntar onde salvar arquivos', category: 'downloads' },
+  { id: 'privacy-error-reports', title: 'Relatórios de erro', detail: 'Registrar falhas sem dados pessoais para ajudar a corrigi-las', category: 'privacy' },
   { id: 'privacy-do-not-track', title: 'Não rastrear', detail: 'Enviar o cabeçalho Do Not Track aos sites', category: 'privacy' },
   { id: 'privacy-data', title: 'Dados de navegação', detail: 'Limpar cookies, cache e histórico', category: 'privacy' },
   { id: 'privacy-clear-exit', title: 'Limpeza ao sair', detail: 'Apagar dados dos sites ou histórico ao fechar o Cypher', category: 'privacy' },
@@ -328,6 +330,7 @@ export default function SettingsCenter({ settings: s, update, trackerProtection,
               <Row id="privacy-history-exit" title="Limpar histórico ao sair" detail="Remove o histórico local quando o Cypher for fechado"><Switch label="Limpar histórico ao sair" checked={s.clearHistoryOnExit} onChange={() => onSettings({ clearHistoryOnExit: !s.clearHistoryOnExit })}/></Row>
               <Row id="privacy-site-permissions" title="Permissões de sites" detail="Gerencie câmera, microfone, localização, tela cheia e notificações"><button className="sc-button sc-button-subtle" onClick={() => navigate('security', { focusId: 'site-permissions' })}>Abrir permissões <ChevronRight size={14}/></button></Row>
             </Panel>
+            <DiagnosticsPanel settings={s} command={command} onSettings={onSettings}/>
             <Panel id="privacy-popup-exceptions" eyebrow="EXCEÇÕES DE POP-UPS" title="Sites permitidos" detail="Sites nesta lista podem abrir pop-ups enquanto o bloqueador estiver ativo. As exceções valem apenas para o domínio exato." icon={Globe2}>
               {s.popupExceptions.length ? s.popupExceptions.map(host => <Row key={host} title={host} detail="Pop-ups permitidos neste site"><button className="sc-button sc-button-subtle" onClick={() => onSettings({ popupExceptions: s.popupExceptions.filter(item => item !== host) })}>Remover exceção</button></Row>) : <div className="sc-info-strip"><ShieldCheck size={16}/><span>Nenhum site foi autorizado. Você pode permitir um site pelo painel do bloqueador na barra de endereço.</span></div>}
             </Panel>

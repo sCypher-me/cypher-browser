@@ -5,7 +5,7 @@ export interface Settings {
   tokens: DesignTokens; toolbarOrder: ToolbarItem[]; toolbarHidden: ToolbarItem[]; toolbarPosition: 'top' | 'bottom';
   tabsAutoHide: boolean; showRail: boolean; workspaceAccent: boolean; customCss: string; skinPackage: string;
   shortcuts: Partial<Record<ShortcutAction, string>>; routeRules: RouteRule[]; containers: TabContainer[]; blockCookieBanners: boolean; webPanels: WebPanel[]; panelWidth: number;
-  modSoundsEnabled: boolean; modSoundsVolume: number; modMusicEnabled: boolean; modMusicVolume: number; modPageEffects: boolean;
+  modSoundsEnabled: boolean; modSoundsVolume: number; modMusicEnabled: boolean; modMusicVolume: number; modPageEffects: boolean; sendErrorReports: boolean;
   tabPosition: 'side' | 'top'; sidebarWidth: number; appearanceMode: 'dark' | 'light' | 'system'; accent: string; surface: string; background: string;
   radius: number; font: 'system' | 'mono'; interfaceTextScale: number; wallpaper: 'orbital' | 'grid' | 'none' | 'custom' | 'video'; wallpaperImageData: string; wallpaperVideoPath?: string; wallpaperVideoName?: string;
   buttonShape: 'soft' | 'square' | 'pill'; interfaceEffect: 'signal' | 'glow' | 'scanline' | 'none';

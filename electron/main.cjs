@@ -9,6 +9,8 @@ const { MAX_CRX_BYTES, unpackCrx } = require('./crx.cjs');
 const { extractCypherPackage } = require('./cypher-package.cjs');
 const modPackage = require('./mod-package.cjs');
 const { createPrivacyServices } = require('./privacy-services.cjs');
+const { createErrorReporter } = require('./error-reports.cjs');
+const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
 const privacyServices = createPrivacyServices({ app });
@@ -27,6 +29,25 @@ let trackerEngine = null;
 let adEngine = null;
 let trackerList = { available: false, adsAvailable: false, name: 'EasyList + EasyPrivacy', source: 'https://easylist.to/', lastModified: '', networkRuleCount: 0, adRuleCount: 0, blockedRequests: 0, blockedAds: 0, blockedTrackers: 0, bySite:{} };
 let trackerCountTimer = null;
+let errorReporter = null;
+process.on('uncaughtException', error => { console.error('Erro não tratado no processo principal:', error); errorReporter?.record('main', error); });
+process.on('unhandledRejection', reason => { console.error('Promessa rejeitada sem tratamento:', reason); errorReporter?.record('promise', reason); });
+function updateConfig() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'update-config.json'), 'utf8')) || {}; } catch { return {}; }
+}
+// O instalador grava a escolha de relatórios de erro no registro; ela é importada uma única vez.
+function importInstallerConsent() {
+  if (process.platform !== 'win32' || store.errorReportConsentImported) return;
+  store.errorReportConsentImported = true; persist();
+  execFile('reg', ['query', 'HKCU\\Software\\Cypher', '/v', 'SendErrorReports'], { windowsHide: true, timeout: 4000 }, (error, stdout) => {
+    if (error || !/SendErrorReports\s+REG_DWORD\s+0x1\b/i.test(String(stdout))) return;
+    store.settings = sanitizeSettings({ sendErrorReports: true }, store.settings); persist(); emit();
+  });
+}
+function syncInstallerConsent(enabled) {
+  if (process.platform !== 'win32') return;
+  execFile('reg', ['add', 'HKCU\\Software\\Cypher', '/v', 'SendErrorReports', '/t', 'REG_DWORD', '/d', enabled ? '1' : '0', '/f'], { windowsHide: true, timeout: 4000 }, () => {});
+}
 try {
   const userDataPath = app.getPath('userData');
   let startupProfileId = 'default';
@@ -265,7 +286,7 @@ function loadStore(profileId = activeProfileId) {
   if (saved.homeData?.notes && typeof saved.homeData.notes === 'object') for (const [id,value] of Object.entries(saved.homeData.notes)) {
     if (typeof value === 'string' && id !== '__proto__') notes[id] = value.slice(0,20000);
   }
-  store = { settings: sanitizeSettings(saved.settings), bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], passwords: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
+  store = { settings: sanitizeSettings(saved.settings), errorReportConsentImported: saved.errorReportConsentImported === true, bookmarks: [], history: [], downloads: [], extensions: [], sitePermissions: [], passwords: [], mods: [], savedTabs: Array.isArray(saved.savedTabs) ? saved.savedTabs : [],
     activeWorkspaceId: typeof saved.activeWorkspaceId === 'string' ? saved.activeWorkspaceId.slice(0,80) : 'personal',
     workspaces: Array.isArray(saved.workspaces) ? saved.workspaces.slice(0,30).flatMap(item => item && typeof item.id === 'string' && typeof item.name === 'string' ? [{ id:item.id.slice(0,80), name:item.name.trim().slice(0,48) || 'Espaço', color:/^#[\da-f]{6}$/i.test(item.color) ? item.color : '#78d9ee', tabs:Array.isArray(item.tabs) ? item.tabs.slice(0,100).flatMap(tab => { try { const url = new URL(tab.url); return ['http:','https:'].includes(url.protocol) ? [{ url:url.href, title:String(tab.title || url.hostname).slice(0,180), pinned:tab.pinned === true, group:typeof tab.group === 'string' ? tab.group.slice(0,50) : '' }] : []; } catch { return []; } }) : [] }] : []) : [],
     researchItems: Array.isArray(saved.researchItems) ? saved.researchItems.slice(0,1000).flatMap(item => { try { const url = new URL(item.url); return ['http:','https:'].includes(url.protocol) && typeof item.id === 'string' ? [{ id:item.id.slice(0,80), url:url.href, title:String(item.title || url.hostname).slice(0,180), note:String(item.note || '').slice(0,5000), tags:Array.isArray(item.tags) ? item.tags.filter(tag => typeof tag === 'string').slice(0,8).map(tag => tag.slice(0,32)) : [], savedAt:Number.isFinite(item.savedAt) ? item.savedAt : Date.now(), read:item.read === true }] : []; } catch { return []; } }) : [],
@@ -991,7 +1012,7 @@ function protonExtensionDirectory() {
 async function loadBuiltInProtonVpn() {
   const ses = session.fromPartition(normalPartition());
   try {
-    if (ses.extensions.get(protonExtensionId)) { protonExtensionReady = true; return true; }
+    if (ses.extensions.getExtension(protonExtensionId)) { protonExtensionReady = true; return true; }
     ses.registerPreloadScript({ type:'frame', filePath:path.join(__dirname, 'proton-preload.cjs') });
     const loaded = await ses.extensions.loadExtension(protonExtensionDirectory(), { allowFileAccess:false });
     if (loaded.id !== protonExtensionId) {
@@ -1476,7 +1497,7 @@ async function loadStoredExtensions() {
     if (!extension.enabled) continue;
     if (extension.id === protonExtensionId) { extension.error = 'Já incluída no Cypher'; continue; }
     try {
-      const loaded = ses.extensions.get(extension.id) || await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
+      const loaded = ses.extensions.getExtension(extension.id) || await ses.extensions.loadExtension(extension.path, { allowFileAccess: false });
       extension.id = loaded.id;
       extension.name = String(loaded.name || extension.name).slice(0,128);
       extension.version = String(loaded.version || extension.version).slice(0,40);
@@ -1660,6 +1681,7 @@ function setSettings(payload) {
   const previous = store.settings;
   const previousShortcuts = JSON.stringify(previous.shortcuts || {});
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
+  if (previous.sendErrorReports !== store.settings.sendErrorReports) syncInstallerConsent(store.settings.sendErrorReports);
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
     store.settings.wallpaperVideoName = previous.wallpaperVideoName || '';
@@ -2193,6 +2215,19 @@ async function command(action, payload) {
       const url = `https://translate.google.com/translate?sl=auto&tl=${encodeURIComponent(targetLanguage)}&u=${encodeURIComponent(tab.url)}`;
       return addTab(url, tab.private, tab.connectionMode);
     }
+    case 'diagnostics:list': return { reports: errorReporter?.list() || [], canSend: errorReporter?.canSend === true };
+    case 'diagnostics:clear': errorReporter?.clear(); return { reports: [] };
+    case 'diagnostics:report': {
+      const message = String(payload?.message || '').slice(0, 2000);
+      if (message) errorReporter?.record('interface', { message, stack: String(payload?.stack || '').slice(0, 8000) });
+      return { recorded: Boolean(message) };
+    }
+    case 'diagnostics:issue': {
+      const url = errorReporter?.issueUrl(String(updateConfig().repository || ''), String(payload || ''));
+      if (!url) throw new Error('Relatório não encontrado.');
+      await shell.openExternal(url);
+      return { opened: true };
+    }
     case 'update:check': return updater.check();
     case 'update:install': return updater.downloadAndInstall();
     case 'update:dismiss': return updater.dismiss();
@@ -2454,6 +2489,11 @@ app.whenReady().then(async () => {
   loadBuiltinMods();
   loadStore();
   applyNativeTheme();
+  importInstallerConsent();
+  errorReporter = createErrorReporter({ directory: app.getPath('userData'), version: app.getVersion(), enabled: () => store?.settings.sendErrorReports === true,
+    endpoint: String(updateConfig().errorReportEndpoint || ''), fetchImpl: (url, init) => net.fetch(url, init) });
+  app.on('child-process-gone', (_event, details) => { if (!['clean-exit','killed'].includes(details.reason)) errorReporter.record('process-crash', new Error(`Processo ${details.type} encerrado: ${details.reason}`), { detail: `código ${details.exitCode}` }); });
+  app.on('render-process-gone', (_event, _contents, details) => { if (!['clean-exit','killed'].includes(details.reason)) errorReporter.record('page-crash', new Error(`Página encerrada: ${details.reason}`), { detail: `código ${details.exitCode}` }); });
   registerProtonIpcBridge();
   await loadBuiltInProtonVpn();
   mediaTimer = setInterval(() => {
