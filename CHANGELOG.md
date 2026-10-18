@@ -1,6 +1,8 @@
 # Cypher — novidades
 
 ## [Unreleased]
+
+## [0.7.26] - 2026-10-17
 - Paleta de comandos (Ctrl Shift A) pesquisa abas abertas, favoritos, histórico e ações do navegador, com navegação pelo teclado.
 - O menu de contexto das abas abre junto ao cursor e ganhou Recarregar, Duplicar, Copiar endereço, Fechar outras abas e Reabrir aba fechada; Ctrl 1–9 seleciona abas.
 - Localizar na página mostra a posição e o total de resultados; Shift Enter volta ao resultado anterior.
