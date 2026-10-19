@@ -81,11 +81,13 @@ function Passwords({ tabs, activeTabId, command, settings: s, onSettings }: Sect
 }
 
 export default function Privacy(props: SectionProps) {
-  const { settings: s, onSettings, command, trackerProtection, privacyStats, sitePermissions } = props;
+  const { settings: s, onSettings, command, trackerProtection, privacyStats, sitePermissions, safeBrowsing } = props;
+  const safeDetail = !safeBrowsing?.available ? 'Chega numa próxima compilação oficial' : safeBrowsing.ready ? `Google Safe Browsing · ${safeBrowsing.prefixes.toLocaleString('pt-BR')} registros na lista local` : s.safeBrowsing ? 'Baixando a lista local…' : 'Google Safe Browsing, sem enviar os endereços';
   return <>
     <Block id="privacy-report" title="Resumo da semana" wide><PrivacyReport stats={privacyStats} protection={trackerProtection}/></Block>
 
     <Panel id="privacy-blocking" eyebrow="BLOQUEIOS" title="O que o Cypher barra" icon={ShieldCheck}>
+      <Row id="privacy-safe-browsing" title="Sites perigosos" detail={safeDetail}><Switch label="Avisar sobre sites perigosos" checked={s.safeBrowsing && !!safeBrowsing?.available} disabled={!safeBrowsing?.available} onChange={() => onSettings({ safeBrowsing: !s.safeBrowsing })}/></Row>
       <Row id="privacy-ad-block" title="Anúncios" detail="EasyList e domínios de publicidade"><Switch label="Bloquear anúncios" checked={s.blockAds} onChange={() => onSettings({ blockAds: !s.blockAds })}/></Row>
       <Row id="privacy-tracker-block" title="Rastreadores" detail={trackerProtection.available ? `${trackerProtection.networkRuleCount.toLocaleString('pt-BR')} regras EasyPrivacy` : (trackerProtection.error || 'Lista indisponível nesta compilação')}><Switch label="Bloqueio de rastreadores" checked={s.blockTrackers} disabled={!trackerProtection.available} onChange={() => onSettings({ blockTrackers: !s.blockTrackers })}/></Row>
       <Row id="privacy-popups" title="Pop-ups e pop-unders" detail="Permita sites pelo ícone ao lado do endereço"><Switch label="Bloquear pop-ups e pop-unders" checked={s.blockPopups} onChange={() => onSettings({ blockPopups: !s.blockPopups })}/></Row>

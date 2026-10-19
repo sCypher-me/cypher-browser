@@ -47,6 +47,10 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(state.passwordPrompt, null);
     assert.ok(Array.isArray(await invoke('import:detect')));
     assert.deepEqual(await invoke('password:never:list'), []);
+    // Etapa 2: estado do Safe Browsing e do Widevine sempre presente; volume por aba começa em 100%.
+    assert.equal(typeof state.safeBrowsing.available, 'boolean');
+    assert.equal(typeof state.drm.available, 'boolean');
+    assert.ok(state.tabs.every(tab => tab.volume === 1));
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-home.png'), (await win.webContents.capturePage()).toPNG());

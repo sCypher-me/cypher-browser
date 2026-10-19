@@ -1,4 +1,4 @@
-import type { BrowserExtension, BrowserProfile, ConnectionMode, DailyPrivacyStats, ProfileSyncStatus, Settings, SitePermission, SkinPackage, Tab, TrackerProtectionStatus, UpdateStatus } from '../types';
+import type { BrowserExtension, BrowserProfile, ConnectionMode, DailyPrivacyStats, DrmStatus, SafeBrowsingStatus, ProfileSyncStatus, Settings, SitePermission, SkinPackage, Tab, TrackerProtectionStatus, UpdateStatus } from '../types';
 import type { InternalPage, LegacySection, SettingsSection } from '../navigation';
 
 export type Command = (action: string, payload?: unknown) => Promise<any>;
@@ -19,6 +19,8 @@ export type CentralProps = {
   profileId: string;
   extensions: BrowserExtension[];
   connectionMode: ConnectionMode;
+  safeBrowsing?: SafeBrowsingStatus;
+  drm?: DrmStatus;
   onSettings: (patch: Partial<Settings>) => void;
   command: Command;
   navigate: (page: InternalPage, options?: { category?: SettingsSection | LegacySection; focusId?: string }) => void;

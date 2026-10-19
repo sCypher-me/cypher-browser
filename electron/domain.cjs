@@ -11,7 +11,7 @@ const defaults = {
   openLinksInNewTab: true, showSearchSuggestions: true, sendDoNotTrack: false,
   blockAds: true, blockTrackers: true, blockThirdPartyCookies: false,
   blockPopups: true, popupExceptions: [],
-  passwordAutofillEnabled: false, passwordSavePrompt: true, passwordLeakCheck: false, httpsMode: 'upgrade', trackingExceptions: [],
+  passwordAutofillEnabled: false, passwordSavePrompt: true, passwordLeakCheck: false, httpsMode: 'upgrade', safeBrowsing: true, autoPictureInPicture: false, trackingExceptions: [],
   preferredLanguages: ['pt-BR','en-US'], spellCheckEnabled: true, spellCheckLanguages: ['pt-BR'], translationEnabled: true,
   hardwareAcceleration: true, webrtcPolicy: 'default',
   showBookmarksBar: false, suggestBookmarks: true, suggestHistory: true,
@@ -104,7 +104,7 @@ function sanitizeSettings(input = {}, base = defaults) {
   for (const [key, values] of Object.entries({ httpsMode: ['upgrade','strict','off'], updateChannel: ['stable','preview'], skin: ['recorte','classic'], tabPosition: ['side','top'], appearanceMode: ['dark','light','system'], toolbarPosition: ['top','bottom'], font: ['system','mono'], wallpaper: ['orbital','grid','none','custom','video'], buttonShape: ['soft','square','pill'], interfaceEffect: ['signal','glow','scanline','none'], soundTheme: ['cypher','soft','arcade'], searchEngine: [...Object.keys(engines),'custom'], connectionMode: ['normal','tor','i2p'], startupMode: ['home','restore','specific'], webrtcPolicy: ['default','default_public_and_private_interfaces','default_public_interface_only','disable_non_proxied_udp'] })) {
     if (values.includes(input[key])) output[key] = input[key];
   }
-  for (const key of ['passwordSavePrompt','passwordLeakCheck','sendErrorReports','modSoundsEnabled','modMusicEnabled','modPageEffects','tabsAutoHide','showRail','workspaceAccent','blockCookieBanners','motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
+  for (const key of ['safeBrowsing','autoPictureInPicture','passwordSavePrompt','passwordLeakCheck','sendErrorReports','modSoundsEnabled','modMusicEnabled','modPageEffects','tabsAutoHide','showRail','workspaceAccent','blockCookieBanners','motion','compact','restoreSession','showHomeFirst','openLinksInNewTab','showSearchSuggestions','sendDoNotTrack','blockAds','blockTrackers','blockThirdPartyCookies','blockPopups','passwordAutofillEnabled','spellCheckEnabled','translationEnabled','hardwareAcceleration','showBookmarksBar','suggestBookmarks','suggestHistory','clearDataOnExit','clearHistoryOnExit','confirmCloseWithMultipleTabs','startWithWindows','soundEffectsEnabled','backgroundMusicEnabled','memorySaverEnabled']) if (typeof input[key] === 'boolean') output[key] = input[key];
   if (Number.isFinite(input.memorySaverMinutes)) output.memorySaverMinutes = Math.max(5, Math.min(120, Math.round(input.memorySaverMinutes)));
   if (Array.isArray(input.trackingExceptions)) output.trackingExceptions = [...new Set(input.trackingExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
   if (Array.isArray(input.popupExceptions)) output.popupExceptions = [...new Set(input.popupExceptions.filter(value => typeof value === 'string' && value.length <= 253 && /^[a-z\d.-]+$/i.test(value)).map(value => value.toLowerCase()))].slice(0,500);
@@ -189,6 +189,7 @@ function validateMod(input) {
   settings.passwordSavePrompt = defaults.passwordSavePrompt;
   settings.passwordLeakCheck = defaults.passwordLeakCheck;
   settings.httpsMode = defaults.httpsMode;
+  settings.safeBrowsing = defaults.safeBrowsing;
   settings.trackingExceptions = defaults.trackingExceptions;
   settings.preferredLanguages = defaults.preferredLanguages;
   settings.spellCheckEnabled = defaults.spellCheckEnabled;

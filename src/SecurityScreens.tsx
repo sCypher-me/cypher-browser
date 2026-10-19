@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { ArrowLeft, Ban, CircleAlert, Frown, KeyRound, LockKeyholeOpen, RotateCw, Search, SearchX, ServerOff, ShieldAlert, TimerOff, Unplug, Waypoints, WifiOff, X } from 'lucide-react';
+import { ArrowLeft, Ban, Biohazard, CircleAlert, Frown, KeyRound, LockKeyholeOpen, RotateCw, Search, SearchX, ServerOff, ShieldAlert, TimerOff, Unplug, Waypoints, WifiOff, X } from 'lucide-react';
 import type { PasswordPrompt, Tab, TabErrorKind } from './types';
 
 type Act = (action: string, payload?: unknown) => Promise<unknown>;
@@ -16,9 +16,17 @@ const CERTIFICATE_REASONS: Record<number, string> = {
 
 interface ScreenCopy { eyebrow: string; title: ReactNode; body: ReactNode; icon: typeof CircleAlert; danger?: boolean; tips?: string[] }
 
-function copyFor(kind: TabErrorKind, host: string, code: number, fallback: string): ScreenCopy {
+const THREATS: Record<string, { title: string; body: (site: ReactNode) => ReactNode }> = {
+  SOCIAL_ENGINEERING: { title: 'Site enganoso à frente.', body: site => <>{site} pode tentar fazer você instalar programas perigosos ou entregar senhas, cartões e dados pessoais.</> },
+  MALWARE: { title: 'Este site pode infectar o computador.', body: site => <>{site} pode instalar programas que roubam ou apagam informações do seu computador.</> },
+  UNWANTED_SOFTWARE: { title: 'Este site oferece programas indesejados.', body: site => <>{site} pode tentar instalar programas que mudam o navegador ou exibem anúncios sem pedir.</> },
+  POTENTIALLY_HARMFUL_APPLICATION: { title: 'Este site distribui aplicativos nocivos.', body: site => <>Os aplicativos oferecidos por {site} podem ser perigosos.</> },
+};
+
+function copyFor(kind: TabErrorKind, host: string, code: number, fallback: string, threat = ''): ScreenCopy {
   const site = <strong>{host || 'este site'}</strong>;
   switch (kind) {
+    case 'dangerous': { const known = THREATS[threat] || { title: 'Site perigoso à frente.', body: (where: ReactNode) => <>O Google Safe Browsing marcou {where} como perigoso.</> }; return { eyebrow: 'SITE PERIGOSO', icon: Biohazard, danger: true, title: known.title, body: known.body(site) }; }
     case 'certificate': return { eyebrow: 'CONEXÃO NÃO PRIVADA', icon: ShieldAlert, danger: true, title: 'Esta conexão não é segura.', body: <>Alguém pode estar tentando se passar por {site} para roubar senhas, mensagens ou cartões. O certificado de segurança do site {CERTIFICATE_REASONS[code] || 'não pôde ser verificado'}.</> };
     case 'https': return { eyebrow: 'SEM HTTPS', icon: LockKeyholeOpen, danger: true, title: 'Este site não oferece conexão segura.', body: <>O modo somente HTTPS tentou abrir {site} com criptografia, mas o site não respondeu assim. Se continuar, o que você enviar poderá ser visto por outras pessoas na rede.</> };
     case 'ssl': return { eyebrow: 'FALHA NA CRIPTOGRAFIA', icon: ShieldAlert, danger: true, title: 'Não deu para criar uma conexão segura.', body: <>{site} usa uma configuração de segurança antiga ou incompatível. Não há como abrir a página com proteção.</>, tips: ['Confira se a data e a hora do Windows estão certas.', 'Se for um site da sua empresa, avise o suporte.'] };
@@ -38,7 +46,7 @@ export function ErrorScreen({ tab, act, onSettings, trackingExceptions }: { tab:
   const info = tab.errorInfo;
   const kind: TabErrorKind = info?.kind || 'generic';
   const host = info?.host || '';
-  const copy = copyFor(kind, host, info?.code || 0, tab.error || '');
+  const copy = copyFor(kind, host, info?.code || 0, tab.error || '', info?.threat);
   const Icon = copy.icon;
   const primary = useRef<HTMLButtonElement>(null);
   useEffect(() => { primary.current?.focus({ preventScroll: true }); }, [tab.id, kind]);
@@ -71,7 +79,8 @@ export function ErrorScreen({ tab, act, onSettings, trackingExceptions }: { tab:
         {info?.url && <code className="sec-url">{info.url}</code>}
         {kind === 'certificate' && <p>Só continue se você conhece este site e sabe por que o certificado falhou (por exemplo, um equipamento da sua rede). A liberação vale até fechar o Cypher.</p>}
         {kind === 'https' && <p>A versão sem criptografia fica liberada para {host} até fechar o Cypher.</p>}
-        {(kind === 'certificate' || kind === 'https') && <button type="button" className="sec-link-danger" onClick={() => void act('security:proceed', { tabId: tab.id })}>{kind === 'certificate' ? `Continuar para ${host} (não seguro)` : `Abrir ${host} sem HTTPS`}</button>}
+        {kind === 'dangerous' && <p>Aviso do Google Safe Browsing. O endereço não sai do computador: o Cypher compara pedaços de hash com uma lista local. Se você confia neste site, pode abri-lo até fechar o Cypher.</p>}
+        {(kind === 'certificate' || kind === 'https' || kind === 'dangerous') && <button type="button" className="sec-link-danger" onClick={() => void act('security:proceed', { tabId: tab.id })}>{kind === 'certificate' ? `Continuar para ${host} (não seguro)` : kind === 'dangerous' ? `Ignorar o aviso e abrir ${host}` : `Abrir ${host} sem HTTPS`}</button>}
       </details>
     </div>
   </div>;

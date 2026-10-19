@@ -1,6 +1,32 @@
-// Roda no mundo isolado das abas normais. Percebe quando a pessoa envia um login e avisa o
-// processo principal, que decide se oferece salvar a senha. A página não enxerga este script.
-const { ipcRenderer } = require('electron');
+// Roda no mundo isolado das abas. Percebe quando a pessoa envia um login e avisa o processo
+// principal (que só oferece salvar em abas normais) e aplica o volume da aba. A página não
+// enxerga este script.
+const { ipcRenderer, webFrame } = require('electron');
+
+// Volume por aba: multiplica o volume que o próprio site escolheu. O ajuste só é instalado na
+// página quando o volume sai de 100%, para não mudar nada nos sites que não usam o recurso.
+const volumeHook = `(() => {
+  if (window[Symbol.for('cypher.volume')]) return;
+  const native = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'volume');
+  const chosen = new WeakMap();
+  let factor = 1;
+  const base = element => chosen.has(element) ? chosen.get(element) : native.get.call(element);
+  const apply = element => { const value = base(element); chosen.set(element, value); native.set.call(element, Math.max(0, Math.min(1, value * factor))); };
+  Object.defineProperty(HTMLMediaElement.prototype, 'volume', { configurable: true, enumerable: true,
+    get() { return base(this); },
+    set(value) { native.set.call(this, Math.max(0, Math.min(1, Number(value) * factor))); chosen.set(this, Number(value)); } });
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () { apply(this); return play.apply(this, arguments); };
+  document.addEventListener('play', event => { if (event.target instanceof HTMLMediaElement) apply(event.target); }, true);
+  Object.defineProperty(window, Symbol.for('cypher.volume'), { value: next => { factor = next; document.querySelectorAll('audio, video').forEach(apply); } });
+})()`;
+let volumeInstalled = false;
+ipcRenderer.on('cypher:volume', (_event, value) => {
+  const factor = Number(value);
+  if (!Number.isFinite(factor) || (!volumeInstalled && factor === 1)) return;
+  if (!volumeInstalled) { volumeInstalled = true; void webFrame.executeJavaScript(volumeHook); }
+  void webFrame.executeJavaScript(`window[Symbol.for('cypher.volume')](${Math.max(0, Math.min(1, factor))})`);
+});
 
 let lastKey = '', lastAt = 0;
 

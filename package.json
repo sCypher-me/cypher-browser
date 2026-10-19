@@ -1,7 +1,7 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.38",
+  "version": "0.7.39",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
@@ -46,6 +46,7 @@
     "appId": "app.cypher.browser",
     "productName": "Cypher",
     "npmRebuild": false,
+    "afterPack": "scripts/vmp-sign.cjs",
     "directories": {
       "output": "release"
     },

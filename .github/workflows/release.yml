@@ -29,6 +29,23 @@ jobs:
           cache: npm
       - name: Instalar dependências
         run: npm ci
+      - name: Electron com Widevine (castLabs), quando há credenciais EVS
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+          CASTLABS_ELECTRON: v44.5.1+wvcus
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:EVS_ACCOUNT_NAME) -or [string]::IsNullOrWhiteSpace($env:EVS_PASSWD)) {
+            Write-Host "Sem credenciais EVS: compilação sem Widevine."
+            exit 0
+          }
+          npm install --no-save --ignore-scripts=false "electron@https://github.com/castlabs/electron-releases#$env:CASTLABS_ELECTRON"
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao instalar o Electron da castLabs." }
+          python -m pip install --upgrade castlabs-evs
+          python -m castlabs_evs.account reauth -A $env:EVS_ACCOUNT_NAME -P $env:EVS_PASSWD
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao autenticar na conta EVS da castLabs." }
+          "CYPHER_WIDEVINE=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Verificar sintaxe e tipos
         run: npm run check
       - name: Executar testes unitários
@@ -43,6 +60,7 @@ jobs:
         env:
           CYPHER_UPDATE_SIGNING_PUBLIC_KEY: ${{ vars.CYPHER_UPDATE_SIGNING_PUBLIC_KEY }}
           CYPHER_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.CYPHER_UPDATE_SIGNING_PRIVATE_KEY }}
+          CYPHER_SAFE_BROWSING_KEY: ${{ secrets.SAFE_BROWSING_API_KEY }}
         shell: pwsh
         run: |
           $package = Get-Content package.json -Raw | ConvertFrom-Json
@@ -52,7 +70,7 @@ jobs:
           $hasPrivateKey = -not [string]::IsNullOrWhiteSpace($env:CYPHER_UPDATE_SIGNING_PRIVATE_KEY)
           if ($hasPublicKey -ne $hasPrivateKey) { throw "Configure juntos CYPHER_UPDATE_SIGNING_PUBLIC_KEY (Actions variable) e CYPHER_UPDATE_SIGNING_PRIVATE_KEY (Actions secret)." }
           if (-not $hasPublicKey) { throw "A publicação exige assinatura Ed25519. Configure CYPHER_UPDATE_SIGNING_PUBLIC_KEY (Actions variable) e CYPHER_UPDATE_SIGNING_PRIVATE_KEY (Actions secret)." }
-          @{ repository = $env:GITHUB_REPOSITORY; updateSigningPublicKey = $env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
+          @{ repository = $env:GITHUB_REPOSITORY; updateSigningPublicKey = $env:CYPHER_UPDATE_SIGNING_PUBLIC_KEY; safeBrowsingApiKey = "$env:CYPHER_SAFE_BROWSING_KEY" } | ConvertTo-Json -Compress | Set-Content electron/update-config.json -Encoding utf8
       - name: Compilar a interface do Cypher
         run: npm run build
       - name: Conferir listas de bloqueio compiladas
@@ -60,7 +78,16 @@ jobs:
       - name: Executar smoke tests do navegador
         run: npm run test:smoke
       - name: Gerar aplicativo Windows e versão portátil
-        run: npx electron-builder --win dir portable --publish never
+        shell: pwsh
+        run: |
+          if ($env:CYPHER_WIDEVINE -eq '1') {
+            # Usa o Electron da castLabs já instalado; o gancho afterPack assina o VMP.
+            $electronVersion = (Get-Content node_modules/electron/package.json -Raw | ConvertFrom-Json).version -replace '\+.*$', ''
+            npx electron-builder --win dir portable --publish never "-c.electronDist=node_modules/electron/dist" "-c.electronVersion=$electronVersion"
+          } else {
+            npx electron-builder --win dir portable --publish never
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar o aplicativo." }
       - name: Compilar o instalador autoral Cypher
         run: node scripts/build-installer.cjs
       - name: Gerar manifestos de atualização (canal, versão mínima e notas)
