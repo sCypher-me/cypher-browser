@@ -83,3 +83,15 @@
 .app .address-insecure-label { font-size: var(--ui-font-11, 11px); font-weight: 600; white-space: nowrap; }
 [data-skin="recorte"] .address-status.is-insecure { border-radius: 0; }
 .app[data-appearance="light"] .address-status.is-insecure { color: #b3261e; }
+
+/* Menu da aba: volume */
+.app .menu-volume { display: grid; grid-template-columns: 16px auto 1fr 38px; align-items: center; gap: 10px; padding: 8px 12px; color: #a4afa0; font-size: var(--ui-font-11, 11px); }
+.app .menu-volume-icon { display: grid; color: #7b8976; }
+.app .menu-volume-label { white-space: nowrap; }
+.app .menu-volume input { width: 100%; min-width: 60px; accent-color: var(--accent); }
+.app .menu-volume output { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+.app[data-appearance="light"] .menu-volume { color: var(--text); }
+
+/* Central: selo de estado */
+.central .sc-status-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; color: var(--muted); border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); font-size: var(--ui-font-11, 11px); font-weight: 600; letter-spacing: .4px; text-transform: uppercase; }
+.central .sc-status-pill.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }

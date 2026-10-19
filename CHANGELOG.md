@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.7.39] - 2026-10-18
+- [Novo★] Vídeo em janela flutuante: tire o vídeo da página e deixe-o por cima de tudo, pelo menu da aba, pela barra de endereço ou sozinho ao trocar de aba. {abas}
+- [Novo★] Volume por aba: deixe cada aba mais alta ou mais baixa pelo menu da aba, sem mexer no volume do Windows. {abas}
+- [Novo] Aviso de sites perigosos: o Cypher compara os endereços com a lista do Google Safe Browsing guardada no computador, sem enviar o que você visita. Liga assim que a compilação oficial trouxer a chave. {privacidade}
+- [Novo] Preparação para Netflix, Disney+ e Spotify: as compilações com o módulo Widevine passam a funcionar com conteúdo protegido.
+- [Melhorado] A barra de endereço mostra “Não seguro” também nos sites marcados como perigosos.
+
 ## [0.7.38] - 2026-10-18
 - [Novo★] Importar de outro navegador: traga favoritos e histórico do Chrome, Edge, Brave, Vivaldi, Opera ou Firefox em um clique, em Configurações → Perfil e dados. {configuracoes}
 - [Novo★] Salvar senha ao entrar: depois do login, o Cypher pergunta se quer guardar a senha no cofre local, e oferece atualizar quando ela muda. {privacidade}

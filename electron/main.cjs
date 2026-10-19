@@ -15,6 +15,7 @@ const { createErrorReporter } = require('./error-reports.cjs');
 const { normalizePasswordOrigin, passwordsFromCsv, sha1Hex, pwnedCountForHash } = require('./password-tools.cjs');
 const browserImport = require('./importers.cjs');
 const { classifyLoadError, errorName, createHttpsUpgrader } = require('./https-mode.cjs');
+const { createSafeBrowsing } = require('./safe-browsing.cjs');
 const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -93,6 +94,11 @@ let viewport = { x: 248, y: 106, width: 900, height: 650 }, obscured = false;
 let split = null, openPanelId = '', panelBounds = null, statsTimer = null;
 const panelViews = new Map();
 const httpsUpgrader = createHttpsUpgrader();
+// Safe Browsing: serviço criado no whenReady; avisos pendentes por aba e sites liberados na sessão.
+let safeBrowsing = null;
+const dangerousPages = new Map(), dangerAllowed = new Set();
+// Widevine só existe no Electron da castLabs (compilações com as credenciais EVS).
+const drm = { available: false, ready: false, error: '' };
 const certificateExceptions = new Set();
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
@@ -677,6 +683,8 @@ function snapshot() {
     hardwareAccelerationPending: store.settings.hardwareAcceleration !== hardwareAccelerationAtLaunch,
     onboarding,
     passwordPrompt: passwordPromptSnapshot(),
+    safeBrowsing: safeBrowsing?.status() || { available: false, ready: false, lists: 0, prefixes: 0, lastUpdate: 0, error: '' },
+    drm,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
@@ -1037,6 +1045,10 @@ function selectTab(id) {
   const target = tabs.find(tab => tab.id === id);
   if (!target) return;
   const previous = active(); if (previous && previous.id !== target.id) previous.lastActiveAt = Date.now();
+  if (store.settings.autoPictureInPicture && previous && previous.id !== target.id) {
+    if (previous.mediaPlaying && !previous.pictureInPicture) void pictureInPicture(previous, 'open');
+    if (target.pictureInPicture) void pictureInPicture(target, 'close');
+  }
   if (!target.private && target.connectionMode === 'normal' && target.workspaceId && store.workspaces.some(item => item.id === target.workspaceId)) store.activeWorkspaceId = target.workspaceId;
   target.lastActiveAt = Date.now();
   activeId = id;
@@ -1239,7 +1251,7 @@ function addTab(address = 'cypher://newtab', isPrivate = false, connectionMode =
   const url = resolveAddress(address, store.settings.searchEngine, store.settings.customSearchUrl);
   if (!['normal','tor','i2p'].includes(connectionMode)) connectionMode = store.settings.connectionMode;
   const tab = { id: randomUUID(), title: 'Nova aba', url: 'cypher://newtab', private: !!isPrivate,
-    connectionMode, pinned: false, muted: false, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null,
+    connectionMode, pinned: false, muted: false, volume: 1, audible: false, loading: false, canGoBack: false, canGoForward: false, zoom: 1, error: null,
     workspaceId:!isPrivate && connectionMode === 'normal' ? store.activeWorkspaceId : undefined, group:'', suspended:false, lastActiveAt:Date.now(),
     containerId: !isPrivate && connectionMode === 'normal' && store.settings.containers.some(item => item.id === options.containerId) ? options.containerId : '' };
   tabs.push(tab); if (activate || !activeId) activeId = tab.id;
@@ -1371,7 +1383,18 @@ function setupSession(ses, mode = 'normal') {
         }
       }
     } catch {}
-    callback(blocked ? { cancel: true } : {});
+    if (blocked || details.resourceType !== 'mainFrame' || mode !== 'normal' || !safeBrowsing?.available || !store.settings.safeBrowsing) return callback(blocked ? { cancel: true } : {});
+    let host = '';
+    try { host = new URL(details.url).hostname.toLowerCase(); } catch {}
+    if (dangerAllowed.has(host)) return callback({});
+    const webContentsId = details.webContentsId ?? details.webContents?.id;
+    const timeout = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+    // Sem coincidência na lista local a resposta é imediata; em caso de falha a página abre (falha aberta).
+    void Promise.race([safeBrowsing.check(details.url).catch(() => null), timeout]).then(threat => {
+      if (!threat) return callback({});
+      dangerousPages.set(webContentsId, { url: details.url, threatType: threat.threatType });
+      callback({ cancel: true });
+    });
   });
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     const requestHeaders = { ...details.requestHeaders };
@@ -1650,8 +1673,8 @@ function attachView(tab) {
   const ses = session.fromPartition(sessionPartition(tab));
   setupSession(ses, tab.connectionMode);
   void prepareProxy(tab, ses).catch(error => showTabError(tab, 'route', { description: `Não foi possível configurar ${tab.connectionMode}: ${error.message}` }));
-  const loginWatcher = !tab.private && tab.connectionMode === 'normal' ? { preload: path.join(__dirname, 'tab-preload.cjs') } : {};
-  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, ...loginWatcher } });
+  // O preload das abas cuida do volume e percebe logins (o principal ignora logins fora das abas normais).
+  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, preload: path.join(__dirname, 'tab-preload.cjs') } });
   tab.view = view;
   win.contentView.addChildView(view);
   const wc = view.webContents;
@@ -1683,7 +1706,7 @@ function attachView(tab) {
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.errorInfo = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
-  wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); tab.modCssKey = ''; void applyPageMods(tab); });
+  wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); tab.modCssKey = ''; void applyPageMods(tab); if (tab.volume !== 1) applyTabVolume(tab); });
   wc.on('focus', () => { if (split && [split.left, split.right].includes(tab.id) && activeId !== tab.id) { activeId = tab.id; emit(); } });
   wc.on('page-title-updated', (_event, title) => { tab.title = title; if (/^https?:\/\//i.test(tab.url)) tab.lastExternalTitle = title; update(tab); if (tab.mediaInfo) refreshMediaInfo(tab, tab.mediaPlaying); });
   wc.on('did-navigate', (_event, url) => {
@@ -1709,6 +1732,13 @@ function attachView(tab) {
   });
   wc.on('did-fail-load', (_event, code, description, failedUrl, mainFrame) => {
     if (!mainFrame || code === -3) return;
+    const danger = dangerousPages.get(wc.id);
+    if (danger) {
+      dangerousPages.delete(wc.id);
+      tab.url = danger.url;
+      showTabError(tab, 'dangerous', { url: danger.url, description: danger.threatType, threat: danger.threatType });
+      return;
+    }
     const fallback = httpsUpgrader.failed(failedUrl, code);
     if (fallback && store.settings.httpsMode !== 'strict') { httpsUpgrader.allowHttp(hostOf(fallback)); void wc.loadURL(fallback).catch(() => {}); return; }
     if (/^https?:\/\//i.test(failedUrl)) tab.url = fallback || failedUrl;
@@ -1748,11 +1778,36 @@ function attachView(tab) {
   });
   return view;
 }
+function applyTabVolume(tab) {
+  const wc = tab?.view?.webContents;
+  if (wc && !wc.isDestroyed()) wc.send('cypher:volume', tab.volume);
+}
+// Procura o vídeo em todos os quadros (vídeos incorporados ficam em iframes) e abre/fecha a janela flutuante.
+const pictureInPictureScript = mode => `(async () => {
+  if (document.pictureInPictureElement) { if (${JSON.stringify(mode)} === 'open') return 'open'; await document.exitPictureInPicture(); return 'closed'; }
+  if (${JSON.stringify(mode)} === 'close') return 'none';
+  const videos = [...document.querySelectorAll('video')].filter(video => video.readyState > 0 && !video.disablePictureInPicture && video.offsetWidth > 40)
+    .sort((a, b) => (Number(!b.paused) - Number(!a.paused)) || (b.offsetWidth * b.offsetHeight - a.offsetWidth * a.offsetHeight));
+  if (!videos[0]) return 'none';
+  await videos[0].requestPictureInPicture();
+  return 'open';
+})()`;
+async function pictureInPicture(tab, mode = 'toggle') {
+  const wc = tab?.view?.webContents;
+  if (!wc || wc.isDestroyed()) return 'none';
+  for (const frame of wc.mainFrame.framesInSubtree) {
+    try {
+      const result = await frame.executeJavaScript(pictureInPictureScript(mode), true);
+      if (result !== 'none') { tab.pictureInPicture = result === 'open'; emit(); return result; }
+    } catch {}
+  }
+  return 'none';
+}
 function hostOf(url) { try { return new URL(url).hostname.toLowerCase(); } catch { return ''; } }
 /** Tela de erro da aba: `error` continua sendo o texto técnico; `errorInfo` diz qual tela mostrar. */
-function showTabError(tab, kind, { code = 0, url = tab.url, description = '' } = {}) {
+function showTabError(tab, kind, { code = 0, url = tab.url, description = '', threat = '' } = {}) {
   tab.error = description ? `${description}${code ? ` (${code})` : ''}` : errorName(code);
-  tab.errorInfo = { kind, code, name: code ? errorName(code) : '', host: hostOf(url), url };
+  tab.errorInfo = { kind, code, name: code ? errorName(code) : '', host: hostOf(url), url, ...(threat ? { threat } : {}) };
   tab.loading = false; layout(); emit();
 }
 function navigate(tab, input, navigationOptions) {
@@ -1837,6 +1892,7 @@ function setSettings(payload) {
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
   if (previous.sendErrorReports !== store.settings.sendErrorReports) syncInstallerConsent(store.settings.sendErrorReports);
   if (previous.updateChannel !== store.settings.updateChannel) updater?.setChannel(store.settings.updateChannel);
+  if (previous.safeBrowsing !== store.settings.safeBrowsing) { if (store.settings.safeBrowsing) safeBrowsing?.start(); else safeBrowsing?.stop(); }
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
     store.settings.wallpaperVideoName = previous.wallpaperVideoName || '';
@@ -1931,8 +1987,9 @@ async function command(action, payload) {
     case 'security:proceed': {
       const target = tabs.find(item => item.id === payload?.tabId) || tab;
       const info = target?.errorInfo;
-      if (!info?.host || !['certificate','https'].includes(info.kind)) break;
+      if (!info?.host || !['certificate','https','dangerous'].includes(info.kind)) break;
       if (info.kind === 'certificate') certificateExceptions.add(info.host);
+      else if (info.kind === 'dangerous') dangerAllowed.add(info.host);
       else httpsUpgrader.allowHttp(info.host);
       navigate(target, info.url);
       return true;
@@ -2324,6 +2381,19 @@ async function command(action, payload) {
       break;
     }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
+    case 'tab:volume': {
+      const target = tabs.find(item => item.id === payload?.id);
+      const volume = Number(payload?.volume);
+      if (!target || !Number.isFinite(volume)) break;
+      target.volume = Math.round(Math.max(0, Math.min(1, volume)) * 100) / 100;
+      applyTabVolume(target); emit(); return target.volume;
+    }
+    case 'media:pip': {
+      const target = tabs.find(item => item.id === payload?.tabId) || tab;
+      const result = await pictureInPicture(target);
+      if (result === 'none') throw new Error('Nenhum vídeo nesta aba pode abrir em janela flutuante.');
+      return result;
+    }
     case 'tab:mute': { const target = tabs.find(t => t.id === payload); if (target) { target.muted = !target.muted; target.view?.webContents.setAudioMuted(target.muted); emit(); } break; }
     case 'media:window:toggle': toggleMediaPlayerWindow(); break;
     case 'media:window:close': if (playerWindow && !playerWindow.isDestroyed()) playerWindow.hide(); break;
@@ -2715,6 +2785,19 @@ app.whenReady().then(async () => {
     endpoint: String(updateConfig().errorReportEndpoint || ''), fetchImpl: (url, init) => net.fetch(url, init) });
   app.on('child-process-gone', (_event, details) => { if (!['clean-exit','killed'].includes(details.reason)) errorReporter.record('process-crash', new Error(`Processo ${details.type} encerrado: ${details.reason}`), { detail: `código ${details.exitCode}` }); });
   app.on('render-process-gone', (_event, _contents, details) => { if (!['clean-exit','killed'].includes(details.reason)) errorReporter.record('page-crash', new Error(`Página encerrada: ${details.reason}`), { detail: `código ${details.exitCode}` }); });
+  // Chave vem do update-config.json gerado pela CI; em desenvolvimento, de variáveis de ambiente.
+  safeBrowsing = createSafeBrowsing({
+    key: String(updateConfig().safeBrowsingApiKey || (!app.isPackaged && process.env.CYPHER_SAFE_BROWSING_KEY) || ''),
+    endpoint: (!app.isPackaged && process.env.CYPHER_SAFE_BROWSING_ENDPOINT) || undefined,
+    directory: app.getPath('userData'), clientVersion: app.getVersion(),
+    fetchImpl: (url, init) => net.fetch(url, init), log: message => console.warn('Safe Browsing:', message),
+  });
+  if (store.settings.safeBrowsing) safeBrowsing.start();
+  const { components } = require('electron');
+  if (components?.whenReady) {
+    drm.available = true;
+    components.whenReady().then(() => { drm.ready = true; emit(); }).catch(error => { drm.error = String(error?.message || error).slice(0, 300); emit(); });
+  }
   registerProtonIpcBridge();
   await loadBuiltInProtonVpn();
   mediaTimer = setInterval(() => {

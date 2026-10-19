@@ -3,7 +3,7 @@ import type { Settings } from '../types';
 import { Panel, Row, Switch } from '../settings-ui';
 import type { SectionProps } from './types';
 
-export default function System({ settings: s, onSettings, command, update, hardwareAccelerationPending }: SectionProps) {
+export default function System({ settings: s, onSettings, command, update, hardwareAccelerationPending, drm }: SectionProps) {
   const ready = update.state === 'ready';
   const busy = ['checking', 'downloading', 'installing', 'restarting'].includes(update.state);
   const preview = (s.updateChannel || update.channel) === 'preview';
@@ -45,6 +45,7 @@ export default function System({ settings: s, onSettings, command, update, hardw
     <Panel id="tabs-memory-saver" eyebrow="DESEMPENHO" title="Memória e gráficos" icon={Gauge}>
       <Row title="Suspender abas inativas" detail="Recarrega ao voltar; preserva formulários, mídia, privadas, Tor e I2P"><Switch label="Economia de memória" checked={s.memorySaverEnabled} onChange={() => onSettings({ memorySaverEnabled: !s.memorySaverEnabled })}/></Row>
       {s.memorySaverEnabled && <Row title="Tempo até suspender"><select className="sc-select" aria-label="Tempo até suspender abas" value={s.memorySaverMinutes} onChange={event => onSettings({ memorySaverMinutes: +event.target.value })}><option value={5}>5 minutos</option><option value={10}>10 minutos</option><option value={20}>20 minutos</option><option value={30}>30 minutos</option><option value={60}>1 hora</option><option value={120}>2 horas</option></select></Row>}
+      <Row id="system-drm" title="Conteúdo protegido (Widevine)" detail={drm?.available ? (drm.ready ? 'Ativo: Netflix, Disney+, Spotify e outros' : drm.error ? `Indisponível: ${drm.error}` : 'Preparando o módulo do Google…') : 'Esta compilação ainda não inclui o módulo de DRM'}><span className={`sc-status-pill ${drm?.ready ? 'is-on' : ''}`}>{drm?.ready ? 'Ativo' : 'Inativo'}</span></Row>
       <Row id="system-hardware" title="Aceleração gráfica" detail={hardwareAccelerationPending ? 'Será aplicada após reiniciar' : 'Usa a GPU para páginas e interface'}><Switch label="Aceleração gráfica" checked={s.hardwareAcceleration} onChange={() => onSettings({ hardwareAcceleration: !s.hardwareAcceleration })}/></Row>
       {hardwareAccelerationPending && <Row title="Aplicar agora" detail="O Cypher fecha e abre de novo"><button className="sc-button sc-button-primary" onClick={() => void command('system:restart')}>Reiniciar <RefreshCw size={13}/></button></Row>}
     </Panel>
