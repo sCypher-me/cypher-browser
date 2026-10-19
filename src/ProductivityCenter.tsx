@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
+import { SessionsSection } from './ControlCenter';
+import type { SavedSession } from './types';
 import { BookOpen, Check, Clock3, Layers3, Plus, Search, Sparkles, Trash2, ExternalLink, CheckCircle2, Pencil } from 'lucide-react';
 import type { ResearchItem, Tab, Workspace } from './types';
 
 type SuggestedGroup = { name:string; items:Array<{ id:string; title:string; url:string }> };
-type Props = { tabs:Tab[]; activeTab?:Tab; workspaces:Workspace[]; activeWorkspaceId:string; researchItems:ResearchItem[]; command:(action:string,payload?:unknown)=>Promise<any>; navigate:(url:string)=>void };
+type Props = { tabs:Tab[]; activeTab?:Tab; workspaces:Workspace[]; activeWorkspaceId:string; researchItems:ResearchItem[]; command:(action:string,payload?:unknown)=>Promise<any>; navigate:(url:string)=>void; sessions?:SavedSession[] };
 
-export default function ProductivityCenter({ tabs, activeTab, workspaces, activeWorkspaceId, researchItems, command, navigate }:Props) {
+export default function ProductivityCenter({ tabs, activeTab, workspaces, activeWorkspaceId, researchItems, command, navigate, sessions = [] }:Props) {
   const [workspaceName,setWorkspaceName] = useState('');
   const [workspaceColor,setWorkspaceColor] = useState('#78d9ee');
   const [groups,setGroups] = useState<SuggestedGroup[]>([]);
@@ -58,6 +60,8 @@ export default function ProductivityCenter({ tabs, activeTab, workspaces, active
       </article>; })}</div>
       <form className="workspace-create" onSubmit={event => void createWorkspace(event)}><input aria-label="Nome do novo espaço" value={workspaceName} onChange={event => setWorkspaceName(event.target.value)} placeholder="Ex.: Trabalho, Estudos, Viagem" maxLength={48}/><label className="workspace-color-picker" title="Cor do espaço"><input type="color" aria-label="Cor do espaço" value={workspaceColor} onChange={event => setWorkspaceColor(event.target.value)}/></label><button className="productivity-button primary" disabled={busy || !workspaceName.trim()}><Plus size={15}/> Criar espaço</button></form>
     </section>
+
+    <SessionsSection sessions={sessions} act={command}/>
 
     <section className="productivity-section">
       <header className="productivity-section-heading"><div className="productivity-section-icon"><Sparkles size={19}/></div><div><span className="eyebrow">SUGESTÕES NO DISPOSITIVO</span><h2>Organizar abas</h2><p>O Cypher sugere grupos de abas normais do mesmo site usando os endereços locais. Nada é enviado para fora.</p></div><button className="productivity-button subtle" onClick={() => void organizeTabs()} disabled={busy || visibleTabs.length < 2}><Sparkles size={15}/>{busy ? 'Analisando…' : 'Sugerir grupos'}</button></header>

@@ -51,6 +51,10 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(typeof state.safeBrowsing.available, 'boolean');
     assert.equal(typeof state.drm.available, 'boolean');
     assert.ok(state.tabs.every(tab => tab.volume === 1));
+    // Etapa 3: sessões e ajustes por site começam vazios; o gerenciador de tarefas lista as abas.
+    assert.deepEqual(state.sessions, []);
+    assert.deepEqual(state.siteSettings, {});
+    assert.ok((await invoke('tasks:list')).some(row => row.kind === 'process'));
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
     fs.writeFileSync(path.join(screenshots,'cypher-home.png'), (await win.webContents.capturePage()).toPNG());

@@ -81,7 +81,8 @@ function Passwords({ tabs, activeTabId, command, settings: s, onSettings }: Sect
 }
 
 export default function Privacy(props: SectionProps) {
-  const { settings: s, onSettings, command, trackerProtection, privacyStats, sitePermissions, safeBrowsing } = props;
+  const { settings: s, onSettings, command, trackerProtection, privacyStats, sitePermissions, safeBrowsing, siteSettings = {} } = props;
+  const customSites = Object.entries(siteSettings);
   const safeDetail = !safeBrowsing?.available ? 'Chega numa próxima compilação oficial' : safeBrowsing.ready ? `Google Safe Browsing · ${safeBrowsing.prefixes.toLocaleString('pt-BR')} registros na lista local` : s.safeBrowsing ? 'Baixando a lista local…' : 'Google Safe Browsing, sem enviar os endereços';
   return <>
     <Block id="privacy-report" title="Resumo da semana" wide><PrivacyReport stats={privacyStats} protection={trackerProtection}/></Block>
@@ -95,6 +96,10 @@ export default function Privacy(props: SectionProps) {
       <Row id="privacy-cookie-banners" title="Avisos de cookies" detail="Esconde os banners de consentimento mais comuns"><Switch checked={s.blockCookieBanners} label="Ocultar avisos de cookies" onChange={() => onSettings({ blockCookieBanners: !s.blockCookieBanners })}/></Row>
       <Row id="privacy-do-not-track" title="Sinal Não rastrear" detail="Cada site decide se respeita"><Switch label="Enviar sinal Não rastrear" checked={s.sendDoNotTrack} onChange={() => onSettings({ sendDoNotTrack: !s.sendDoNotTrack })}/></Row>
       {!trackerProtection.adsAvailable && <div className="sc-info-strip sc-warning-strip"><ShieldCheck size={15}/><span>Esta compilação não trouxe a lista EasyList; só os domínios locais de anúncios estão bloqueados.</span></div>}
+    </Panel>
+
+    <Panel id="privacy-site-settings" eyebrow="POR SITE" title="Ajustes por site" detail="Clique no cadeado da barra de endereço para mudar JavaScript, imagens, limite de recursos e zoom de um site." icon={Globe2} wide>
+      {customSites.length ? <div className="sc-password-list">{customSites.map(([host, entry]) => <div className="sc-password-entry" key={host}><span className="sc-password-site"><strong>{host}</strong><small>{[entry.javascript === false && 'JavaScript desligado', entry.images === false && 'sem imagens', entry.limit && 'recursos limitados', entry.zoom && `zoom ${Math.round(entry.zoom * 100)}%`].filter(Boolean).join(' · ')}</small></span><div className="sc-password-actions"><button type="button" className="sc-button sc-button-subtle" onClick={() => void command('site:settings:set', { host, patch: { javascript: null, images: null, limit: null, zoom: null } })}>Restaurar padrão</button></div></div>)}</div> : <div className="sc-empty-line">Nenhum site com ajustes próprios.</div>}
     </Panel>
 
     <Panel id="privacy-https" eyebrow="CONEXÃO" title="HTTPS" detail="Endereços da rede local e IPs ficam de fora." icon={LockKeyhole}>

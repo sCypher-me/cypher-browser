@@ -50,6 +50,8 @@ const preferenceIndex: { id: string; title: string; detail: string; section: Set
   { id: 'privacy-safe-browsing', title: 'Sites perigosos', detail: 'Google Safe Browsing com lista local', section: 'privacy' },
   { id: 'tabs-auto-pip', title: 'Vídeo flutuante', detail: 'Picture-in-picture ao trocar de aba', section: 'browsing' },
   { id: 'system-drm', title: 'Conteúdo protegido (Widevine)', detail: 'Netflix, Disney+, Spotify', section: 'system' },
+  { id: 'system-limiters', title: 'Limitadores de CPU, memória e rede', detail: 'Abas pesadas, memória máxima e velocidade de download', section: 'system' },
+  { id: 'privacy-site-settings', title: 'Ajustes por site', detail: 'JavaScript, imagens, recursos e zoom de cada site', section: 'privacy' },
   { id: 'privacy-https', title: 'Modo HTTPS', detail: 'Tentar HTTPS primeiro ou somente HTTPS', section: 'privacy' },
   { id: 'privacy-error-reports', title: 'Relatórios de erro', detail: 'Registrar falhas sem dados pessoais', section: 'privacy' },
   { id: 'profile-local', title: 'Foto do perfil', detail: 'Perfil ativo neste dispositivo', section: 'profile' },
