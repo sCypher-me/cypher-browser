@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.41] - 2026-10-19
+- [Novo★] Proteção contra impressão digital: canvas, áudio e placa de vídeo mudam um pouco de site para site, e os rastreadores não conseguem reconhecer seu computador. Ligada por padrão; desligue por site no cadeado da barra. {privacidade}
+- [Novo★] Prévia de links: Shift + clique (ou o menu do link) abre a página numa janela por cima, sem sair de onde você está. {abas}
+- [Novo★] Janela rápida: Ctrl Alt N abre uma janela pequena para uma consulta rápida, mesmo com o Cypher em segundo plano; um clique leva a página para uma aba. {abas}
+- [Novo] Arquivamento automático de abas: abas paradas há dias saem da barra e ficam em Espaços e pesquisa para reabrir. Ligue em Configurações → Navegação.
+- [Novo] Recorte para notas: selecione um trecho, clique com o botão direito e guarde-o nas notas da página na fila de pesquisa.
+- [Corrigido] O miniplayer volta a ficar sempre por cima depois de aparecer.
+
 ## [0.7.40] - 2026-10-18
 - [Novo★] Gerenciador de tarefas: veja quanto de CPU, memória e rede cada aba usa e encerre a que travou. Abra com Shift Esc ou pelo menu. {abas}
 - [Novo★] Limitadores de CPU, memória e banda: abas pesadas em segundo plano ficam mais lentas, as menos usadas são suspensas acima do limite e o download de cada aba pode ser limitado. Em Configurações → Sistema. {configuracoes}

@@ -1,7 +1,7 @@
 // Configurações por site: zoom lembrado, JavaScript, imagens e limite de recursos.
 // A chave é o host sem "www.", para que exemplo.com e www.exemplo.com compartilhem a escolha.
 
-const FIELDS = { javascript: 'boolean', images: 'boolean', limit: 'boolean', zoom: 'number' };
+const FIELDS = { javascript: 'boolean', images: 'boolean', limit: 'boolean', fingerprint: 'boolean', zoom: 'number' };
 
 function siteKey(url) {
   try {
@@ -18,6 +18,7 @@ function cleanEntry(entry) {
   if (entry.javascript === false) out.javascript = false;
   if (entry.images === false) out.images = false;
   if (entry.limit === true) out.limit = true;
+  if (entry.fingerprint === false) out.fingerprint = false;
   if (Number.isFinite(entry.zoom) && Math.abs(entry.zoom - 1) > 0.001) out.zoom = Math.round(Math.max(0.25, Math.min(3, entry.zoom)) * 100) / 100;
   return out;
 }

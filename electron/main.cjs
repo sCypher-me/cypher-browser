@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog, shell, clipboard, ClipboardItem, nativeTheme, protocol, net, safeStorage, screen, nativeImage } = require('electron');
+const { app, BrowserWindow, WebContentsView, globalShortcut, ipcMain, session, Menu, dialog, shell, clipboard, ClipboardItem, nativeTheme, protocol, net, safeStorage, screen, nativeImage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -19,6 +19,8 @@ const { createSafeBrowsing } = require('./safe-browsing.cjs');
 const { siteKey, sanitizeSiteSettings, updateSite, settingsFor, scriptBlockHeaders } = require('./site-settings.cjs');
 const { taskRows, cpuOffenders, tabsToSuspend, bandwidthConditions } = require('./resource-control.cjs');
 const { sanitizeSessions, saveSession, createRunMarker } = require('./sessions.cjs');
+const { fingerprintSeed } = require('./fingerprint.cjs');
+const { tabsToArchive, sanitizeArchive, archiveTabs, appendClip } = require('./workflow.cjs');
 const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -107,6 +109,12 @@ const certificateExceptions = new Set();
 // sessões normais (para o limite de banda) e a recuperação depois de um fechamento inesperado.
 const networkBytes = new Map(), cpuHistory = new Map();
 let networkSince = Date.now(), resourceTimer = null, crashRecovery = null, runMarker = null;
+// Segredo desta execução para as sementes anti-impressão digital (muda a cada abertura do Cypher).
+const fingerprintSecret = randomBytes(16).toString('hex');
+let archiveTimer = null;
+// Prévia de link (vista nativa por cima da página) e janela rápida.
+let previewView = null, previewBounds = null, linkPreview = null;
+let quickWindow = null, quickView = null;
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
@@ -357,6 +365,7 @@ function loadStore(profileId = activeProfileId) {
   if (!store.workspaces.length) store.workspaces = [{ id:'personal', name:'Pessoal', color:'#78d9ee', tabs:store.savedTabs.filter(item => item && typeof item.url === 'string').slice(0,100).map(item => ({ url:item.url, title:item.title || item.url, pinned:item.pinned === true, group:item.group || '' })) }];
   if (!store.workspaces.some(item => item.id === store.activeWorkspaceId)) store.activeWorkspaceId = store.workspaces[0]?.id || 'personal';
   store.siteSettings = sanitizeSiteSettings(saved.siteSettings);
+  store.archivedTabs = sanitizeArchive(saved.archivedTabs);
   store.sessions = sanitizeSessions(saved.sessions);
   store.passwordNever = Array.isArray(saved.passwordNever) ? [...new Set(saved.passwordNever.map(normalizePasswordOrigin).filter(Boolean))].slice(0,500) : [];
   if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,1000).flatMap(entry => {
@@ -694,6 +703,7 @@ function snapshot() {
     passwordPrompt: passwordPromptSnapshot(),
     safeBrowsing: safeBrowsing?.status() || { available: false, ready: false, lists: 0, prefixes: 0, lastUpdate: 0, error: '' },
     drm,
+    archivedTabs: store.archivedTabs, linkPreview,
     siteSettings: store.siteSettings, sessions: store.sessions.map(({ id, name, created, tabs }) => ({ id, name, created, count: tabs.length, hosts: [...new Set(tabs.map(tab => siteKey(tab.url)))].slice(0, 4) })),
     crashRecovery: crashRecovery ? { count: crashRecovery.tabs.length, startedAt: crashRecovery.startedAt } : null,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
@@ -796,7 +806,8 @@ function positionMediaPlayerWindow() {
 }
 function createMediaPlayerWindow() {
   if (!win || win.isDestroyed() || !rendererUrl) return;
-  if (playerWindow && !playerWindow.isDestroyed()) { positionMediaPlayerWindow(); playerWindow.showInactive(); return; }
+  // No Windows, mostrar uma janela filha sem foco pode tirar o 'sempre no topo': reaplica depois de mostrar.
+  if (playerWindow && !playerWindow.isDestroyed()) { positionMediaPlayerWindow(); playerWindow.showInactive(); playerWindow.setAlwaysOnTop(true, 'floating'); return; }
   playerWindow = new BrowserWindow({ parent:win, width:372, height:160, frame:false, transparent:true, backgroundColor:'#00000000', resizable:false, movable:false, skipTaskbar:true, show:false, hasShadow:false,
     webPreferences:{ preload:path.join(__dirname,'preload.cjs'), nodeIntegration:false, contextIsolation:true, sandbox:true, webSecurity:true, allowRunningInsecureContent:false } });
   playerWindow.setAlwaysOnTop(true, 'floating');
@@ -804,7 +815,7 @@ function createMediaPlayerWindow() {
   playerWindow.webContents.setWindowOpenHandler(() => ({ action:'deny' }));
   playerWindow.on('close', event => { if (!quitting) { event.preventDefault(); playerWindow?.hide(); } });
   playerWindow.on('closed', () => { playerWindow = undefined; });
-  playerWindow.once('ready-to-show', () => { positionMediaPlayerWindow(); if (playerWindow && !playerWindow.isDestroyed()) playerWindow.showInactive(); });
+  playerWindow.once('ready-to-show', () => { positionMediaPlayerWindow(); if (playerWindow && !playerWindow.isDestroyed()) { playerWindow.showInactive(); playerWindow.setAlwaysOnTop(true, 'floating'); } });
   void playerWindow.loadURL(`${rendererUrl}#mini-player`).catch(error => console.error('Não foi possível abrir o miniplayer:', error.message));
 }
 function toggleMediaPlayerWindow() {
@@ -962,6 +973,11 @@ function layout() {
     const shown = splitActive ? tab.id === split.left || tab.id === split.right : tab.id === activeId;
     tab.view.setVisible(shown && inWorkspace && !obscured && !updateBlocked() && !tab.url.startsWith('cypher://') && !tab.error);
     try { tab.view.webContents.setBackgroundThrottling(store.settings.memorySaverEnabled && !shown); } catch {}
+  }
+  if (previewView && !previewView.webContents.isDestroyed()) {
+    const visible = !!linkPreview && !!previewBounds && !updateBlocked();
+    if (visible) previewView.setBounds(clampRect(previewBounds));
+    previewView.setVisible(visible);
   }
   for (const [id, view] of panelViews) {
     const visible = id === openPanelId && !!panelBounds && !obscured;
@@ -1698,7 +1714,7 @@ function attachView(tab) {
   setupSession(ses, tab.connectionMode);
   void prepareProxy(tab, ses).catch(error => showTabError(tab, 'route', { description: `Não foi possível configurar ${tab.connectionMode}: ${error.message}` }));
   // O preload das abas cuida do volume e percebe logins (o principal ignora logins fora das abas normais).
-  const view = new WebContentsView({ webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, preload: path.join(__dirname, 'tab-preload.cjs') } });
+  const view = new WebContentsView({ webPreferences: pageWebPreferences(ses) });
   tab.view = view;
   win.contentView.addChildView(view);
   const wc = view.webContents;
@@ -1792,9 +1808,9 @@ function attachView(tab) {
   wc.on('context-menu', (_event, params) => {
     const template = [];
     if (store.settings.translationEnabled && tab.connectionMode === 'normal' && /^https?:\/\//.test(tab.url)) template.push({ label: 'Traduzir esta página', click: () => { void command('page:translate').catch(error => console.error('Não foi possível abrir a tradução:', error.message)); } }, { type: 'separator' });
-    if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, { label: 'Copiar endereço do link', click: () => void clipboard.writeText(params.linkURL) }, { type: 'separator' });
+    if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, ...(tab.private || tab.connectionMode !== 'normal' ? [] : [{ label: 'Prévia do link (Shift + clique)', click: () => openLinkPreview(params.linkURL, tab) }, { label: 'Abrir na janela rápida', click: () => openQuickWindow(params.linkURL) }]), { label: 'Copiar endereço do link', click: () => void clipboard.writeText(params.linkURL) }, { type: 'separator' });
     if (params.isEditable) template.push(...editMenuItems(params), { type: 'separator' });
-    else if (params.selectionText) template.push({ role: 'copy', label: 'Copiar' }, { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
+    else if (params.selectionText) template.push({ role: 'copy', label: 'Copiar' }, ...(tab.private || tab.connectionMode !== 'normal' ? [] : [{ label: 'Recortar para a fila de pesquisa', click: () => { try { clipToResearch(tab, params.selectionText); shortcut('notice:Trecho guardado nas notas da página em Espaços e pesquisa.'); } catch (error) { shortcut(`error:${error.message}`); } } }]), { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
     template.push({ label: 'Voltar', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Avançar', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Recarregar', click: () => wc.reload() }, { type: 'separator' }, { label: 'Salvar página…', click: () => savePage(tab) }, { label: 'Imprimir…', click: () => wc.print({}) }, { label: 'Inspecionar elemento', click: () => wc.inspectElement(params.x, params.y) });
     Menu.buildFromTemplate(template).popup({ window: win });
   });
@@ -1874,6 +1890,107 @@ function openTabsFrom(list) {
   }
   if (first) selectTab(first);
   persist(); layout(); emit();
+}
+function pageWebPreferences(ses) {
+  return { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'tab-preload.cjs') };
+}
+/** Semente de impressão digital para quem pede (abas, prévia e janela rápida), ou null se desligado. */
+function fingerprintConfig(sender, hostname) {
+  const tab = tabs.find(entry => entry.view?.webContents === sender);
+  const known = tab || sender === previewView?.webContents || sender === quickView?.webContents;
+  if (!known || typeof hostname !== 'string' || !hostname) return null;
+  const anonymous = tab && tab.connectionMode !== 'normal';
+  if (!anonymous && (!store.settings.fingerprintProtection || settingsFor(store.siteSettings, `https://${hostname}/`).fingerprint === false)) return null;
+  // Abas privadas e rotas anônimas usam outra semente: o site não liga as duas identidades.
+  return { seed: fingerprintSeed(`${fingerprintSecret}|${tab?.private ? 'p' : ''}${tab?.connectionMode || 'normal'}`, hostname) };
+}
+function archiveIdleTabs(force = false) {
+  const hours = force ? 0.0001 : store?.settings.archiveTabsHours;
+  const ids = tabsToArchive(tabs, { hours, activeId });
+  if (!ids.length) return 0;
+  const now = Date.now();
+  const entries = ids.map(id => tabs.find(tab => tab.id === id)).filter(Boolean).map(tab => ({ id: randomUUID(), url: tab.url, title: tab.title || tab.url, archivedAt: now, workspaceId: tab.workspaceId || '' }));
+  store.archivedTabs = archiveTabs(store.archivedTabs, entries);
+  for (const id of ids) closeTab(id);
+  persist(); emit();
+  return ids.length;
+}
+function closeLinkPreview() {
+  linkPreview = null; previewBounds = null;
+  if (previewView && !previewView.webContents.isDestroyed()) { previewView.setVisible(false); void previewView.webContents.loadURL('about:blank').catch(() => {}); }
+  layout(); emit();
+}
+function openLinkPreview(url, source) {
+  if (!/^https?:\/\//i.test(url) || !windowAlive()) return;
+  if (!previewView || previewView.webContents.isDestroyed()) {
+    const ses = session.fromPartition(normalPartition());
+    setupSession(ses, 'normal');
+    previewView = new WebContentsView({ webPreferences: pageWebPreferences(ses) });
+    const pwc = previewView.webContents;
+    pwc.setWindowOpenHandler(({ url: target }) => { if (/^https?:\/\//i.test(target)) void pwc.loadURL(target); return { action: 'deny' }; });
+    pwc.on('will-navigate', (event, target) => { if (!/^https?:\/\//i.test(target)) event.preventDefault(); });
+    const sync = () => { if (linkPreview) { linkPreview = { ...linkPreview, url: pwc.getURL() || linkPreview.url, title: pwc.getTitle() || linkPreview.title, loading: pwc.isLoading() }; emit(); } };
+    for (const name of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) pwc.on(name, sync);
+    pwc.on('before-input-event', (event, input) => { if (input.type === 'keyDown' && input.key === 'Escape') { event.preventDefault(); closeLinkPreview(); } });
+    previewView.setVisible(false);
+  }
+  // Sempre por cima das abas.
+  win.contentView.removeChildView(previewView);
+  win.contentView.addChildView(previewView);
+  linkPreview = { url, title: new URL(url).hostname, loading: true, sourceTabId: source?.id || '' };
+  void previewView.webContents.loadURL(url).catch(() => {});
+  layout(); emit();
+}
+function quickEmit() {
+  if (!quickWindow || quickWindow.isDestroyed() || !quickView) return;
+  const qwc = quickView.webContents;
+  quickWindow.webContents.send('cypher:state', { quick: { url: qwc.getURL() === 'about:blank' ? '' : qwc.getURL(), title: qwc.getTitle(), loading: qwc.isLoading(), canGoBack: qwc.navigationHistory.canGoBack(), appearance: store.settings.appearanceMode, accent: store.settings.accent, surface: store.settings.surface, background: store.settings.background, skin: store.settings.skin } });
+}
+function layoutQuick() {
+  if (!quickWindow || quickWindow.isDestroyed() || !quickView) return;
+  const [width, height] = quickWindow.getContentSize();
+  quickView.setBounds({ x: 0, y: 52, width, height: Math.max(0, height - 52) });
+}
+/** Janela rápida: uma janela pequena para consultas, separada das abas. */
+function openQuickWindow(url = '') {
+  if (!rendererUrl) return;
+  if (quickWindow && !quickWindow.isDestroyed()) {
+    if (url) void quickView.webContents.loadURL(url).catch(() => {});
+    quickWindow.show(); quickWindow.focus(); return;
+  }
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  quickWindow = new BrowserWindow({ width: 560, height: 760, x: Math.round(display.x + display.width - 600), y: Math.round(display.y + 40), minWidth: 380, minHeight: 420, frame: false, show: false, title: 'Cypher · Janela rápida', backgroundColor: store.settings.background,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
+  quickWindow.webContents.on('will-navigate', event => event.preventDefault());
+  quickWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  const ses = session.fromPartition(normalPartition());
+  setupSession(ses, 'normal');
+  quickView = new WebContentsView({ webPreferences: pageWebPreferences(ses) });
+  const qwc = quickView.webContents;
+  qwc.setWindowOpenHandler(({ url: target }) => { if (/^https?:\/\//i.test(target)) void qwc.loadURL(target); return { action: 'deny' }; });
+  qwc.on('will-navigate', (event, target) => { if (!/^https?:\/\//i.test(target)) event.preventDefault(); });
+  for (const name of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) qwc.on(name, quickEmit);
+  qwc.on('before-input-event', (event, input) => { if (input.type === 'keyDown' && input.key === 'Escape' && !qwc.isLoading()) { event.preventDefault(); quickWindow?.close(); } });
+  quickWindow.contentView.addChildView(quickView);
+  quickWindow.on('resize', layoutQuick);
+  quickWindow.on('closed', () => { quickWindow = null; if (quickView && !quickView.webContents.isDestroyed()) quickView.webContents.close(); quickView = null; });
+  quickWindow.once('ready-to-show', () => { layoutQuick(); quickWindow?.show(); quickEmit(); });
+  void quickWindow.loadURL(`${rendererUrl}#quick`).catch(error => console.error('Não foi possível abrir a janela rápida:', error.message));
+  if (url) void qwc.loadURL(url).catch(() => {});
+}
+function registerQuickShortcut() {
+  try {
+    globalShortcut.unregister('CommandOrControl+Alt+N');
+    if (store.settings.quickWindowShortcut) globalShortcut.register('CommandOrControl+Alt+N', () => openQuickWindow());
+  } catch (error) { console.warn('Atalho da janela rápida:', error.message); }
+}
+function clipToResearch(tab, text) {
+  if (!tab || tab.private || tab.connectionMode !== 'normal' || !/^https?:\/\//i.test(tab.url)) throw new Error('Recorte trechos só de páginas em abas normais.');
+  let item = store.researchItems.find(entry => entry.url === tab.url);
+  if (!item) { item = { id: randomUUID(), url: tab.url, title: String(tab.title || tab.url).slice(0, 180), note: '', tags: [], savedAt: Date.now(), read: false }; store.researchItems.unshift(item); store.researchItems = store.researchItems.slice(0, 1000); }
+  item.note = appendClip(item.note, text);
+  persist(); emit();
+  return item;
 }
 function applyTabVolume(tab) {
   const wc = tab?.view?.webContents;
@@ -1991,6 +2108,8 @@ function setSettings(payload) {
   if (previous.updateChannel !== store.settings.updateChannel) updater?.setChannel(store.settings.updateChannel);
   if (previous.limitBandwidth !== store.settings.limitBandwidth || previous.bandwidthMbps !== store.settings.bandwidthMbps) for (const item of tabs) void applyTabEmulation(item, !!item.limited);
   if (previous.limitCpu && !store.settings.limitCpu) for (const item of tabs) if (!settingsFor(store.siteSettings, item.url).limit) void applyTabEmulation(item, false);
+  if (previous.quickWindowShortcut !== store.settings.quickWindowShortcut) registerQuickShortcut();
+  if (previous.archiveTabsHours !== store.settings.archiveTabsHours && store.settings.archiveTabsHours) archiveIdleTabs();
   if (previous.safeBrowsing !== store.settings.safeBrowsing) { if (store.settings.safeBrowsing) safeBrowsing?.start(); else safeBrowsing?.stop(); }
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
@@ -2481,6 +2600,46 @@ async function command(action, payload) {
     }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
     case 'tasks:list': return tabProcessRows();
+    case 'archive:now': return archiveIdleTabs(true);
+    case 'archive:restore': {
+      const entry = store.archivedTabs.find(item => item.id === payload);
+      if (!entry) throw new Error('Esta aba não está mais no arquivo.');
+      store.archivedTabs = store.archivedTabs.filter(item => item.id !== payload);
+      addTab(entry.url, false, 'normal', true); persist(); emit(); return true;
+    }
+    case 'archive:remove': store.archivedTabs = store.archivedTabs.filter(item => item.id !== payload); persist(); emit(); return true;
+    case 'archive:clear': store.archivedTabs = []; persist(); emit(); return true;
+    case 'preview:open': if (typeof payload?.url === 'string') openLinkPreview(payload.url, tab); return true;
+    case 'preview:bounds': {
+      if (!payload || !['x','y','width','height'].every(key => Number.isFinite(payload[key]))) break;
+      previewBounds = payload; layout(); return true;
+    }
+    case 'preview:close': closeLinkPreview(); return true;
+    case 'preview:promote': {
+      const url = linkPreview?.url;
+      closeLinkPreview();
+      if (url) addTab(url, false, 'normal', true);
+      return true;
+    }
+    case 'quick:open': openQuickWindow(typeof payload?.url === 'string' && /^https?:\/\//i.test(payload.url) ? payload.url : ''); return true;
+    case 'quick:navigate': {
+      if (!quickView) break;
+      const url = resolveAddress(String(payload || ''), store.settings.searchEngine, store.settings.customSearchUrl);
+      if (!/^https?:\/\//i.test(url)) throw new Error('A janela rápida abre só sites.');
+      await quickView.webContents.loadURL(url).catch(() => {}); return true;
+    }
+    case 'quick:back': if (quickView?.webContents.navigationHistory.canGoBack()) quickView.webContents.navigationHistory.goBack(); return true;
+    case 'quick:reload': quickView?.webContents.reload(); return true;
+    case 'quick:state': quickEmit(); return true;
+    case 'quick:promote': {
+      const url = quickView?.webContents.getURL();
+      if (url && /^https?:\/\//i.test(url)) addTab(url, false, 'normal', true);
+      quickWindow?.close();
+      if (windowAlive()) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+      return true;
+    }
+    case 'quick:close': quickWindow?.close(); return true;
+    case 'clip:selection': return clipToResearch(tab, String(payload || ''));
     case 'tasks:end': {
       const target = tabs.find(item => item.id === payload);
       if (!target?.view || target.view.webContents.isDestroyed()) throw new Error('Só é possível encerrar abas abertas.');
@@ -2965,6 +3124,13 @@ app.whenReady().then(async () => {
     const items = editMenuItems(params);
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
+  ipcMain.on('cypher:fingerprint', (event, hostname) => { event.returnValue = fingerprintConfig(event.sender, hostname); });
+  ipcMain.on('cypher:link-preview', (event, url) => {
+    const tab = tabs.find(entry => entry.view?.webContents === event.sender);
+    if (tab && !tab.private && tab.connectionMode === 'normal' && store.settings.linkPreview && typeof url === 'string') openLinkPreview(url, tab);
+    else if (tab && typeof url === 'string' && /^https?:\/\//i.test(url)) addTab(url, tab.private, tab.connectionMode);
+    else if (event.sender === previewView?.webContents && typeof url === 'string' && /^https?:\/\//i.test(url)) void previewView.webContents.loadURL(url);
+  });
   ipcMain.on('cypher:login-captured', (event, payload) => {
     const tab = tabs.find(entry => entry.view?.webContents === event.sender);
     if (!tab || event.senderFrame !== event.sender.mainFrame || typeof payload?.password !== 'string' || !payload.password || payload.password.length > 4096) return;
@@ -2980,6 +3146,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('cypher:command', (event, action, payload) => {
     if (event.sender === win.webContents) {
       if (event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== rendererUrl) throw new Error('Origem não autorizada.');
+      return command(action, payload);
+    }
+    if (quickWindow && !quickWindow.isDestroyed() && event.sender === quickWindow.webContents) {
+      const quickActions = new Set(['quick:navigate','quick:back','quick:reload','quick:state','quick:promote','quick:close']);
+      if (event.senderFrame !== quickWindow.webContents.mainFrame || event.senderFrame.url !== `${rendererUrl}#quick` || !quickActions.has(action)) throw new Error('Ação indisponível na janela rápida.');
       return command(action, payload);
     }
     if (playerWindow && !playerWindow.isDestroyed() && event.sender === playerWindow.webContents) {
@@ -3016,6 +3187,8 @@ app.whenReady().then(async () => {
   if (crashRecovery && !crashRecovery.tabs.length) crashRecovery = null;
   runMarker.start();
   resourceTimer = setInterval(resourceTick, 3000);
+  archiveTimer = setInterval(() => archiveIdleTabs(), 5 * 60_000);
+  registerQuickShortcut();
   const homeFirstId = addTab('cypher://newtab', false, store.settings.connectionMode);
   const startupMode = store.settings.startupMode;
   if (startupMode === 'restore') {
@@ -3065,5 +3238,8 @@ app.on('before-quit', event => {
   }
   quitting = true; closing = true; flush();
   if (resourceTimer) { clearInterval(resourceTimer); resourceTimer = null; }
+  if (archiveTimer) { clearInterval(archiveTimer); archiveTimer = null; }
+  try { globalShortcut.unregisterAll(); } catch {}
+  if (quickWindow && !quickWindow.isDestroyed()) quickWindow.destroy();
   runMarker?.finish();
 });

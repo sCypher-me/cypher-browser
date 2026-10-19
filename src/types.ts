@@ -17,7 +17,7 @@ export interface Settings {
   openLinksInNewTab: boolean; showSearchSuggestions: boolean; sendDoNotTrack: boolean;
   blockAds: boolean; blockTrackers: boolean; blockThirdPartyCookies: boolean;
   blockPopups: boolean; popupExceptions: string[];
-  passwordAutofillEnabled: boolean; passwordSavePrompt: boolean; passwordLeakCheck: boolean; httpsMode: 'upgrade' | 'strict' | 'off'; safeBrowsing: boolean; autoPictureInPicture: boolean; limitCpu: boolean; cpuLimitPercent: number; limitMemory: boolean; memoryLimitMb: number; limitBandwidth: boolean; bandwidthMbps: number; trackingExceptions: string[];
+  passwordAutofillEnabled: boolean; passwordSavePrompt: boolean; passwordLeakCheck: boolean; httpsMode: 'upgrade' | 'strict' | 'off'; safeBrowsing: boolean; autoPictureInPicture: boolean; fingerprintProtection: boolean; archiveTabsHours: number; linkPreview: boolean; quickWindowShortcut: boolean; limitCpu: boolean; cpuLimitPercent: number; limitMemory: boolean; memoryLimitMb: number; limitBandwidth: boolean; bandwidthMbps: number; trackingExceptions: string[];
   preferredLanguages: string[]; spellCheckEnabled: boolean; spellCheckLanguages: string[]; translationEnabled: boolean;
   hardwareAcceleration: boolean; webrtcPolicy: 'default' | 'default_public_and_private_interfaces' | 'default_public_interface_only' | 'disable_non_proxied_udp';
   showBookmarksBar: boolean; suggestBookmarks: boolean; suggestHistory: boolean;
@@ -63,7 +63,7 @@ export interface BrowserProfile { id: string; name: string; active: boolean }
 export interface SiteProtectionCounts { blockedRequests: number; blockedAds: number; blockedTrackers: number }
 export interface SavedPassword { id: string; origin: string; username: string; updated: number; leaked: number; reused: boolean; checkedAt: number }
 export interface ProfileSyncStatus { configured: boolean; endpoint: string; username: string; syncing: boolean; lastSync: number; error: string }
-export interface BrowserState { siteSettings?: Record<string, SiteSetting>; sessions?: SavedSession[]; crashRecovery?: { count: number; startedAt: number } | null; passwordPrompt?: PasswordPrompt | null; safeBrowsing?: SafeBrowsingStatus; drm?: DrmStatus; tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus; skins?: SkinPackage[]; privacyStats?: Record<string, DailyPrivacyStats>; split?: SplitView | null; openPanelId?: string; systemDark?: boolean; modPackages?: ModPackageInfo[]; modEffects?: ModEffects; onboarding?: UpdateOnboardingState | null }
+export interface BrowserState { archivedTabs?: ArchivedTab[]; linkPreview?: LinkPreviewState | null; quick?: QuickState; siteSettings?: Record<string, SiteSetting>; sessions?: SavedSession[]; crashRecovery?: { count: number; startedAt: number } | null; passwordPrompt?: PasswordPrompt | null; safeBrowsing?: SafeBrowsingStatus; drm?: DrmStatus; tabs: Tab[]; activeId: string; settings: Settings; bookmarks: Link[]; history: Link[]; downloads: Download[]; extensions: BrowserExtension[]; sitePermissions: SitePermission[]; mods: Mod[]; workspaces: Workspace[]; activeWorkspaceId: string; researchItems: ResearchItem[]; profiles: BrowserProfile[]; profileId: string; maximized: boolean; hardwareAccelerationPending: boolean; homeData: HomeData; update: UpdateStatus; trackerProtection: TrackerProtectionStatus; popupProtection: PopupProtectionStatus; nowPlaying?: NowPlaying | null; profileSync?: ProfileSyncStatus; skins?: SkinPackage[]; privacyStats?: Record<string, DailyPrivacyStats>; split?: SplitView | null; openPanelId?: string; systemDark?: boolean; modPackages?: ModPackageInfo[]; modEffects?: ModEffects; onboarding?: UpdateOnboardingState | null }
 /** Imagem de uma página nativa, mostrada sob menus e popovers enquanto ela fica escondida. */
 export interface PageSnapshot { x: number; y: number; width: number; height: number; dataUrl: string }
 declare global {
@@ -76,6 +76,9 @@ export interface SafeBrowsingStatus { available: boolean; ready: boolean; lists:
 export interface DrmStatus { available: boolean; ready: boolean; error: string }
 export interface PasswordPrompt { id: string; tabId: string; origin: string; username: string; update: boolean; leaked: number }
 export interface ImportableBrowser { id: string; name: string; profiles: { id: string; name: string }[] }
-export interface SiteSetting { javascript?: false; images?: false; limit?: true; zoom?: number }
+export interface SiteSetting { javascript?: false; images?: false; limit?: true; fingerprint?: false; zoom?: number }
+export interface ArchivedTab { id: string; url: string; title: string; archivedAt: number; workspaceId: string }
+export interface LinkPreviewState { url: string; title: string; loading: boolean; sourceTabId: string }
+export interface QuickState { url: string; title: string; loading: boolean; canGoBack: boolean; appearance: string; accent: string; surface: string; background: string; skin: string }
 export interface SavedSession { id: string; name: string; created: number; count: number; hosts: string[] }
 export interface TaskRow { id: string; kind: 'tab' | 'process'; title: string; url: string; pid: number; cpu: number; memory: number; network: number; suspended: boolean; limited: boolean; active: boolean }
