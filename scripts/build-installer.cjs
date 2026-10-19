@@ -15,6 +15,13 @@ const framework = path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET'
 const candidates = [path.join(framework, 'csc.exe'), path.join(process.env.WINDIR || 'C:\\Windows', 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe')];
 const compiler = candidates.find(file => fs.existsSync(file));
 
+// Assinatura (CI com SignPath): o desinstalador é compilado antes e assinado junto com o app.
+//   --uninstaller-only <arquivo>  só compila o desinstalador nesse caminho e termina.
+//   --uninstaller <arquivo>       usa um desinstalador já pronto (assinado) em vez de compilar.
+const argument = name => { const index = process.argv.indexOf(name); return index > 0 ? path.resolve(process.argv[index + 1] || '') : ''; };
+const uninstallerOnly = argument('--uninstaller-only');
+const prebuiltUninstaller = argument('--uninstaller');
+
 function run(command, args, label) {
   process.stdout.write(`\n${label}\n`);
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit', windowsHide: true });
@@ -26,7 +33,8 @@ if (process.platform !== 'win32') throw new Error('O instalador autoral do Cyphe
 if (!compiler) throw new Error('O compilador do .NET Framework (csc.exe) não foi encontrado.');
 if (!fs.existsSync(manifest)) throw new Error('O manifesto de DPI do instalador não foi encontrado.');
 if (!fs.existsSync(terms)) throw new Error('Os termos de uso do instalador não foram encontrados.');
-if (!fs.existsSync(path.join(appDirectory, 'Cypher.exe'))) throw new Error('Compile o aplicativo antes de montar o instalador.');
+if (!uninstallerOnly && !fs.existsSync(path.join(appDirectory, 'Cypher.exe'))) throw new Error('Compile o aplicativo antes de montar o instalador.');
+if (prebuiltUninstaller && !fs.existsSync(prebuiltUninstaller)) throw new Error(`Desinstalador não encontrado: ${prebuiltUninstaller}`);
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'cypher-setup-'));
 const payload = path.join(temporary, 'Cypher-Payload.zip');
@@ -47,12 +55,18 @@ fs.writeFileSync(metadata, [
   `[assembly: AssemblyFileVersion("${assemblyVersion}")]`,
 ].join('\n'), 'utf8');
 
-try {
+(function build() { try {
   const sharedArgs = [
     '/nologo', '/target:winexe', '/platform:anycpu', '/optimize+', `/win32icon:${icon}`, `/win32manifest:${manifest}`,
     '/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
   ];
-  run(compiler, [...sharedArgs, '/define:UNINSTALLER', `/out:${uninstaller}`, versionedSource, metadata], 'Compilando o desinstalador Cypher');
+  if (uninstallerOnly) {
+    run(compiler, [...sharedArgs, '/define:UNINSTALLER', `/out:${uninstallerOnly}`, versionedSource, metadata], 'Compilando o desinstalador Cypher');
+    process.stdout.write(`\nDesinstalador criado: ${path.relative(root, uninstallerOnly)}\n`);
+    return;
+  }
+  if (prebuiltUninstaller) fs.copyFileSync(prebuiltUninstaller, uninstaller);
+  else run(compiler, [...sharedArgs, '/define:UNINSTALLER', `/out:${uninstaller}`, versionedSource, metadata], 'Compilando o desinstalador Cypher');
   fs.rmSync(packagedUninstaller, { force: true });
   fs.copyFileSync(uninstaller, packagedUninstaller);
 
@@ -76,6 +90,6 @@ try {
   const bytes = fs.statSync(output).size;
   process.stdout.write(`\nInstalador criado: ${path.relative(root, output)} (${(bytes / 1024 / 1024).toFixed(1)} MB)\n`);
 } finally {
-  fs.rmSync(packagedUninstaller, { force: true });
+  if (!uninstallerOnly) fs.rmSync(packagedUninstaller, { force: true });
   fs.rmSync(temporary, { recursive: true, force: true });
-}
+} })();

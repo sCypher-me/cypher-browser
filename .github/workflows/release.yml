@@ -33,9 +33,14 @@ jobs:
         env:
           EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
           EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           CASTLABS_ELECTRON: v44.5.1+wvcus
         shell: pwsh
         run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:SIGNPATH_ORGANIZATION_ID)) {
+            Write-Host "Assinatura pela SignPath Foundation ativa: o programa não aceita componentes proprietários, então esta compilação sai sem Widevine."
+            exit 0
+          }
           if ([string]::IsNullOrWhiteSpace($env:EVS_ACCOUNT_NAME) -or [string]::IsNullOrWhiteSpace($env:EVS_PASSWD)) {
             Write-Host "Sem credenciais EVS: compilação sem Widevine."
             exit 0
@@ -77,19 +82,98 @@ jobs:
         run: node scripts/verify-tracker-lists.cjs
       - name: Executar smoke tests do navegador
         run: npm run test:smoke
-      - name: Gerar aplicativo Windows e versão portátil
+      - name: Gerar o aplicativo Windows
         shell: pwsh
         run: |
           if ($env:CYPHER_WIDEVINE -eq '1') {
             # Usa o Electron da castLabs já instalado; o gancho afterPack assina o VMP.
             $electronVersion = (Get-Content node_modules/electron/package.json -Raw | ConvertFrom-Json).version -replace '\+.*$', ''
-            npx electron-builder --win dir portable --publish never "-c.electronDist=node_modules/electron/dist" "-c.electronVersion=$electronVersion"
+            npx electron-builder --win dir --publish never "-c.electronDist=node_modules/electron/dist" "-c.electronVersion=$electronVersion"
           } else {
-            npx electron-builder --win dir portable --publish never
+            npx electron-builder --win dir --publish never
           }
           if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar o aplicativo." }
+      # ---- Assinatura Authenticode pela SignPath Foundation (só quando configurada) ----
+      # 1) Cypher.exe e o desinstalador, antes de montar o portátil e o Setup;
+      # 2) o Setup e o portátil publicados. Os manifestos usam o SHA-512 dos arquivos assinados.
+      - name: Compilar o desinstalador para assinar junto com o app
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: node scripts/build-installer.cjs --uninstaller-only release/win-unpacked/CypherUninstaller.exe
+      - name: Enviar o app para assinatura
+        id: upload-app
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypher-app-nao-assinado
+          path: release/win-unpacked/
+          if-no-files-found: error
+      - name: Assinar o app (SignPath)
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: SignPath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.upload-app.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: release/win-unpacked-assinado
+      - name: Usar o app assinado
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force release/win-unpacked
+          Move-Item release/win-unpacked-assinado release/win-unpacked
+          Move-Item release/win-unpacked/CypherUninstaller.exe release/CypherUninstaller.exe
+          $signature = Get-AuthenticodeSignature release/win-unpacked/Cypher.exe
+          if ($signature.Status -ne 'Valid') { throw "Cypher.exe voltou sem assinatura válida ($($signature.Status))." }
+          Write-Host "Cypher.exe assinado por: $($signature.SignerCertificate.Subject)"
+      - name: Gerar a versão portátil
+        shell: pwsh
+        run: |
+          npx electron-builder --prepackaged release/win-unpacked --win portable --publish never
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao gerar a versão portátil." }
       - name: Compilar o instalador autoral Cypher
-        run: node scripts/build-installer.cjs
+        shell: pwsh
+        run: |
+          if (Test-Path release/CypherUninstaller.exe) { node scripts/build-installer.cjs --uninstaller release/CypherUninstaller.exe }
+          else { node scripts/build-installer.cjs }
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar o instalador." }
+      - name: Enviar o Setup e o portátil para assinatura
+        id: upload-release
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypher-release-nao-assinada
+          path: |
+            release/Cypher-*-Setup.exe
+            release/Cypher-*-Windows.exe
+          if-no-files-found: error
+      - name: Assinar o Setup e o portátil (SignPath)
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: SignPath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: release
+          github-artifact-id: ${{ steps.upload-release.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: release/assinados
+      - name: Usar os arquivos assinados
+        if: vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem release/assinados -Filter '*.exe') {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') { throw "$($file.Name) voltou sem assinatura válida ($($signature.Status))." }
+            Copy-Item $file.FullName (Join-Path release $file.Name) -Force
+            Write-Host "$($file.Name) assinado por: $($signature.SignerCertificate.Subject)"
+          }
       - name: Gerar manifestos de atualização (canal, versão mínima e notas)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,15 +195,18 @@ jobs:
       - name: Publicar a versão e atualizar o canal
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $assets = @("release/Cypher-$version-Setup.exe", "release/Cypher-$version-Windows.exe")
+          # A nota de assinatura só aparece nas versões que passaram pela SignPath.
+          $signingNote = if ($env:SIGNPATH_ORGANIZATION_ID) { "**Code signing policy:** https://github.com/sCypher-me/cypher-browser/blob/main/docs/politica-de-assinatura.md · Free code signing provided by SignPath.io, certificate by SignPath Foundation." } else { " " }
           if ($version -match '-beta\.\d+$') {
-            gh release create $env:RELEASE_TAG @assets --title "Cypher $version (Preview)" --generate-notes --prerelease --latest=false
+            gh release create $env:RELEASE_TAG @assets --title "Cypher $version (Preview)" --notes "$signingNote" --generate-notes --prerelease --latest=false
             $channelFile = 'artifacts/preview.json'
           } else {
-            gh release create $env:RELEASE_TAG @assets "artifacts/latest.json" --title "Cypher $version" --generate-notes --latest
+            gh release create $env:RELEASE_TAG @assets "artifacts/latest.json" --title "Cypher $version" --notes "$signingNote" --generate-notes --latest
             $channelFile = 'artifacts/stable.json'
           }
           gh release view update-channels *> $null
