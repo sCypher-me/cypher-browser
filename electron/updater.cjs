@@ -116,6 +116,7 @@ function createUpdater({ app, publish, scheduleQuit, getChannel = () => 'stable'
   const fetchBuffer = io.requestBuffer || requestBuffer;
   const download = io.downloadFile || downloadFile;
   const spawnProcess = io.spawn || spawn;
+  const openExternal = io.openExternal || (url => require('electron').shell.openExternal(url));
   const isPackaged = io.isPackaged ?? app.isPackaged;
   const platform = io.platform || process.platform;
   const currentVersion = app.getVersion();
@@ -135,6 +136,8 @@ function createUpdater({ app, publish, scheduleQuit, getChannel = () => 'stable'
   const getState = () => ({ ...state, notes: [...state.notes] });
 
   function support() {
+    // Linux: o Cypher avisa e abre a página de download; o pacote (AppImage/.deb) é trocado pela pessoa.
+    if (isPackaged && platform === 'linux') return { supported: true, mode: 'manual' };
     if (!isPackaged || platform !== 'win32') return { supported: false, message: 'As atualizações automáticas funcionam no Cypher instalado no Windows.' };
     const portable = process.env.PORTABLE_EXECUTABLE_FILE;
     if (portable && fs.existsSync(portable)) return { supported: true, mode: 'portable' };
@@ -192,6 +195,9 @@ function createUpdater({ app, publish, scheduleQuit, getChannel = () => 'stable'
         if (!best) {
           target = null;
           if (idle) setState({ state: 'up-to-date', version: currentVersion, notes: [], releaseNotes: '', message: channel === 'preview' ? 'Você está na versão mais recente, incluindo o Preview.' : 'Você já está usando a versão mais recente.' });
+        } else if (supported.mode === 'manual') {
+          target = best;
+          setState({ state: 'available', version: best.version, notes: best.notes, releaseNotes: best.releaseNotes, downloadUrl: `https://github.com/${repository}/releases/tag/${best.tag}`, message: `A versão ${best.version} está disponível. Baixe o pacote novo para atualizar.` });
         } else if (!ready || ready.manifest.version !== best.version) {
           target = best;
           void startDownload().catch(() => {});
@@ -279,6 +285,12 @@ function createUpdater({ app, publish, scheduleQuit, getChannel = () => 'stable'
   /** "Reiniciar e atualizar": baixa se faltar, mostra a instalação e fecha o Cypher. */
   async function installNow() {
     if (installLaunched) return getState();
+    if (support().mode === 'manual') {
+      if (!target) await check();
+      if (!state.downloadUrl) throw new Error('Não há uma versão nova para baixar.');
+      await openExternal(state.downloadUrl);
+      return getState();
+    }
     if (!ready) {
       if (!target) await check();
       if (!target) throw new Error('Não há uma atualização para instalar.');
@@ -296,7 +308,7 @@ function createUpdater({ app, publish, scheduleQuit, getChannel = () => 'stable'
 
   /** Ao fechar com uma atualização pronta: instala em silêncio, sem reabrir. */
   function installOnQuit() {
-    if (installLaunched || !ready || !support().supported) return false;
+    if (installLaunched || !ready || !support().supported || support().mode === 'manual') return false;
     installLaunched = true;
     try { launchInstaller({ relaunch: false }); fs.rmSync(path.join(updateDirectory, READY_FILE), { force: true }); return true; }
     catch { installLaunched = false; return false; }

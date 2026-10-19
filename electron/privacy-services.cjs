@@ -23,6 +23,14 @@ function canConnect(port, handshake) {
   });
 }
 
+/** Programa instalado no sistema (Linux e macOS usam o tor/i2pd do gerenciador de pacotes). */
+function findOnPath(name, env = process.env) {
+  for (const folder of String(env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(folder, name);
+    try { fs.accessSync(candidate, fs.constants.X_OK); if (fs.statSync(candidate).isFile()) return candidate; } catch {}
+  }
+  return null;
+}
 function firstFile(root, filename) {
   if (!fs.existsSync(root)) return null;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
@@ -57,7 +65,7 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
   function executable(mode) {
     if (executablePaths.has(mode)) return executablePaths.get(mode);
     const root = path.join(runtimeRoot(), mode === 'tor' ? 'tor' : 'i2pd');
-    const found = firstFile(root, mode === 'tor' ? 'tor.exe' : 'i2pd.exe');
+    const found = process.platform === 'win32' ? firstFile(root, mode === 'tor' ? 'tor.exe' : 'i2pd.exe') : (firstFile(root, mode === 'tor' ? 'tor' : 'i2pd') || findOnPath(mode === 'tor' ? 'tor' : 'i2pd'));
     executablePaths.set(mode, found);
     return found;
   }
@@ -99,6 +107,7 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
       const program = executable(mode);
       if (!program) {
         const bundle = mode === 'tor' ? 'Tor Expert Bundle' : 'i2pd';
+        if (process.platform !== 'win32') throw new Error(`Instale o ${mode === 'tor' ? 'Tor' : 'i2pd'} pelo gerenciador de pacotes (por exemplo: sudo apt install ${mode === 'tor' ? 'tor' : 'i2pd'}) e tente de novo.`);
         throw new Error(`Os arquivos do ${bundle} não estão instalados com esta cópia do Cypher. Reinstale a versão oficial mais recente.`);
       }
 
@@ -203,4 +212,4 @@ function createPrivacyServices({ app, spawnProcess = spawn, logger = console } =
   return { start, stop, stopOther, stopAll, check, installed: mode => !!executable(mode) };
 }
 
-module.exports = { createPrivacyServices };
+module.exports = { createPrivacyServices, findOnPath };

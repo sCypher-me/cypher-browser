@@ -1,6 +1,10 @@
 # Cypher
 
-Navegador desktop para Windows com interface própria, abas laterais por padrão e opção de abas horizontais. **Versão 0.7.25**, com navegação real em Chromium através do Electron.
+Navegador livre para Windows e Linux, com interface própria, abas laterais por padrão e opção de abas horizontais, sobre o Chromium do Electron. Site: <https://scypher-me.github.io/cypher-browser/>.
+
+**Licença:** GPL-3.0 (veja [LICENSE](LICENSE)). O suporte às APIs de extensões do Chrome usa a biblioteca [electron-chrome-extensions](https://github.com/samuelmaddock/electron-browser-shell), também sob GPL-3.0. Para publicar mods na loja, veja [docs/mods-comunidade.md](docs/mods-comunidade.md).
+
+**Linux:** a release traz `Cypher-<versão>-Linux-x86_64.AppImage` e `Cypher-<versão>-Linux-amd64.deb` (gerados com `npx electron-builder --linux AppImage deb`). No Linux o Cypher avisa quando sai uma versão nova e abre a página de download; Tor e I2P usam os pacotes `tor` e `i2pd` do sistema.
 
 ## Executar
 

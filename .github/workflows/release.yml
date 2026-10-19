@@ -127,3 +127,41 @@ jobs:
             gh release create update-channels --prerelease --latest=false --target $env:GITHUB_SHA --title "Canais de atualização do Cypher" --notes "Manifestos assinados dos canais oficial (stable.json) e Preview (preview.json). Esta não é uma versão do navegador."
           }
           gh release upload update-channels $channelFile --clobber
+
+  linux:
+    # Versão Linux (AppImage e .deb) anexada à mesma release depois que o Windows a criou.
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Verificar sintaxe e testes
+        run: |
+          npm run check
+          npm test
+      - name: Configurar canal público
+        env:
+          CYPHER_UPDATE_SIGNING_PUBLIC_KEY: ${{ vars.CYPHER_UPDATE_SIGNING_PUBLIC_KEY }}
+          CYPHER_SAFE_BROWSING_KEY: ${{ secrets.SAFE_BROWSING_API_KEY }}
+        run: |
+          node -e "require('fs').writeFileSync('electron/update-config.json', JSON.stringify({ repository: process.env.GITHUB_REPOSITORY, updateSigningPublicKey: process.env.CYPHER_UPDATE_SIGNING_PUBLIC_KEY, safeBrowsingApiKey: process.env.CYPHER_SAFE_BROWSING_KEY || '' }))"
+      - name: Compilar a interface
+        run: npm run build
+      - name: Conferir listas de bloqueio
+        run: node scripts/verify-tracker-lists.cjs
+      - name: Gerar AppImage e .deb
+        run: npx electron-builder --linux AppImage deb --publish never
+      - name: Anexar à release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" release/*.AppImage release/*.deb --clobber

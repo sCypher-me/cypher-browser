@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cypher · o navegador do seu jeito</title>
+<meta name="description" content="Cypher é um navegador livre (GPL-3.0) para Windows e Linux: bloqueio de anúncios e rastreadores, proteção de impressão digital, rotas Tor e I2P, extensões do Chrome e mods que mudam tudo.">
+<meta property="og:title" content="Cypher · o navegador do seu jeito">
+<meta property="og:description" content="Privacidade de verdade, extensões do Chrome e uma interface que você remonta inteira.">
+<meta property="og:image" content="assets/cypher-home.png">
+<link rel="icon" href="assets/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --base: #0a0908; --surface: #151310; --text: #ece6d8; --muted: #a39b8d; --accent: #ff5436; --line: #ffffff14; --cut: 14px; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--base); color: var(--text); font: 17px/1.6 "Work Sans", "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  img { max-width: 100%; display: block; }
+  .wrap { width: min(1180px, 100% - 40px); margin: 0 auto; }
+  .display { font-family: "Big Shoulders Display", "Arial Narrow", sans-serif; font-weight: 900; text-transform: uppercase; letter-spacing: -.5px; line-height: .92; }
+  .eyebrow { font: 800 13px/1 "Big Shoulders Display", sans-serif; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); }
+  .cut { clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, var(--cut) 100%, 0 calc(100% - var(--cut))); }
+
+  /* Barra */
+  header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--base) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  header.top .wrap { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 900 26px/1 "Big Shoulders Display", sans-serif; letter-spacing: .5px; }
+  .brand svg { color: var(--accent); }
+  nav.links { display: flex; gap: 22px; margin-left: auto; font-size: 15px; }
+  nav.links a { text-decoration: none; color: var(--muted); }
+  nav.links a:hover { color: var(--text); }
+  .button { display: inline-flex; align-items: center; gap: 10px; padding: 14px 24px; background: var(--accent); color: #0b0a09; font: 800 18px/1 "Big Shoulders Display", sans-serif; letter-spacing: 1px; text-transform: uppercase; text-decoration: none; border: 0; cursor: pointer; clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); transition: filter .15s, transform .15s; }
+  .button:hover { filter: brightness(1.1); }
+  .button:active { transform: translateY(1px); }
+  .button.ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px #ffffff30; }
+  .button.small { padding: 10px 16px; font-size: 15px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  /* Abertura */
+  .hero { padding: 90px 0 40px; position: relative; overflow: hidden; }
+  .hero::before { content: ""; position: absolute; inset: -20% -10% auto auto; width: 70vw; height: 70vw; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%); pointer-events: none; }
+  .hero h1 { font-size: clamp(64px, 11vw, 150px); margin: 18px 0 22px; }
+  .hero h1 span { display: block; color: var(--accent); }
+  .hero p.lead { max-width: 620px; font-size: 20px; color: color-mix(in srgb, var(--text) 82%, transparent); margin: 0 0 34px; }
+  .cta { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+  .cta small { color: var(--muted); font-size: 14px; }
+  .shot { margin-top: 64px; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 50px 120px #000c; --cut: 22px; }
+
+  /* Seções */
+  section { padding: 110px 0 0; }
+  .section-head { display: grid; gap: 14px; max-width: 760px; margin-bottom: 44px; }
+  .section-head h2 { font-size: clamp(44px, 6vw, 76px); margin: 0; }
+  .section-head p { margin: 0; color: var(--muted); font-size: 19px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .card { padding: 26px 24px 28px; background: var(--surface); border: 1px solid var(--line); --cut: 16px; }
+  .card .icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 18px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .card h3 { margin: 0 0 8px; font: 800 26px/1 "Big Shoulders Display", sans-serif; text-transform: uppercase; letter-spacing: .3px; }
+  .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+  .split { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 40px; margin-top: 30px; }
+  .stat strong { display: block; font: 900 56px/1 "Big Shoulders Display", sans-serif; color: var(--accent); }
+  .stat span { color: var(--muted); font-size: 14px; }
+  ul.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+  ul.checks li { display: flex; gap: 12px; align-items: baseline; }
+  ul.checks li::before { content: ""; flex: none; width: 9px; height: 9px; background: var(--accent); transform: rotate(45deg) translateY(-2px); }
+
+  /* Download */
+  .download { margin-top: 110px; padding: 60px; background: var(--surface); border: 1px solid var(--line); --cut: 26px; position: relative; overflow: hidden; }
+  .download::after { content: "CYPHER"; position: absolute; right: -10px; bottom: -40px; font: 900 200px/1 "Big Shoulders Display", sans-serif; color: #ffffff05; pointer-events: none; }
+  .download h2 { font-size: clamp(44px, 6vw, 72px); margin: 14px 0 10px; }
+  .platforms { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 34px; position: relative; z-index: 1; }
+  .platform { padding: 22px; border: 1px solid var(--line); background: var(--base); display: grid; gap: 12px; --cut: 12px; }
+  .platform.is-yours { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+  .platform h3 { margin: 0; font: 800 24px/1 "Big Shoulders Display", sans-serif; text-transform: uppercase; }
+  .platform p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .platform .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .version { color: var(--muted); font-size: 14px; margin-top: 18px; position: relative; z-index: 1; }
+
+  footer { margin-top: 110px; padding: 40px 0 60px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 20px 40px; justify-content: space-between; }
+  footer a { color: var(--text); }
+
+  @media (max-width: 860px) {
+    nav.links { display: none; }
+    .split { grid-template-columns: 1fr; }
+    .download { padding: 34px 22px; }
+    .hero { padding-top: 56px; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .button { transition: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#"><svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><path d="M25 7H13L5 16l8 9h12l-5-6h-6l-3-3 3-3h6l5-6Z" fill="currentColor"/><path d="m25 14-3 3h7l-4-3Z" fill="currentColor" opacity=".45"/></svg>CYPHER</a>
+    <nav class="links" aria-label="Seções">
+      <a href="#privacidade">Privacidade</a>
+      <a href="#fluxo">Fluxo</a>
+      <a href="#mods">Mods</a>
+      <a href="#livre">Código aberto</a>
+    </nav>
+    <a class="button small" href="#baixar">Baixar</a>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <span class="eyebrow">Navegador livre para Windows e Linux</span>
+      <h1 class="display">A internet.<span>Do seu jeito.</span></h1>
+      <p class="lead">O Cypher bloqueia anúncios e rastreadores, esconde a impressão digital do seu computador, abre sites pelo Tor e pelo I2P, roda as extensões do Chrome e deixa você remontar a interface inteira.</p>
+      <div class="cta">
+        <a class="button" id="hero-download" href="#baixar">Baixar o Cypher</a>
+        <a class="button ghost" href="https://github.com/sCypher-me/cypher-browser">Ver o código</a>
+        <small id="hero-version">Grátis, sem conta e sem anúncios.</small>
+      </div>
+      <img class="shot cut" src="assets/cypher-home.png" width="1802" height="1020" alt="A tela inicial do Cypher: abas na lateral, busca em destaque, atalhos e relógio, no visual Recorte em preto e vermelho.">
+    </div>
+  </div>
+
+  <section id="privacidade">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Privacidade que não depende de você lembrar</span>
+        <h2 class="display">Ligado por padrão.</h2>
+        <p>Nada de configurar vinte coisas antes de navegar. As proteções já vêm ativas e não mandam o seu histórico para ninguém.</p>
+      </div>
+      <div class="grid">
+        <article class="card cut"><div class="icon cut" aria-hidden="true">⛨</div><h3>Anúncios e rastreadores</h3><p>Mais de 110 mil regras do EasyList e do EasyPrivacy, aplicadas antes de a página carregar.</p></article>
+        <article class="card cut"><div class="icon cut" aria-hidden="true">◎</div><h3>Impressão digital</h3><p>Canvas, áudio e placa de vídeo mudam de site para site. Quem tenta reconhecer seu computador perde o rastro.</p></article>
+        <article class="card cut"><div class="icon cut" aria-hidden="true">⇄</div><h3>Tor e I2P</h3><p>Abra uma aba pela rede Tor ou I2P com um clique, ou mande um site sempre por uma rota anônima.</p></article>
+        <article class="card cut"><div class="icon cut" aria-hidden="true">⚠</div><h3>Sites perigosos</h3><p>Avisos de golpe e malware pelo Google Safe Browsing, comparando pedaços de hash numa lista local.</p></article>
+        <article class="card cut"><div class="icon cut" aria-hidden="true">🔒</div><h3>Somente HTTPS</h3><p>Tenta sempre a versão segura e avisa antes de abrir uma página sem criptografia.</p></article>
+        <article class="card cut"><div class="icon cut" aria-hidden="true">✦</div><h3>Senhas locais</h3><p>Cofre criptografado pelo sistema, aviso de senhas vazadas e importação do Chrome, Edge, Firefox e Bitwarden.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="fluxo">
+    <div class="wrap split">
+      <div>
+        <div class="section-head">
+          <span class="eyebrow">Feito para quem vive com 40 abas</span>
+          <h2 class="display">Menos bagunça.</h2>
+          <p>Ferramentas que os outros navegadores escondem ou nem têm.</p>
+        </div>
+        <ul class="checks">
+          <li>Espaços de trabalho, sessões salvas e arquivamento de abas paradas.</li>
+          <li>Prévia de links com Shift + clique e janela rápida (Ctrl Alt N) para consultas.</li>
+          <li>Gerenciador de tarefas com CPU, memória e rede de cada aba.</li>
+          <li>Limitadores de CPU, memória e banda para jogar ou trabalhar em paz.</li>
+          <li>Vídeo em janela flutuante, volume por aba e miniplayer.</li>
+          <li>Importação de favoritos e histórico do Chrome, Edge, Brave, Vivaldi, Opera e Firefox.</li>
+        </ul>
+      </div>
+      <div class="card cut" style="--cut:22px;padding:34px">
+        <span class="eyebrow">Extensões do Chrome</span>
+        <h3 style="font-size:40px;margin:14px 0 12px">Suas extensões vêm junto.</h3>
+        <p>Instale direto da Chrome Web Store. Botões, popups, menus e abas funcionam como no Chrome, com suporte às APIs de abas, ações e menus.</p>
+        <div class="stat-row">
+          <div class="stat"><strong>MV3</strong><span>Manifest V3</span></div>
+          <div class="stat"><strong>1 clique</strong><span>pela Chrome Web Store</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="mods">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">Mods da comunidade</span>
+        <h2 class="display">Mude tudo. De verdade.</h2>
+        <p>Um mod troca cores, pele, fontes, papel de parede, sons, música reativa e até o visual dos sites. Crie o seu dentro do navegador e publique no catálogo assinado para todo mundo usar.</p>
+      </div>
+      <div class="grid">
+        <article class="card cut"><h3>Peles</h3><p>Recorte, com cortes e tipografia condensada, ou Clássico, com cantos suaves. Ou faça a sua.</p></article>
+        <article class="card cut"><h3>Som e música</h3><p>Cliques, abas e digitação com som, e uma trilha que reage ao que você faz.</p></article>
+        <article class="card cut"><h3>Sites do seu jeito</h3><p>CSS por site e filtros de página: CRT, noir, sépia, neon.</p></article>
+        <article class="card cut"><h3>Publique o seu</h3><p>Mande a pasta do mod num pull request. Depois da revisão, ele entra na loja com assinatura.</p><p style="margin-top:14px"><a href="https://github.com/sCypher-me/cypher-browser/blob/main/docs/mods-comunidade.md">Como publicar →</a></p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="livre">
+    <div class="wrap split">
+      <div class="section-head" style="margin:0">
+        <span class="eyebrow">Código aberto · GPL-3.0</span>
+        <h2 class="display">Livre de verdade.</h2>
+        <p>Todo o código está no GitHub sob a GPL-3.0. Você pode ler, auditar, modificar e redistribuir. As atualizações são assinadas e conferidas antes de instalar.</p>
+      </div>
+      <ul class="checks">
+        <li>Atualizações automáticas com assinatura Ed25519 e SHA-512.</li>
+        <li>Canal Preview para testar as próximas versões antes de todo mundo.</li>
+        <li>Relatórios de erro só com o seu consentimento, sem endereços nem dados pessoais.</li>
+        <li>Nenhuma conta, nenhum anúncio, nenhuma telemetria escondida.</li>
+      </ul>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="download cut" id="baixar">
+      <span class="eyebrow">Baixar</span>
+      <h2 class="display">Pronto em um minuto.</h2>
+      <p style="color:var(--muted);margin:0;max-width:560px;position:relative;z-index:1">Escolha o seu sistema. O Cypher se atualiza sozinho no Windows; no Linux, ele avisa quando sai uma versão nova.</p>
+      <div class="platforms">
+        <div class="platform cut" data-os="windows">
+          <h3>Windows</h3>
+          <p>Windows 10 e 11, 64 bits.</p>
+          <div class="links">
+            <a class="button small" data-asset="Setup.exe" href="https://github.com/sCypher-me/cypher-browser/releases/latest">Instalador</a>
+            <a class="button small ghost" data-asset="Windows.exe" href="https://github.com/sCypher-me/cypher-browser/releases/latest">Portátil</a>
+          </div>
+        </div>
+        <div class="platform cut" data-os="linux">
+          <h3>Linux</h3>
+          <p>AppImage para qualquer distribuição, ou .deb para Ubuntu e Debian. Tor e I2P vêm do gerenciador de pacotes.</p>
+          <div class="links">
+            <a class="button small" data-asset=".AppImage" href="https://github.com/sCypher-me/cypher-browser/releases/latest">AppImage</a>
+            <a class="button small ghost" data-asset=".deb" href="https://github.com/sCypher-me/cypher-browser/releases/latest">.deb</a>
+          </div>
+        </div>
+      </div>
+      <p class="version" id="release-version">Versões, notas e arquivos anteriores em <a href="https://github.com/sCypher-me/cypher-browser/releases">GitHub Releases</a>.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Cypher · navegador livre sob a <a href="https://github.com/sCypher-me/cypher-browser/blob/main/LICENSE">GPL-3.0</a>.</span>
+    <span><a href="https://github.com/sCypher-me/cypher-browser">Código</a> · <a href="https://github.com/sCypher-me/cypher-browser/issues">Relatar um problema</a> · <a href="https://github.com/sCypher-me/cypher-browser/blob/main/CHANGELOG.md">Novidades</a></span>
+  </div>
+</footer>
+
+<script>
+  // Destaca o sistema de quem visita e troca os botões pelos arquivos da versão mais recente.
+  (function () {
+    var linux = /Linux/i.test(navigator.userAgent) && !/Android/i.test(navigator.userAgent);
+    var mine = document.querySelector('[data-os="' + (linux ? 'linux' : 'windows') + '"]');
+    if (mine) mine.classList.add('is-yours');
+    fetch('https://api.github.com/repos/sCypher-me/cypher-browser/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (release) {
+        if (!release || !release.assets) return;
+        document.querySelectorAll('[data-asset]').forEach(function (link) {
+          var asset = release.assets.find(function (item) { return item.name.endsWith(link.getAttribute('data-asset')) && (link.getAttribute('data-asset') !== '.AppImage' || /x86_64/.test(item.name)) && (link.getAttribute('data-asset') !== '.deb' || /amd64/.test(item.name)); });
+          if (asset) link.href = asset.browser_download_url;
+        });
+        var version = release.tag_name.replace(/^v/, '');
+        document.getElementById('hero-version').textContent = 'Versão ' + version + ' · grátis, sem conta e sem anúncios.';
+        var hero = document.getElementById('hero-download');
+        var main = document.querySelector('.is-yours [data-asset]');
+        if (main && main.href.indexOf('/download/') > 0) hero.href = main.href;
+      })
+      .catch(function () {});
+  })();
+</script>
+</body>
+</html>

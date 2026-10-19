@@ -1,0 +1,27 @@
+name: Verificar mods da comunidade
+
+on:
+  pull_request:
+    paths:
+      - 'catalog/**'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências sem scripts
+        run: npm ci --ignore-scripts
+      - name: Testar o formato de mods
+        run: node --test tests/mod-package.test.cjs
+      - name: Empacotar como no catálogo (sem assinar)
+        run: node scripts/build-mod-catalog.cjs artifacts/mods-check

@@ -11,7 +11,8 @@ const sha = createHash('sha512').update(content).digest('base64');
 const manifest = (version, extra = {}) => ({ schemaVersion: 2, version, tag: `v${version}`, assetName: `Cypher-${version}-Windows.exe`, sha512: sha, installerAssetName: `Cypher-${version}-Setup.exe`, installerSha512: sha, channel: version.includes('beta') ? 'preview' : 'stable', minimumVersion: '', notes: [{ kind: 'new', title: `Novidade ${version}`, body: '', highlight: true, illustration: 'preview' }], releaseNotes: '', ...extra });
 const notFound = () => Object.assign(new Error('HTTP 404'), { statusCode: 404 });
 
-function setup({ version = '0.7.35', channel = 'stable', files = {}, failAll = false } = {}) {
+function setup({ version = '0.7.35', channel = 'stable', files = {}, failAll = false, platform = 'win32' } = {}) {
+  const opened = [];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cypher-updater-'));
   const spawned = [];
   const requested = [];
@@ -20,7 +21,7 @@ function setup({ version = '0.7.35', channel = 'stable', files = {}, failAll = f
     app: { getVersion: () => version, getPath: () => dir, isPackaged: true },
     publish: () => {}, scheduleQuit: () => {}, getChannel: () => currentChannel,
     io: {
-      isPackaged: true, platform: 'win32', config: { repository: 'dono/cypher' }, signingKey: null, initialDelay: 60_000,
+      isPackaged: true, platform, config: { repository: 'dono/cypher' }, signingKey: null, initialDelay: 60_000, openExternal: async url => { opened.push(url); },
       requestBuffer: async url => {
         requested.push(url);
         if (failAll) throw new Error('sem internet');
@@ -32,7 +33,7 @@ function setup({ version = '0.7.35', channel = 'stable', files = {}, failAll = f
       spawn: (file, args, options) => { spawned.push({ file, args, options }); return { unref() {} }; },
     },
   });
-  return { updater, dir, spawned, requested, setChannel: value => { currentChannel = value; } };
+  return { updater, dir, spawned, requested, opened, setChannel: value => { currentChannel = value; } };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 
@@ -106,4 +107,18 @@ test('cleanEnvironment remove as variáveis internas do Electron e do Chromium',
   const env = cleanEnvironment({ PATH: 'x', USERPROFILE: 'y', CHROME_CRASHPAD_PIPE_NAME: 'p', ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: 'z', npm_config_x: 'n' });
   assert.deepEqual(Object.keys(env).sort(), ['PATH', 'USERPROFILE']);
   assert.equal(env.CHROME_CRASHPAD_PIPE_NAME, undefined);
+});
+
+test('no Linux avisa a versão nova e abre a página de download, sem baixar nem instalar', async () => {
+  const { updater, dir, spawned, opened } = setup({ platform: 'linux', files: { 'stable.json': manifest('0.7.36', { minimumVersion: '0.7.34' }) } });
+  await updater.check(); await settle();
+  const state = updater.getState();
+  assert.equal(state.state, 'available');
+  assert.equal(state.version, '0.7.36');
+  assert.equal(state.downloadUrl, 'https://github.com/dono/cypher/releases/tag/v0.7.36');
+  assert.equal(fs.existsSync(path.join(dir, 'updates')), false);
+  await updater.installNow();
+  assert.deepEqual(opened, ['https://github.com/dono/cypher/releases/tag/v0.7.36']);
+  assert.deepEqual(spawned, []);
+  assert.equal(updater.installOnQuit(), false);
 });

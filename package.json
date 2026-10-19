@@ -1,14 +1,14 @@
 {
   "name": "cypher-browser",
   "productName": "Cypher",
-  "version": "0.7.41",
+  "version": "0.7.42",
   "private": true,
   "description": "Navegador dark personalizável para Windows",
   "author": "Cypher",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "npm run prepare:tracker-list && npm run prepare:proton-vpn && node scripts/dev.cjs",
-    "build": "npm run prepare:tracker-list && npm run prepare:proton-vpn && tsc --noEmit && vite build && node scripts/changelog.cjs CHANGELOG.md dist/changelog.json",
+    "build": "npm run prepare:tracker-list && npm run prepare:proton-vpn && tsc --noEmit && vite build && node scripts/build-preload.cjs && node scripts/changelog.cjs CHANGELOG.md dist/changelog.json",
     "start": "npm run prepare:proton-vpn && electron .",
     "prepare:privacy-runtime": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-privacy-runtime.ps1",
     "prepare:proton-vpn": "node scripts/prepare-proton-vpn.cjs",
@@ -16,7 +16,7 @@
     "dist": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir portable --publish never && node scripts/build-installer.cjs",
     "dist:installer": "npm run prepare:privacy-runtime && npm run build && electron-builder --win dir --publish never && node scripts/build-installer.cjs",
     "dist:portable": "npm run prepare:privacy-runtime && npm run build && electron-builder --win portable",
-    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/proton-preload.cjs && node --check electron/tab-preload.cjs && tsc --noEmit",
+    "check": "node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/proton-preload.cjs && node --check electron/tab-preload.cjs && node --check electron/ui-preload-entry.cjs && tsc --noEmit",
     "test": "node --test tests/*.test.cjs",
     "test:smoke": "node scripts/run-smoke.cjs"
   },
@@ -25,6 +25,7 @@
     "@fontsource/work-sans": "^5.3.0",
     "@ghostery/adblocker": "2.20.1",
     "clsx": "^2.1.1",
+    "electron-chrome-extensions": "4.9.0",
     "lucide-react": "^1.59.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -36,6 +37,7 @@
     "@types/react-dom": "^19.0.0",
     "electron": "44.9.0",
     "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
     "typescript": "^7.0.2",
     "vite": "8.3.4"
   },
@@ -57,13 +59,6 @@
       "package.json"
     ],
     "extraResources": [
-      {
-        "from": "vendor/privacy-runtime",
-        "to": "privacy-runtime",
-        "filter": [
-          "**/*"
-        ]
-      },
       {
         "from": "vendor/proton-vpn-browser-extension/distribution-cypher",
         "to": "proton-vpn",
@@ -132,7 +127,16 @@
         "portable"
       ],
       "icon": "build/icon.ico",
-      "artifactName": "Cypher-${version}-Windows.${ext}"
+      "artifactName": "Cypher-${version}-Windows.${ext}",
+      "extraResources": [
+        {
+          "from": "vendor/privacy-runtime",
+          "to": "privacy-runtime",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "electronFuses": {
       "runAsNode": false,
@@ -141,6 +145,48 @@
       "enableEmbeddedAsarIntegrityValidation": true,
       "onlyLoadAppFromAsar": true,
       "grantFileProtocolExtraPrivileges": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network",
+      "executableName": "cypher",
+      "icon": "build/icon.png",
+      "artifactName": "Cypher-${version}-Linux-${arch}.${ext}",
+      "synopsis": "Navegador personalizável com Tor, I2P e proteção de privacidade",
+      "description": "O Cypher é um navegador personalizável, com bloqueio de anúncios e rastreadores, rotas Tor e I2P, mods e extensões do Chrome.",
+      "maintainer": "sCypher-me <sCypher-me@users.noreply.github.com>",
+      "mimeTypes": [
+        "x-scheme-handler/http",
+        "x-scheme-handler/https",
+        "text/html"
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Cypher",
+          "Keywords": "browser;navegador;web;tor;"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ],
+      "recommends": [
+        "tor",
+        "i2pd"
+      ]
     }
-  }
+  },
+  "license": "GPL-3.0-only",
+  "homepage": "https://scypher-me.github.io/cypher-browser/"
 }

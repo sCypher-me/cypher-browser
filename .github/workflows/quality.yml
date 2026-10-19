@@ -33,3 +33,25 @@ jobs:
         run: npm run build
       - name: Executar smoke tests do navegador
         run: npm run test:smoke
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências travadas
+        run: npm ci
+      - name: Verificar sintaxe e testes
+        run: |
+          npm run check
+          npm test
+      - name: Compilar e empacotar para Linux (sem publicar)
+        run: |
+          npm run build
+          npx electron-builder --linux dir --publish never

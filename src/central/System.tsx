@@ -8,7 +8,7 @@ export default function System({ settings: s, onSettings, command, update, hardw
   const busy = ['checking', 'downloading', 'installing', 'restarting'].includes(update.state);
   const preview = (s.updateChannel || update.channel) === 'preview';
   const onBeta = /-beta\.\d+$/.test(update.currentVersion);
-  const headline = ready ? `Versão ${update.version} pronta para instalar`
+  const headline = update.state === 'available' ? `Versão ${update.version} disponível para baixar` : ready ? `Versão ${update.version} pronta para instalar`
     : update.state === 'downloading' ? `Baixando a versão ${update.version} em segundo plano`
     : update.state === 'up-to-date' ? 'Você está na versão mais recente'
     : update.state === 'checking' ? 'Procurando uma versão nova…'
@@ -20,7 +20,9 @@ export default function System({ settings: s, onSettings, command, update, hardw
       <div className="sc-update-summary">
         <span className={`sc-update-indicator ${update.state === 'up-to-date' ? 'ready' : ready ? 'available' : ''}`}><Sparkles size={16}/></span>
         <div><strong>{headline}</strong><small>{update.state === 'error' ? update.message : `GitHub Releases · assinatura Ed25519 e SHA-512${update.lastChecked ? ` · verificado às ${new Date(update.lastChecked).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}</small></div>
-        {ready
+        {update.state === 'available'
+          ? <button className="sc-button sc-button-primary" onClick={() => void command('update:install')}>Baixar a versão {update.version} <ArrowRight size={13}/></button>
+          : ready
           ? <button className="sc-button sc-button-primary" onClick={() => void command('update:install')}>Reiniciar e atualizar <ArrowRight size={13}/></button>
           : <button className="sc-button sc-button-subtle" disabled={busy} onClick={() => void command('update:check')}>{update.state === 'checking' ? 'Verificando…' : update.state === 'downloading' ? `${update.progress}%` : 'Verificar agora'}</button>}
       </div>
