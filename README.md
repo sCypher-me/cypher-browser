@@ -4,6 +4,8 @@ Navegador livre para Windows e Linux, com interface própria, abas laterais por 
 
 **Licença:** GPL-3.0 (veja [LICENSE](LICENSE)). O suporte às APIs de extensões do Chrome usa a biblioteca [electron-chrome-extensions](https://github.com/samuelmaddock/electron-browser-shell), também sob GPL-3.0. Para publicar mods na loja, veja [docs/mods-comunidade.md](docs/mods-comunidade.md).
 
+**Code signing policy:** os executáveis do Windows passam a ser assinados pela SignPath Foundation assim que o pedido for aprovado (em análise). Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Veja a [política de assinatura](docs/politica-de-assinatura.md) (equipe, processo e privacidade).
+
 **Linux:** a release traz `Cypher-<versão>-Linux-x86_64.AppImage` e `Cypher-<versão>-Linux-amd64.deb` (gerados com `npx electron-builder --linux AppImage deb`). No Linux o Cypher avisa quando sai uma versão nova e abre a página de download; Tor e I2P usam os pacotes `tor` e `i2pd` do sistema.
 
 ## Executar

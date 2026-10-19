@@ -1,11 +1,11 @@
 TERMOS DE USO E AVISO DE PRIVACIDADE DO CYPHER
-Versão de 18 de outubro de 2026
+Versão de 19 de outubro de 2026
 
 1. SOBRE ESTE SOFTWARE
-O Cypher é um navegador para Windows baseado no Chromium (por meio do Electron). Ao instalar ou usar o Cypher, você concorda com estes termos. Se não concordar, não instale o programa.
+O Cypher é um navegador livre para Windows e Linux baseado no Chromium (por meio do Electron). Ao instalar ou usar o Cypher, você concorda com estes termos. Se não concordar, não instale o programa.
 
-2. LICENÇA DE USO
-Você pode instalar e usar o Cypher em quantos computadores quiser, para uso pessoal ou profissional, sem custo. Você não pode distribuir versões modificadas usando o nome ou a marca Cypher de forma que pareçam oficiais. Componentes de terceiros incluídos no Cypher (como o Chromium, o Electron, o Tor, o i2pd, a extensão Proton VPN e listas de filtros) continuam sujeitos às licenças dos respectivos autores, disponíveis na pasta de instalação.
+2. LICENÇA
+O Cypher é software livre, distribuído sob a GNU General Public License, versão 3 (GPL-3.0). Você pode usá-lo em quantos computadores quiser, sem custo, e também estudar, modificar e redistribuir o código conforme a GPL-3.0 (texto completo em https://github.com/sCypher-me/cypher-browser/blob/main/LICENSE). Versões modificadas devem usar outro nome e não podem se apresentar como a versão oficial do Cypher. Componentes de terceiros incluídos no Cypher (como o Chromium, o Electron, o Tor, o i2pd, a extensão Proton VPN e listas de filtros) continuam sujeitos às licenças dos respectivos autores, disponíveis na pasta de instalação.
 
 3. SEUS DADOS FICAM NO SEU DISPOSITIVO
 Histórico, favoritos, senhas, notas, configurações, mods e perfis ficam salvos no seu computador. O Cypher não tem contas obrigatórias e não envia sua navegação para servidores do Cypher. Senhas são protegidas com a criptografia do próprio Windows.
@@ -14,6 +14,9 @@ Histórico, favoritos, senhas, notas, configurações, mods e perfis ficam salvo
 - Os sites que você visita, diretamente ou pelas rotas Tor, I2P ou VPN que você escolher.
 - A verificação de atualizações no GitHub do projeto, com manifestos assinados digitalmente.
 - O catálogo de mods no GitHub do projeto, quando você abre a aba Explorar.
+- O aviso de sites perigosos (Google Safe Browsing), quando a versão traz a chave do serviço: o Cypher baixa listas de prefixos de hash e compara os endereços no próprio computador. Só quando um prefixo coincide ele envia ao Google esse pedaço de 4 bytes do hash, nunca o endereço. Desligue em Configurações → Privacidade → Sites perigosos.
+- O aviso de senhas vazadas (Have I Been Pwned), somente se você ligar: envia só os 5 primeiros caracteres do hash da senha. Desligue em Configurações → Privacidade → Senhas.
+- A Chrome Web Store, quando você instala uma extensão por ela, e os serviços da Proton VPN, quando você usa a VPN.
 - A sincronização de perfil somente se você configurar um servidor próprio.
 - O envio de relatórios de erro somente se você permitir (veja o item 5).
 
