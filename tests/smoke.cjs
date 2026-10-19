@@ -54,6 +54,10 @@ server.listen(0,'127.0.0.1', async () => {
     // Etapa 3: sessões e ajustes por site começam vazios; o gerenciador de tarefas lista as abas.
     assert.deepEqual(state.sessions, []);
     assert.deepEqual(state.siteSettings, {});
+    // Etapa 4: proteção de impressão digital ligada; arquivo vazio; nenhuma prévia aberta.
+    assert.equal(state.settings.fingerprintProtection, true);
+    assert.deepEqual(state.archivedTabs, []);
+    assert.equal(state.linkPreview, null);
     assert.ok((await invoke('tasks:list')).some(row => row.kind === 'process'));
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);
@@ -161,6 +165,8 @@ server.listen(0,'127.0.0.1', async () => {
     await until(() => BrowserWindow.getAllWindows().length === 2, 'floating miniplayer');
     const miniPlayer = BrowserWindow.getAllWindows().find(window => window !== win);
     await until(() => miniPlayer.webContents.getURL().endsWith('#mini-player') && !miniPlayer.webContents.isLoading(), 'miniplayer renderer');
+    // A janela só fica 'sempre no topo' depois de aparecer (ready-to-show); espera ela aparecer.
+    await until(() => miniPlayer.isVisible(), 'miniplayer visible');
     assert.equal(miniPlayer.isAlwaysOnTop(),true,'miniplayer floats above the browser');
     assert.equal(view.getVisible(),true,'opening the player leaves the current page visible');
     await miniPlayer.webContents.executeJavaScript('document.querySelector(".mini-player-close").click()');

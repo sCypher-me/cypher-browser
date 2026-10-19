@@ -1,7 +1,83 @@
 // Roda no mundo isolado das abas. Percebe quando a pessoa envia um login e avisa o processo
 // principal (que só oferece salvar em abas normais) e aplica o volume da aba. A página não
 // enxerga este script.
-const { ipcRenderer, webFrame } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
+
+// ---- Proteção contra impressão digital ----
+// Roda no mundo da página antes dos scripts dela. Canvas e áudio recebem ruído determinístico
+// pela semente do site; WebGL e alguns dados do aparelho ficam genéricos. As funções trocadas
+// continuam dizendo "[native code]" em toString().
+function farble(seedHex) {
+  const seed = parseInt(seedHex, 16) >>> 0;
+  const mix = index => { let x = (seed ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0; x ^= x >>> 16; x = Math.imul(x, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return x >>> 0; };
+  const nativeToString = Function.prototype.toString;
+  const disguised = new WeakMap();
+  const toStringProxy = function toString() { return disguised.has(this) ? disguised.get(this) : nativeToString.call(this); };
+  disguised.set(toStringProxy, nativeToString.call(nativeToString));
+  Object.defineProperty(Function.prototype, 'toString', { value: toStringProxy, configurable: true, writable: true });
+  const replace = (target, name, build) => {
+    const original = target?.[name];
+    if (typeof original !== 'function') return;
+    const fake = build(original);
+    disguised.set(fake, nativeToString.call(original));
+    Object.defineProperty(fake, 'name', { value: name });
+    Object.defineProperty(target, name, { value: fake, configurable: true, writable: true, enumerable: false });
+  };
+  const replaceGetter = (target, name, value) => {
+    const descriptor = Object.getOwnPropertyDescriptor(target, name);
+    if (!descriptor?.get) return;
+    const getter = { get [name]() { return value(descriptor.get.call(this)); } }.__lookupGetter__(name);
+    disguised.set(getter, nativeToString.call(descriptor.get));
+    Object.defineProperty(target, name, { ...descriptor, get: getter });
+  };
+  // Canvas: inverte o bit menos significativo de ~3% dos pixels, sempre nos mesmos lugares.
+  const noisify = data => { for (let i = 0; i < data.length; i += 4) { const r = mix(i >> 2); if ((r & 0xff) < 8) data[i + ((r >>> 8) % 3)] ^= 1; } return data; };
+  const getImageData = CanvasRenderingContext2D.prototype.getImageData;
+  replace(CanvasRenderingContext2D.prototype, 'getImageData', original => function () { const image = original.apply(this, arguments); noisify(image.data); return image; });
+  const noisyCopy = canvas => {
+    if (!canvas.width || !canvas.height || canvas.width * canvas.height > 16_000_000) return null;
+    const copy = document.createElement('canvas'); copy.width = canvas.width; copy.height = canvas.height;
+    const context = copy.getContext('2d');
+    context.drawImage(canvas, 0, 0);
+    const image = getImageData.call(context, 0, 0, copy.width, copy.height);
+    noisify(image.data); context.putImageData(image, 0, 0);
+    return copy;
+  };
+  for (const name of ['toDataURL', 'toBlob']) replace(HTMLCanvasElement.prototype, name, original => function () {
+    try { const copy = noisyCopy(this); if (copy) return original.apply(copy, arguments); } catch {}
+    return original.apply(this, arguments);
+  });
+  // WebGL: placa de vídeo genérica.
+  for (const proto of [window.WebGLRenderingContext?.prototype, window.WebGL2RenderingContext?.prototype]) replace(proto, 'getParameter', original => function (parameter) {
+    if (parameter === 37445) return 'Google Inc.';
+    if (parameter === 37446) return 'ANGLE (Generic, Generic GPU, D3D11)';
+    return original.apply(this, arguments);
+  });
+  // Áudio: variação mínima e estável nas amostras e nas frequências analisadas.
+  const touched = new WeakSet();
+  replace(window.AudioBuffer?.prototype, 'getChannelData', original => function () {
+    const data = original.apply(this, arguments);
+    if (!touched.has(data)) { touched.add(data); for (let i = 0; i < data.length; i += 97) data[i] += ((mix(i) & 1) ? 1 : -1) * 1e-7; }
+    return data;
+  });
+  replace(window.AnalyserNode?.prototype, 'getFloatFrequencyData', original => function (array) { original.apply(this, arguments); for (let i = 0; i < array.length; i += 7) array[i] += ((mix(i) & 3) - 1.5) * 0.01; });
+  // Aparelho: núcleos e memória em valores comuns.
+  replaceGetter(Navigator.prototype, 'hardwareConcurrency', real => Math.min(real || 8, (mix(7) & 1) ? 8 : 4));
+  replaceGetter(Navigator.prototype, 'deviceMemory', () => 8);
+}
+try {
+  const config = /^https?:$/.test(location.protocol) ? ipcRenderer.sendSync('cypher:fingerprint', location.hostname) : null;
+  if (config?.seed) contextBridge.executeInMainWorld({ func: farble, args: [config.seed] });
+} catch {}
+
+// ---- Prévia de link: Shift + clique abre o link numa janela por cima da página ----
+window.addEventListener('click', event => {
+  if (!event.shiftKey || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey) return;
+  const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+  if (!link || !/^https?:/i.test(link.href)) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  ipcRenderer.send('cypher:link-preview', link.href);
+}, true);
 
 // Volume por aba: multiplica o volume que o próprio site escolheu. O ajuste só é instalado na
 // página quando o volume sai de 100%, para não mudar nada nos sites que não usam o recurso.

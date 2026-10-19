@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Activity, Gauge, History, ImageOff, Layers3, Minus, Plus, RotateCcw, Save, ScrollText, ShieldCheck, Trash2, X, Zap } from 'lucide-react';
+import { Activity, Fingerprint, Gauge, History, ImageOff, Layers3, Minus, Plus, RotateCcw, Save, ScrollText, ShieldCheck, Trash2, X, Zap } from 'lucide-react';
 import type { SavedSession, SiteSetting, TaskRow } from './types';
 
 type Act = (action: string, payload?: unknown) => Promise<any>;
@@ -54,6 +54,7 @@ export function SitePanel({ url, zoom, setting, act, onClose, onPermissions }: {
     ['javascript', 'JavaScript', 'Desligar deixa o site mais leve, mas muitos param de funcionar', ScrollText, setting.javascript !== false],
     ['images', 'Imagens', 'Esconde todas as imagens deste site', ImageOff, setting.images !== false],
     ['limit', 'Limitar recursos', 'Deixa o site 4× mais lento na CPU, mesmo em primeiro plano', Gauge, setting.limit === true],
+    ['fingerprint', 'Proteção de impressão digital', 'Desligue só se o site quebrar (alguns editores e jogos)', Fingerprint, setting.fingerprint !== false],
   ];
   return <>
     <div className="menu-backdrop" onClick={onClose}/>
