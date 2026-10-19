@@ -102,7 +102,7 @@ jobs:
       - name: Enviar o app para assinatura
         id: upload-app
         if: vars.SIGNPATH_ORGANIZATION_ID != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cypher-app-nao-assinado
           path: release/win-unpacked/
@@ -144,7 +144,7 @@ jobs:
       - name: Enviar o Setup e o portátil para assinatura
         id: upload-release
         if: vars.SIGNPATH_ORGANIZATION_ID != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cypher-release-nao-assinada
           path: |
