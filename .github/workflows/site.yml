@@ -27,7 +27,7 @@ jobs:
       - name: Baixar o código
         uses: actions/checkout@v7
       - name: Configurar o GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
       - name: Empacotar o site
         uses: actions/upload-pages-artifact@v3
         with:
