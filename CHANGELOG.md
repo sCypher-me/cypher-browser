@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.40] - 2026-10-18
+- [Novo★] Gerenciador de tarefas: veja quanto de CPU, memória e rede cada aba usa e encerre a que travou. Abra com Shift Esc ou pelo menu. {abas}
+- [Novo★] Limitadores de CPU, memória e banda: abas pesadas em segundo plano ficam mais lentas, as menos usadas são suspensas acima do limite e o download de cada aba pode ser limitado. Em Configurações → Sistema. {configuracoes}
+- [Novo★] Recuperação depois de travar: se o Cypher fechar de repente, ele oferece reabrir as abas de onde você parou. {abas}
+- [Novo] Ajustes por site: clique no cadeado da barra de endereço para desligar JavaScript ou imagens, limitar recursos e guardar o zoom de cada site.
+- [Novo] Sessões salvas: guarde as abas abertas com um nome e reabra tudo depois, em Espaços e pesquisa.
+- [Melhorado] Se a interface do Cypher travar, ela se recarrega sozinha sem fechar as abas.
+
 ## [0.7.39] - 2026-10-18
 - [Novo★] Vídeo em janela flutuante: tire o vídeo da página e deixe-o por cima de tudo, pelo menu da aba, pela barra de endereço ou sozinho ao trocar de aba. {abas}
 - [Novo★] Volume por aba: deixe cada aba mais alta ou mais baixa pelo menu da aba, sem mexer no volume do Windows. {abas}

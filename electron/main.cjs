@@ -16,6 +16,9 @@ const { normalizePasswordOrigin, passwordsFromCsv, sha1Hex, pwnedCountForHash } 
 const browserImport = require('./importers.cjs');
 const { classifyLoadError, errorName, createHttpsUpgrader } = require('./https-mode.cjs');
 const { createSafeBrowsing } = require('./safe-browsing.cjs');
+const { siteKey, sanitizeSiteSettings, updateSite, settingsFor, scriptBlockHeaders } = require('./site-settings.cjs');
+const { taskRows, cpuOffenders, tabsToSuspend, bandwidthConditions } = require('./resource-control.cjs');
+const { sanitizeSessions, saveSession, createRunMarker } = require('./sessions.cjs');
 const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
 
@@ -100,6 +103,10 @@ const dangerousPages = new Map(), dangerAllowed = new Set();
 // Widevine só existe no Electron da castLabs (compilações com as credenciais EVS).
 const drm = { available: false, ready: false, error: '' };
 const certificateExceptions = new Set();
+// Controle de recursos: bytes recebidos por aba desde a última leitura, histórico de CPU,
+// sessões normais (para o limite de banda) e a recuperação depois de um fechamento inesperado.
+const networkBytes = new Map(), cpuHistory = new Map();
+let networkSince = Date.now(), resourceTimer = null, crashRecovery = null, runMarker = null;
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
 const proxyReady = new WeakMap();
@@ -349,6 +356,8 @@ function loadStore(profileId = activeProfileId) {
   }
   if (!store.workspaces.length) store.workspaces = [{ id:'personal', name:'Pessoal', color:'#78d9ee', tabs:store.savedTabs.filter(item => item && typeof item.url === 'string').slice(0,100).map(item => ({ url:item.url, title:item.title || item.url, pinned:item.pinned === true, group:item.group || '' })) }];
   if (!store.workspaces.some(item => item.id === store.activeWorkspaceId)) store.activeWorkspaceId = store.workspaces[0]?.id || 'personal';
+  store.siteSettings = sanitizeSiteSettings(saved.siteSettings);
+  store.sessions = sanitizeSessions(saved.sessions);
   store.passwordNever = Array.isArray(saved.passwordNever) ? [...new Set(saved.passwordNever.map(normalizePasswordOrigin).filter(Boolean))].slice(0,500) : [];
   if (Array.isArray(saved.passwords)) store.passwords = saved.passwords.slice(0,1000).flatMap(entry => {
     if (!entry || typeof entry.id !== 'string' || typeof entry.username !== 'string' || typeof entry.passwordEncrypted !== 'string') return [];
@@ -685,6 +694,8 @@ function snapshot() {
     passwordPrompt: passwordPromptSnapshot(),
     safeBrowsing: safeBrowsing?.status() || { available: false, ready: false, lists: 0, prefixes: 0, lastUpdate: 0, error: '' },
     drm,
+    siteSettings: store.siteSettings, sessions: store.sessions.map(({ id, name, created, tabs }) => ({ id, name, created, count: tabs.length, hosts: [...new Set(tabs.map(tab => siteKey(tab.url)))].slice(0, 4) })),
+    crashRecovery: crashRecovery ? { count: crashRecovery.tabs.length, startedAt: crashRecovery.startedAt } : null,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
     homeData: active()?.private ? { notes: {}, focus: { endsAt: null, remaining: 1500, duration: 1500 }, focusById: {}, tasksById: {} } : store.homeData,
     nowPlaying: getNowPlaying(), skins: store.skins, privacyStats: Object.fromEntries(Object.entries(store.privacyStats).slice(-30)),
@@ -1052,6 +1063,7 @@ function selectTab(id) {
   if (!target.private && target.connectionMode === 'normal' && target.workspaceId && store.workspaces.some(item => item.id === target.workspaceId)) store.activeWorkspaceId = target.workspaceId;
   target.lastActiveAt = Date.now();
   activeId = id;
+  if (target.limited && !settingsFor(store.siteSettings, target.url).limit) void applyTabEmulation(target, false);
   if (target.suspended) restoreSuspendedTab(target);
   layout(); emit();
 }
@@ -1352,6 +1364,10 @@ function setupSession(ses, mode = 'normal') {
   const matchesHost = (hostname, hostSet) => [...hostSet].some(host => hostname === host || hostname.endsWith(`.${host}`));
   ses.webRequest.onBeforeRequest({ urls: ['http://*/*','https://*/*'] }, (details, callback) => {
     let blocked = false;
+    if (details.resourceType === 'image') {
+      const pageTab = tabs.find(entry => entry.view?.webContents.id === (details.webContentsId ?? details.webContents?.id));
+      if (pageTab && settingsFor(store.siteSettings, pageTab.url).images === false) return callback({ cancel: true });
+    }
     if (details.resourceType === 'mainFrame' && mode === 'normal' && /^http:/i.test(details.url)) {
       const webContentsId = details.webContentsId ?? details.webContents?.id;
       const tab = tabs.find(entry => entry.view?.webContents.id === webContentsId);
@@ -1406,7 +1422,15 @@ function setupSession(ses, mode = 'normal') {
   });
   ses.webRequest.onHeadersReceived((details, callback) => {
     if (!details.responseHeaders) return callback({});
-    const responseHeaders = { ...(details.responseHeaders || {}) };
+    let responseHeaders = { ...(details.responseHeaders || {}) };
+    const headerTab = tabs.find(entry => entry.view?.webContents.id === (details.webContentsId ?? details.webContents?.id));
+    if (headerTab) {
+      const lengthKey = Object.keys(responseHeaders).find(name => name.toLowerCase() === 'content-length');
+      const length = Number((lengthKey && responseHeaders[lengthKey]?.[0]) || 0);
+      if (Number.isFinite(length) && length > 0) networkBytes.set(headerTab.id, (networkBytes.get(headerTab.id) || 0) + length);
+      const pageUrl = details.resourceType === 'mainFrame' ? details.url : headerTab.url;
+      if (['mainFrame','subFrame'].includes(details.resourceType) && settingsFor(store.siteSettings, pageUrl).javascript === false) responseHeaders = scriptBlockHeaders(responseHeaders);
+    }
     if ((mode !== 'normal' || store.settings.blockThirdPartyCookies) && isThirdParty(details)) for (const key of Object.keys(responseHeaders)) if (['set-cookie','set-cookie2'].includes(key.toLowerCase())) delete responseHeaders[key];
     callback({ responseHeaders });
   });
@@ -1704,7 +1728,7 @@ function attachView(tab) {
   });
   wc.on('will-navigate', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
   wc.on('will-redirect', (event, url) => { if (handleStoreInstallNavigation(tab, event, url)) return; if (!/^https?:\/\//.test(url)) event.preventDefault(); });
-  wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; tab.errorInfo = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
+  wc.on('did-start-loading', () => { if (store.settings.limitBandwidth) void applyTabEmulation(tab, !!tab.limited); tab.loading = true; tab.error = null; tab.errorInfo = null; tab.mediaPlaying = false; tab.mediaInfo = null; tab.mediaArtworkSource = ''; if (nowPlayingTabId === tab.id) nowPlayingTabId = null; update(tab); layout(); });
   wc.on('did-stop-loading', () => update(tab));
   wc.on('dom-ready', () => { if (store.settings.blockCookieBanners) void wc.insertCSS(cookieBannerCss).catch(() => {}); tab.modCssKey = ''; void applyPageMods(tab); if (tab.volume !== 1) applyTabVolume(tab); });
   wc.on('focus', () => { if (split && [split.left, split.right].includes(tab.id) && activeId !== tab.id) { activeId = tab.id; emit(); } });
@@ -1712,6 +1736,8 @@ function attachView(tab) {
   wc.on('did-navigate', (_event, url) => {
     tab.url = url; tab.error = null; tab.errorInfo = null;
     tab.certificateWarning = /^https:/i.test(url) && certificateExceptions.has(hostOf(url));
+    const siteZoom = settingsFor(store.siteSettings, url).zoom;
+    if (!tab.private && wc.getZoomFactor() !== (siteZoom || store.settings.defaultZoom)) wc.setZoomFactor(siteZoom || store.settings.defaultZoom);
     httpsUpgrader.succeeded(url);
     if (loginCandidates.has(tab.id)) void maybeOfferPassword(tab, true);
     tab.lastActiveAt = Date.now();
@@ -1756,6 +1782,7 @@ function attachView(tab) {
   wc.on('leave-html-full-screen', () => { if (windowAlive()) win.setFullScreen(false); shortcut('leave-fullscreen'); });
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
+    if (input.key === 'Escape' && input.shift) { event.preventDefault(); shortcut('task-manager'); return; }
     if (input.key === 'Escape') { shortcut('escape'); return; }
     if ((input.control || input.meta) && input.key.toLowerCase() === 'l') { event.preventDefault(); shortcut('address'); }
   });
@@ -1777,6 +1804,76 @@ function attachView(tab) {
     if (tab.view === view) removeTab(tab);
   });
   return view;
+}
+function tabProcessRows() {
+  const elapsed = Math.max(1, (Date.now() - networkSince) / 1000);
+  const network = new Map([...networkBytes].map(([id, bytes]) => [id, bytes / elapsed]));
+  networkBytes.clear(); networkSince = Date.now();
+  return taskRows({
+    metrics: app.getAppMetrics(), browserPid: process.pid, network, cores: require('node:os').cpus().length || 1,
+    tabs: tabs.map(tab => {
+      let pid = 0;
+      try { if (tab.view && !tab.view.webContents.isDestroyed()) pid = tab.view.webContents.getOSProcessId(); } catch {}
+      return { id: tab.id, title: tab.title, url: tab.url, pid, suspended: tab.suspended, limited: tab.limited, active: tab.id === activeId };
+    }),
+  });
+}
+/**
+ * Limites de uma aba pelo protocolo de depuração do Chromium: CPU 4× mais lenta e/ou banda
+ * máxima. (O limite de banda por sessão do Electron não tem efeito; por aba, tem.)
+ */
+const emulationKeys = new WeakMap();
+async function applyTabEmulation(tab, cpu) {
+  const wc = tab?.view?.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  const net = store.settings.limitBandwidth && !tab.private && tab.connectionMode === 'normal' ? bandwidthConditions(store.settings.bandwidthMbps) : null;
+  const key = `${cpu ? 1 : 0}|${net ? net.downloadThroughput : 0}`;
+  if (emulationKeys.get(wc) === key) return;
+  emulationKeys.set(wc, key);
+  try {
+    if (!cpu && !net) {
+      if (wc.debugger.isAttached()) {
+        await wc.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: 1 }).catch(() => {});
+        await wc.debugger.sendCommand('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }).catch(() => {});
+        wc.debugger.detach();
+      }
+    } else {
+      if (!wc.debugger.isAttached()) { wc.debugger.attach('1.3'); wc.debugger.once('detach', () => emulationKeys.delete(wc)); }
+      await wc.debugger.sendCommand('Emulation.setCPUThrottlingRate', { rate: cpu ? 4 : 1 });
+      await wc.debugger.sendCommand('Network.enable');
+      await wc.debugger.sendCommand('Network.emulateNetworkConditions', net ? { offline: false, ...net } : { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    }
+    tab.limited = !!cpu; emit();
+  } catch (error) { emulationKeys.delete(wc); console.warn('Limitadores da aba:', error.message); }
+}
+function resourceTick() {
+  const settings = store?.settings;
+  const siteLimited = tabs.some(tab => settingsFor(store.siteSettings, tab.url).limit);
+  if (!settings || (!settings.limitCpu && !settings.limitMemory && !settings.limitBandwidth && !siteLimited && !tabs.some(tab => tab.limited))) return;
+  const rows = tabProcessRows();
+  const offenders = new Set(settings.limitCpu ? cpuOffenders(rows, { threshold: settings.cpuLimitPercent, history: cpuHistory }) : []);
+  for (const tab of tabs) {
+    const always = settingsFor(store.siteSettings, tab.url).limit === true;
+    const wanted = always || (settings.limitCpu && tab.id !== activeId && (offenders.has(tab.id) || (tab.limited && !tab.mediaPlaying)));
+    void applyTabEmulation(tab, !!wanted && !tab.private);
+  }
+  if (settings.limitMemory) {
+    const lastActive = new Map(tabs.map(tab => [tab.id, tab.lastActiveAt || 0]));
+    const protectedIds = new Set(tabs.filter(tab => tab.pinned || tab.audible || tab.mediaPlaying).map(tab => tab.id));
+    for (const id of tabsToSuspend(rows, { limitMb: settings.memoryLimitMb, lastActive, protectedIds })) void suspendTab(tabs.find(tab => tab.id === id));
+  }
+}
+function openTabsFrom(list) {
+  let first = '';
+  for (const item of list.slice(0, 100)) {
+    try {
+      const id = addTab(item.url, false, store.settings.connectionMode, true);
+      const opened = tabs.find(tab => tab.id === id);
+      if (opened) { opened.pinned = !!item.pinned; opened.group = item.group || ''; if (!first) first = id; }
+    } catch {}
+  }
+  if (first) selectTab(first);
+  persist(); layout(); emit();
 }
 function applyTabVolume(tab) {
   const wc = tab?.view?.webContents;
@@ -1892,6 +1989,8 @@ function setSettings(payload) {
   store.settings = sanitizeSettings(payload, store.settings); store.settings.activeMod = '';
   if (previous.sendErrorReports !== store.settings.sendErrorReports) syncInstallerConsent(store.settings.sendErrorReports);
   if (previous.updateChannel !== store.settings.updateChannel) updater?.setChannel(store.settings.updateChannel);
+  if (previous.limitBandwidth !== store.settings.limitBandwidth || previous.bandwidthMbps !== store.settings.bandwidthMbps) for (const item of tabs) void applyTabEmulation(item, !!item.limited);
+  if (previous.limitCpu && !store.settings.limitCpu) for (const item of tabs) if (!settingsFor(store.siteSettings, item.url).limit) void applyTabEmulation(item, false);
   if (previous.safeBrowsing !== store.settings.safeBrowsing) { if (store.settings.safeBrowsing) safeBrowsing?.start(); else safeBrowsing?.stop(); }
   if (store.settings.wallpaperVideoPath && !safeWallpaperFile(store.settings.wallpaperVideoPath)) {
     store.settings.wallpaperVideoPath = previous.wallpaperVideoPath || '';
@@ -2381,6 +2480,41 @@ async function command(action, payload) {
       break;
     }
     case 'tab:pin': { const target = tabs.find(t => t.id === payload); if (target) target.pinned = !target.pinned; emit(); break; }
+    case 'tasks:list': return tabProcessRows();
+    case 'tasks:end': {
+      const target = tabs.find(item => item.id === payload);
+      if (!target?.view || target.view.webContents.isDestroyed()) throw new Error('Só é possível encerrar abas abertas.');
+      target.view.webContents.forcefullyCrashRenderer();
+      return true;
+    }
+    case 'site:settings:set': {
+      const host = siteKey(String(payload?.url || '')) || String(payload?.host || '');
+      const before = store.siteSettings[host] || {};
+      store.siteSettings = updateSite(store.siteSettings, host, payload?.patch);
+      const after = store.siteSettings[host] || {};
+      persist(); emit();
+      const changedPage = before.javascript !== after.javascript || before.images !== after.images;
+      for (const item of tabs) {
+        if (siteKey(item.url) !== host) continue;
+        if ('zoom' in (payload?.patch || {}) && item.view && !item.private) item.view.webContents.setZoomFactor(after.zoom || store.settings.defaultZoom);
+        if (changedPage && item.view) item.view.webContents.reload();
+      }
+      resourceTick();
+      return store.siteSettings;
+    }
+    case 'session:save': {
+      const visible = tabs.filter(item => !item.private && item.connectionMode === 'normal' && (item.workspaceId === store.activeWorkspaceId || !item.workspaceId) && /^https?:\/\//i.test(item.url));
+      store.sessions = saveSession(store.sessions, { id: randomUUID(), name: payload?.name, tabs: visible.map(item => ({ url: item.url, title: item.title, pinned: item.pinned, group: item.group })) });
+      persist(); emit(); return true;
+    }
+    case 'session:open': {
+      const saved = store.sessions.find(item => item.id === payload?.id);
+      if (!saved) throw new Error('Esta sessão não existe mais.');
+      openTabsFrom(saved.tabs); return true;
+    }
+    case 'session:delete': store.sessions = store.sessions.filter(item => item.id !== payload); persist(); emit(); return true;
+    case 'recovery:restore': { const pending = crashRecovery; crashRecovery = null; if (pending) openTabsFrom(pending.tabs); else emit(); return true; }
+    case 'recovery:dismiss': crashRecovery = null; emit(); return true;
     case 'tab:volume': {
       const target = tabs.find(item => item.id === payload?.id);
       const volume = Number(payload?.volume);
@@ -2659,7 +2793,12 @@ async function command(action, payload) {
       const result = await dialog.showMessageBox(win, { type: 'question', message: 'Apagar cookies e cache? Você será desconectado dos sites.', buttons: ['Cancelar','Apagar dados'], defaultId: 0, cancelId: 0 });
       if (result.response === 1) await clearSiteData(); break;
     }
-    case 'zoom': if (wc) { wc.setZoomFactor(Math.max(0.25,Math.min(3, Number(payload) || 1))); update(tab); } break;
+    case 'zoom': if (wc) {
+      const factor = Math.max(0.25, Math.min(3, Number(payload) || 1));
+      wc.setZoomFactor(factor); update(tab);
+      const host = siteKey(tab.url);
+      if (host && !tab.private) { store.siteSettings = updateSite(store.siteSettings, host, { zoom: Math.abs(factor - store.settings.defaultZoom) < 0.001 ? null : factor }); persist(); emit(); }
+    } break;
     case 'find': if (wc) { if (payload?.text) wc.findInPage(String(payload.text), { forward: payload.forward !== false }); else wc.stopFindInPage('clearSelection'); } break;
     case 'print': wc?.print({}); break;
     case 'save': await savePage(tab); break;
@@ -2817,6 +2956,11 @@ app.whenReady().then(async () => {
   const trustedURL = devURL || 'cypher-ui://app/index.html';
   rendererUrl = trustedURL + (devURL ? '/' : '');
   // Barra de endereço, busca da Home e demais campos da interface: menu do botão direito com copiar e colar.
+  // A interface caiu (falta de memória, falha da GPU): recarrega sem perder as abas, que vivem no processo principal.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit' || quitting) return;
+    setTimeout(() => { if (windowAlive()) void win.loadURL(rendererUrl).catch(error => console.error('Não foi possível recarregar a interface:', error.message)); }, 400);
+  });
   win.webContents.on('context-menu', (_event, params) => {
     const items = editMenuItems(params);
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
@@ -2866,6 +3010,12 @@ app.whenReady().then(async () => {
   });
   installMenu();
   nativeTheme.on('updated', () => emit());
+  runMarker = createRunMarker(app.getPath('userData'));
+  const previousRun = runMarker.previousCrashed();
+  if (previousRun.crashed && store.settings.startupMode !== 'restore' && store.savedTabs.length) crashRecovery = { tabs: store.savedTabs.filter(item => item && /^https?:\/\//i.test(item.url)).slice(0, 100), startedAt: previousRun.startedAt };
+  if (crashRecovery && !crashRecovery.tabs.length) crashRecovery = null;
+  runMarker.start();
+  resourceTimer = setInterval(resourceTick, 3000);
   const homeFirstId = addTab('cypher://newtab', false, store.settings.connectionMode);
   const startupMode = store.settings.startupMode;
   if (startupMode === 'restore') {
@@ -2914,4 +3064,6 @@ app.on('before-quit', event => {
     return;
   }
   quitting = true; closing = true; flush();
+  if (resourceTimer) { clearInterval(resourceTimer); resourceTimer = null; }
+  runMarker?.finish();
 });
