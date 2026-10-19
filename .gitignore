@@ -10,3 +10,4 @@ electron/resources/easyprivacy.json
 electron/resources/easyprivacy.download.txt
 
 .superpowers/
+electron/preload.bundle.cjs

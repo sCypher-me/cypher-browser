@@ -43,3 +43,21 @@
 
 /* Link em linha também fora da Central (seção de abas arquivadas) */
 .app .productivity-section .sc-inline-link { padding: 0; color: var(--accent); background: none; border: 0; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* Botões das extensões (elemento <browser-action-list> da electron-chrome-extensions) */
+.app .extension-actions { display: flex; align-items: center; gap: 2px; min-height: 34px; }
+.app .extension-actions::part(action) { width: 32px; height: 32px; background-size: 18px; background-color: transparent; border-radius: 8px; transition: background-color .15s; }
+.app .extension-actions::part(action):hover { background-color: color-mix(in srgb, var(--text) 9%, transparent); }
+.app .extension-actions::part(badge) { font: 700 9px/1 var(--font); border-radius: 4px; padding: 2px 3px; }
+[data-skin="recorte"] .extension-actions::part(action) { border-radius: 0; }
+
+/* Loja de mods: origem (Cypher ou comunidade) e cartão para publicar */
+.app .ms-origin { display: flex; gap: 6px; margin: 0 0 14px; }
+.app .ms-origin button { min-height: 30px; padding: 0 12px; color: var(--muted); border: 1px solid color-mix(in srgb, var(--text) 14%, transparent); border-radius: 999px; font-size: var(--ui-font-12, 12px); font-weight: 600; }
+.app .ms-origin button:hover { color: var(--text); }
+.app .ms-origin button.is-active { color: #0b0a09; background: var(--accent); border-color: transparent; }
+.app .ms-tile.is-community .eyebrow, .app .ms-publish .eyebrow { display: inline-flex; align-items: center; gap: 4px; }
+.app .ms-publish { border-style: dashed !important; }
+.app .ms-publish .ms-preview span { display: grid; place-items: center; color: var(--accent); }
+[data-skin="recorte"] .ms-origin button { border-radius: 0; }
+.app[data-appearance="light"] .ms-origin button.is-active { color: #fff; }

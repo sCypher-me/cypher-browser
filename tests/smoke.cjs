@@ -58,6 +58,9 @@ server.listen(0,'127.0.0.1', async () => {
     assert.equal(state.settings.fingerprintProtection, true);
     assert.deepEqual(state.archivedTabs, []);
     assert.equal(state.linkPreview, null);
+    // Etapa 5: user agent igual ao do Chrome (sem Electron/Cypher, que fazem o Google recusar o login).
+    assert.doesNotMatch(win.webContents.getUserAgent(), /Electron|Cypher/);
+    assert.ok(await win.webContents.executeJavaScript("!!customElements.get('browser-action-list')"), 'botões das extensões disponíveis');
     assert.ok((await invoke('tasks:list')).some(row => row.kind === 'process'));
     const screenshots = path.join(root,'artifacts'); fs.mkdirSync(screenshots,{recursive:true});
     await pause(350);

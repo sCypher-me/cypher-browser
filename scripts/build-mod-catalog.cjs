@@ -24,7 +24,8 @@ async function main() {
       const data = fs.readFileSync(path.join(root, ...manifest.preview.split('/')));
       if (data.length <= 280_000) preview = `data:${MIME[path.extname(manifest.preview).toLowerCase()]};base64,${data.toString('base64')}`;
     }
-    mods.push({ id: manifest.id, name: manifest.name, version: manifest.version, author: manifest.author, description: manifest.description, tags: manifest.tags, components: Object.keys(manifest.components), preview, package: file, sha512: sha512(buffer), size: buffer.length });
+    const community = path.basename(source) === 'mods' && path.basename(path.dirname(source)) === 'catalog';
+    mods.push({ id: manifest.id, community, name: manifest.name, version: manifest.version, author: manifest.author, description: manifest.description, tags: manifest.tags, components: Object.keys(manifest.components), preview, package: file, sha512: sha512(buffer), size: buffer.length });
     console.log(`Empacotado: ${manifest.name} (${(buffer.length / 1024).toFixed(0)} KB)`);
   }
   const index = { schemaVersion: 1, version: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString(), mods };

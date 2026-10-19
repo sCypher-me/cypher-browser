@@ -369,6 +369,7 @@ export default function App() {
             </div>}
           </span>}
           {toolbarShown('media') && <IconButton style={toolbarOrder('media')} label={pageMedia?.playing ? `Abrir miniplayer · ${pageMedia.title}` : 'Abrir miniplayer'} active={!!pageMedia?.playing || s.backgroundMusicEnabled} onClick={() => void act('media:window:toggle')}><Music2 size={17}/></IconButton>}
+          {state.extensionPartition && state.extensions.some(item => item.enabled) && <browser-action-list className="extension-actions" style={toolbarOrder('address')} partition={state.extensionPartition} alignment="bottom left"/>}
           <UpdateChip update={state.update} onInstall={requestInstall}/>
           {toolbarShown('customize') && <IconButton style={toolbarOrder('customize')} label="Personalizar Cypher" onClick={() => openPage('settings')}><SlidersHorizontal size={18}/></IconButton>}<IconButton style={toolbarOrder('menu')} label="Menu do navegador" active={menu} onClick={() => { setMenu(!menu); setSkinMenu(false); setTrackerPanelOpen(false); setPopupPanelOpen(false); setAddressFocus(false); }}><MoreHorizontal size={21}/></IconButton>
         </div>

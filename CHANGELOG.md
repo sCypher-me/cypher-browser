@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.7.42] - 2026-10-19
+- [Novo★] Extensões completas: botões e popups das extensões ao lado da barra de endereço, menus, selos e as APIs de abas do Chrome. Bitwarden, uBlock Origin Lite, Dark Reader e afins passam a funcionar como no Chrome. {generico}
+- [Novo★] Cypher para Linux: AppImage e .deb na mesma release; o navegador avisa quando há versão nova. {instalador}
+- [Novo★] Mods da comunidade: a loja separa os mods do Cypher dos enviados pela comunidade e ensina a publicar o seu. {mods}
+- [Corrigido] Login do Google: o Cypher agora se apresenta aos sites como o Chrome, e o Google deixa de recusar o login com "este navegador pode não ser seguro".
+- [Novo] Site oficial com downloads para Windows e Linux: scypher-me.github.io/cypher-browser.
+- [Melhorado] O Cypher agora é software livre sob a licença GPL-3.0.
+
 ## [0.7.41] - 2026-10-19
 - [Novo★] Proteção contra impressão digital: canvas, áudio e placa de vídeo mudam um pouco de site para site, e os rastreadores não conseguem reconhecer seu computador. Ligada por padrão; desligue por site no cadeado da barra. {privacidade}
 - [Novo★] Prévia de links: Shift + clique (ou o menu do link) abre a página numa janela por cima, sem sair de onde você está. {abas}

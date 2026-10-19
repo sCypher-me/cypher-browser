@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Brush, Check, Download, FileAudio, Image as ImageIcon, Layers, Music2, Package, Palette, Plus, RefreshCw, Sparkles, Trash2, Type, Upload, Volume2, Wand2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Brush, Check, Download, GitPullRequest, Users, FileAudio, Image as ImageIcon, Layers, Music2, Package, Palette, Plus, RefreshCw, Sparkles, Trash2, Type, Upload, Volume2, Wand2 } from 'lucide-react';
 import type { CatalogMod, ModComponent, ModPackageInfo, Settings } from './types';
 import { Switch } from './settings-ui';
 
@@ -21,6 +21,7 @@ export default function ModsStore({ settings: s, packages, command, onSettings, 
   const [tab, setTab] = useState<Tab>(packages.length ? 'installed' : 'explore');
   const [catalog, setCatalog] = useState<{ mods: CatalogMod[]; remote: boolean; message: string } | null>(null);
   const [busy, setBusy] = useState('');
+  const [origin, setOrigin] = useState<'all' | 'cypher' | 'community'>('all');
   const installedIds = useMemo(() => new Set(packages.map(item => item.id)), [packages]);
   const loadCatalog = () => { setCatalog(null); void command('modpkg:catalog').then(result => setCatalog(result || { mods: [], remote: false, message: 'Não foi possível abrir o catálogo.' })); };
   useEffect(() => { if (tab === 'explore' && !catalog) loadCatalog(); }, [tab]);
@@ -57,16 +58,27 @@ export default function ModsStore({ settings: s, packages, command, onSettings, 
 
     {tab === 'explore' && <div className="ms-explore">
       <div className="ms-explore-head"><p>{catalog?.message || (catalog?.remote ? 'Catálogo verificado com a assinatura do Cypher.' : 'Carregando o catálogo…')}</p><button type="button" className="cz-icon" aria-label="Recarregar catálogo" onClick={loadCatalog}><RefreshCw size={15}/></button></div>
-      <div className="ms-grid">{(catalog?.mods || []).map(item => { const installed = installedIds.has(item.id); return <article key={item.id} className="ms-tile">
+      <div className="ms-origin" role="tablist" aria-label="Origem dos mods">{([['all', 'Todos'], ['cypher', 'Do Cypher'], ['community', 'Da comunidade']] as const).map(([value, label]) => <button type="button" role="tab" aria-selected={origin === value} key={value} className={origin === value ? 'is-active' : ''} onClick={() => setOrigin(value)}>{label}</button>)}</div>
+      <div className="ms-grid">{(catalog?.mods || []).filter(item => origin === 'all' || (origin === 'community') === !!item.community).map(item => { const installed = installedIds.has(item.id); return <article key={item.id} className={`ms-tile ${item.community ? 'is-community' : ''}`}>
         <Preview src={item.preview} name={item.name}/>
         <div className="ms-tile-body">
-          <span className="eyebrow">{item.author.toUpperCase()} · v{item.version}</span>
+          <span className="eyebrow">{item.community && <><Users size={11}/> COMUNIDADE · </>}{item.author.toUpperCase()} · v{item.version}</span>
           <h3>{item.name}</h3>
           <p>{item.description}</p>
           <div className="ms-components">{item.components.map(component => { const Icon = componentInfo[component].icon; return <span key={component} className="ms-chip static"><Icon size={12}/>{componentInfo[component].label}</span>; })}</div>
           <button type="button" className={`button ${installed ? 'secondary' : 'primary'}`} disabled={installed || busy === item.id} onClick={() => void run(item.id, () => command(item.source === 'builtin' ? 'modpkg:install-builtin' : 'modpkg:install-catalog', item.id), `${item.name} instalado e ativado.`)}>{installed ? <><Check size={15}/> Instalado</> : busy === item.id ? 'Instalando…' : <><Download size={15}/> Instalar</>}</button>
         </div>
-      </article>; })}</div>
+      </article>; })}
+        <article className="ms-tile ms-publish">
+          <div className="ms-preview"><span><GitPullRequest size={30}/></span></div>
+          <div className="ms-tile-body">
+            <span className="eyebrow"><Users size={11}/> COMUNIDADE</span>
+            <h3>Publique o seu mod</h3>
+            <p>Crie um mod na aba Criar, mande a pasta num pull request e, depois da revisão, ele entra no catálogo assinado para todo mundo.</p>
+            <button type="button" className="button secondary" onClick={() => void command('modpkg:publish-guide')}><GitPullRequest size={15}/> Como publicar</button>
+          </div>
+        </article>
+      </div>
     </div>}
 
     {tab === 'create' && <ModCreator settings={s} command={command} notify={notify}/>}

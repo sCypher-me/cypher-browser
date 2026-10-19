@@ -23,10 +23,16 @@ const { fingerprintSeed } = require('./fingerprint.cjs');
 const { tabsToArchive, sanitizeArchive, archiveTabs, appendClip } = require('./workflow.cjs');
 const { execFile } = require('node:child_process');
 const { FiltersEngine, Request } = require('@ghostery/adblocker');
+// APIs de extensões do Chrome (chrome.tabs, action, popups, contextMenus...). Licença GPL-3.0, a mesma do Cypher.
+const { ElectronChromeExtensions } = require('electron-chrome-extensions');
 
 const privacyServices = createPrivacyServices({ app });
 
 app.setName('Cypher');
+// User agent igual ao do Chrome: sem os marcadores 'Electron/…' e 'Cypher/…'. Com eles, o Google
+// recusa o login ('este navegador pode não ser seguro') e alguns sites mudam o comportamento.
+app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
+function cleanUserAgent(value) { return String(value || '').replace(/\s+(?:Electron|Cypher)\/[^\s]+/gi, '').replace(/Chrome\/(\d+)[\d.]*/i, 'Chrome/$1.0.0.0'); }
 // Prevent speculative hostname lookups from bypassing anonymous proxies.
 app.commandLine.appendSwitch('dns-prefetch-disable');
 nativeTheme.themeSource = 'dark';
@@ -114,6 +120,9 @@ const fingerprintSecret = randomBytes(16).toString('hex');
 let archiveTimer = null;
 // Prévia de link (vista nativa por cima da página) e janela rápida.
 let previewView = null, previewBounds = null, linkPreview = null;
+const chromeExtensions = new Map(); // sessão normal do perfil -> ElectronChromeExtensions
+// Enquanto o Cypher informa a biblioteca (aba nova, aba ativa), ela não deve trocar a aba de volta.
+let extensionSync = false;
 let quickWindow = null, quickView = null;
 const tabs = [], closedTabs = [], popupRequests = [], downloadItems = new Map(), reservedDownloadPaths = new Set(), configuredSessions = new Set(), privateSessions = new Set();
 let blockedPopupCount = 0;
@@ -298,7 +307,7 @@ async function modCatalog() {
         id: entry.id, name: String(entry.name || entry.id).slice(0, 64), version: String(entry.version || ''), author: String(entry.author || '').slice(0, 64), description: String(entry.description || '').slice(0, 400),
         tags: Array.isArray(entry.tags) ? entry.tags.filter(tag => typeof tag === 'string').slice(0, 6) : [], components: Array.isArray(entry.components) ? entry.components.filter(key => modComponents.includes(key)) : [],
         preview: typeof entry.preview === 'string' && /^data:image\/(?:png|jpeg|webp|svg\+xml);base64,[\dA-Za-z+/=]+$/.test(entry.preview) && entry.preview.length < 400_000 ? entry.preview : '',
-        package: entry.package, sha512: entry.sha512, size: Number(entry.size) || 0, source: 'catalog' }] : []) };
+        package: entry.package, sha512: entry.sha512, size: Number(entry.size) || 0, source: 'catalog', community: entry.community === true }] : []) };
     }
     const ids = new Set(builtin.map(item => item.id));
     return { mods: [...builtin, ...modCatalogCache.mods.filter(item => !ids.has(item.id))], remote: true, message: '' };
@@ -703,7 +712,7 @@ function snapshot() {
     passwordPrompt: passwordPromptSnapshot(),
     safeBrowsing: safeBrowsing?.status() || { available: false, ready: false, lists: 0, prefixes: 0, lastUpdate: 0, error: '' },
     drm,
-    archivedTabs: store.archivedTabs, linkPreview,
+    archivedTabs: store.archivedTabs, linkPreview, extensionPartition: normalPartition(),
     siteSettings: store.siteSettings, sessions: store.sessions.map(({ id, name, created, tabs }) => ({ id, name, created, count: tabs.length, hosts: [...new Set(tabs.map(tab => siteKey(tab.url)))].slice(0, 4) })),
     crashRecovery: crashRecovery ? { count: crashRecovery.tabs.length, startedAt: crashRecovery.startedAt } : null,
     update: updater?.getState() || { state: 'unconfigured', currentVersion: app.getVersion(), version: '', progress: 0, message: '', releaseNotes: '', repository: '' },
@@ -1079,6 +1088,7 @@ function selectTab(id) {
   if (!target.private && target.connectionMode === 'normal' && target.workspaceId && store.workspaces.some(item => item.id === target.workspaceId)) store.activeWorkspaceId = target.workspaceId;
   target.lastActiveAt = Date.now();
   activeId = id;
+  if (target.view && !target.view.webContents.isDestroyed()) { extensionSync = true; try { chromeExtensions.get(target.view.webContents.session)?.selectTab(target.view.webContents); } catch {} finally { extensionSync = false; } }
   if (target.limited && !settingsFor(store.siteSettings, target.url).limit) void applyTabEmulation(target, false);
   if (target.suspended) restoreSuspendedTab(target);
   layout(); emit();
@@ -1177,8 +1187,47 @@ function protonExtensionDirectory() {
     ? path.join(process.resourcesPath, 'proton-vpn')
     : path.resolve(__dirname, '../vendor/proton-vpn-browser-extension/distribution-cypher');
 }
+/** Suporte às APIs do Chrome na sessão normal do perfil; criado uma vez, antes das extensões. */
+function chromeExtensionsFor(ses) {
+  if (chromeExtensions.has(ses)) return chromeExtensions.get(ses);
+  const tabFor = contents => tabs.find(tab => tab.view?.webContents === contents);
+  const extensions = new ElectronChromeExtensions({
+    license: 'GPL-3.0',
+    session: ses,
+    async createTab(details) {
+      const url = typeof details?.url === 'string' && /^https?:\/\//i.test(details.url) ? details.url : 'https://duckduckgo.com/';
+      const id = addTab(url, false, 'normal', details?.active !== false);
+      const tab = tabs.find(item => item.id === id);
+      if (!tab?.view) throw new Error('Não foi possível abrir a aba.');
+      return [tab.view.webContents, win];
+    },
+    selectTab(contents) { if (extensionSync) return; const tab = tabFor(contents); if (tab) selectTab(tab.id); },
+    removeTab(contents) { const tab = tabFor(contents); if (tab) closeTab(tab.id); },
+    async createWindow(details) {
+      const urls = (Array.isArray(details?.url) ? details.url : [details?.url]).filter(url => typeof url === 'string' && /^https?:\/\//i.test(url));
+      for (const url of urls.slice(0, 10)) addTab(url, false, 'normal', true);
+      return win;
+    },
+    removeWindow() { return win; },
+    assignTabDetails(details, contents) { const tab = tabFor(contents); if (tab) { details.discarded = !!tab.suspended; details.pinned = !!tab.pinned; } },
+  });
+  chromeExtensions.set(ses, extensions);
+  // Abas que já existiam nesta sessão (troca de perfil) também passam a ser conhecidas.
+  for (const tab of tabs) if (tab.view?.webContents.session === ses) registerExtensionTab(tab);
+  return extensions;
+}
+function registerExtensionTab(tab) {
+  const contents = tab.view?.webContents;
+  if (!contents || tab.private || tab.connectionMode !== 'normal' || tab.containerId) return;
+  const extensions = chromeExtensions.get(contents.session);
+  if (!extensions || !windowAlive()) return;
+  extensionSync = true;
+  try { extensions.addTab(contents, win); if (tab.id === activeId) extensions.selectTab(contents); } catch (error) { console.warn('Extensões (aba):', error.message); }
+  finally { extensionSync = false; }
+}
 async function loadBuiltInProtonVpn() {
   const ses = session.fromPartition(normalPartition());
+  chromeExtensionsFor(ses);
   try {
     if (ses.extensions.getExtension(protonExtensionId)) { protonExtensionReady = true; return true; }
     ses.registerPreloadScript({ type:'frame', filePath:path.join(__dirname, 'proton-preload.cjs') });
@@ -1716,6 +1765,7 @@ function attachView(tab) {
   // O preload das abas cuida do volume e percebe logins (o principal ignora logins fora das abas normais).
   const view = new WebContentsView({ webPreferences: pageWebPreferences(ses) });
   tab.view = view;
+  registerExtensionTab(tab);
   win.contentView.addChildView(view);
   const wc = view.webContents;
   if (tab.connectionMode !== 'normal') {
@@ -1811,6 +1861,8 @@ function attachView(tab) {
     if (/^https?:\/\//.test(params.linkURL)) template.push({ label: 'Abrir link em nova aba', click: () => addTab(params.linkURL, tab.private, tab.connectionMode) }, ...(tab.private || tab.connectionMode !== 'normal' ? [] : [{ label: 'Prévia do link (Shift + clique)', click: () => openLinkPreview(params.linkURL, tab) }, { label: 'Abrir na janela rápida', click: () => openQuickWindow(params.linkURL) }]), { label: 'Copiar endereço do link', click: () => void clipboard.writeText(params.linkURL) }, { type: 'separator' });
     if (params.isEditable) template.push(...editMenuItems(params), { type: 'separator' });
     else if (params.selectionText) template.push({ role: 'copy', label: 'Copiar' }, ...(tab.private || tab.connectionMode !== 'normal' ? [] : [{ label: 'Recortar para a fila de pesquisa', click: () => { try { clipToResearch(tab, params.selectionText); shortcut('notice:Trecho guardado nas notas da página em Espaços e pesquisa.'); } catch (error) { shortcut(`error:${error.message}`); } } }]), { label: 'Pesquisar seleção', click: () => addTab(resolveAddress(params.selectionText, store.settings.searchEngine, store.settings.customSearchUrl), tab.private, tab.connectionMode) }, { type: 'separator' });
+    const extensionItems = (() => { try { return chromeExtensions.get(wc.session)?.getContextMenuItems(wc, params) || []; } catch { return []; } })();
+    if (extensionItems.length) template.push(...extensionItems, { type: 'separator' });
     template.push({ label: 'Voltar', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() }, { label: 'Avançar', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() }, { label: 'Recarregar', click: () => wc.reload() }, { type: 'separator' }, { label: 'Salvar página…', click: () => savePage(tab) }, { label: 'Imprimir…', click: () => wc.print({}) }, { label: 'Inspecionar elemento', click: () => wc.inspectElement(params.x, params.y) });
     Menu.buildFromTemplate(template).popup({ window: win });
   });
@@ -1890,6 +1942,10 @@ function openTabsFrom(list) {
   }
   if (first) selectTab(first);
   persist(); layout(); emit();
+}
+function uiPreloadPath() {
+  const bundled = path.join(__dirname, 'preload.bundle.cjs');
+  return fs.existsSync(bundled) ? bundled : path.join(__dirname, 'preload.cjs');
 }
 function pageWebPreferences(ses) {
   return { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, nodeIntegrationInSubFrames: true, preload: path.join(__dirname, 'tab-preload.cjs') };
@@ -2403,6 +2459,7 @@ async function command(action, payload) {
     case 'tab:restore': { const previous = closedTabs.pop(); if (previous) addTab(previous.url, false, previous.connectionMode); break; }
     case 'tab:duplicate': { const target = tabs.find(t => t.id === payload); if (target) return addTab(target.url, target.private, target.connectionMode, true, undefined, { containerId: target.containerId }); break; }
     case 'modpkg:catalog': return modCatalog();
+    case 'modpkg:publish-guide': addTab('https://github.com/sCypher-me/cypher-browser/blob/main/docs/mods-comunidade.md', false, 'normal', true); return true;
     case 'modpkg:install-builtin': {
       const builtin = builtinMods.get(payload);
       if (!builtin) throw new Error('Mod embutido não encontrado.');
@@ -3096,6 +3153,7 @@ app.whenReady().then(async () => {
     drm.available = true;
     components.whenReady().then(() => { drm.ready = true; emit(); }).catch(error => { drm.error = String(error?.message || error).slice(0, 300); emit(); });
   }
+  ElectronChromeExtensions.handleCRXProtocol(session.defaultSession);
   registerProtonIpcBridge();
   await loadBuiltInProtonVpn();
   mediaTimer = setInterval(() => {
@@ -3110,7 +3168,7 @@ app.whenReady().then(async () => {
     catch (error) { console.error('Não foi possível aplicar a inicialização com o Windows:', error.message); }
   }
   win = new BrowserWindow({ width: 1440, height: 940, minWidth: 960, minHeight: 650, frame: false, backgroundColor: '#090c0b', show: false, icon: path.join(__dirname,'../build/icon.png'),
-    webPreferences: { preload: path.join(__dirname,'preload.cjs'), minimumFontSize: 11, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
+    webPreferences: { preload: uiPreloadPath(), minimumFontSize: 11, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false } });
   const devURL = process.env.CYPHER_DEV_URL;
   const trustedURL = devURL || 'cypher-ui://app/index.html';
   rendererUrl = trustedURL + (devURL ? '/' : '');
