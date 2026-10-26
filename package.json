@@ -26,7 +26,7 @@
     "@ghostery/adblocker": "2.20.1",
     "clsx": "^2.1.1",
     "electron-chrome-extensions": "4.9.0",
-    "lucide-react": "^1.59.0",
+    "lucide-react": "^1.61.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "tailwind-merge": "^3.7.0",
